@@ -289,10 +289,6 @@ table.tk th{text-align:right;padding:3px 8px;font-size:12px;letter-spacing:.06em
 table.tk td{text-align:center;padding:3px 5px;border:1px solid var(--line);min-width:26px;color:var(--muted)}
 table.tk td.m{color:var(--ink);font-weight:600;background:var(--surface-2)}
 table.tk td.hit{background:var(--accent);color:var(--accent-ink);font-weight:600}
-.anchors{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px;margin:8px 0}
-@media (max-width:520px){.anchors{grid-template-columns:repeat(2,minmax(0,1fr))}}
-.anc{border:1px solid var(--line);border-radius:8px;padding:8px 10px;background:var(--surface-2);display:flex;flex-direction:column}
-.anc b{font-family:"Barlow Condensed",sans-serif;font-size:17px;color:var(--brass);letter-spacing:.04em}
 .dd-dates{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;margin:8px 0}
 @media (max-width:560px){.dd-dates{grid-template-columns:minmax(0,1fr)}}
 .dd-dates div{border:1px solid var(--line);border-left:4px solid var(--brass);border-radius:8px;padding:8px 12px;background:var(--surface-2);display:flex;flex-direction:column;gap:2px}
@@ -300,7 +296,8 @@ table.tk td.hit{background:var(--accent);color:var(--accent-ink);font-weight:600
 .dd-dates span{font-size:14px;color:var(--ink-2)}
 ol.ddsteps{padding-left:22px;color:var(--ink-2)}
 ol.ddsteps li{margin:6px 0}
-.math{white-space:pre-wrap;word-break:break-all}
+.math{white-space:pre-wrap;word-break:normal;overflow-wrap:anywhere}
+.panel h3 .t-a,.panel h3 .t-y,.panel h3 .t-d{text-transform:none;letter-spacing:0;font-family:"IBM Plex Mono",monospace;font-size:.9em}
 .practice{border:1px solid var(--line);border-radius:10px;padding:14px;background:var(--surface-2)}
 .practice .q{margin-bottom:10px}
 .dows{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:6px;margin-bottom:10px}
@@ -310,6 +307,53 @@ ol.ddsteps li{margin:6px 0}
 .dows .btn.wrong{background:var(--error-soft);border-color:var(--error);color:var(--error);opacity:1}
 .pr-say{min-height:1.5em;color:var(--ink-2);margin-bottom:8px}
 .streak{margin-left:auto;color:var(--muted);font-size:14px;font-variant-numeric:tabular-nums}
+/* doomsday formulas: one colour per term, defined for both themes */
+:root{--t-month:#7B3F8C}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){--t-month:#D9A7E8}}
+:root[data-theme="dark"]{--t-month:#D9A7E8}
+.t-a{color:var(--brass);font-weight:600}
+.t-y{color:var(--accent);font-weight:600}
+.t-d{color:var(--t-month);font-weight:600}
+var.t-a,var.t-y,var.t-d{font-family:"IBM Plex Mono",monospace;font-style:normal}
+.fbox{border:1px solid var(--line);border-left:4px solid var(--brass);border-radius:10px;background:var(--surface-2);padding:12px 14px;margin:12px 0 4px}
+.fline{font-family:"IBM Plex Mono",monospace;font-size:19px;line-height:1.5;color:var(--ink);margin:6px 0 8px;overflow-wrap:anywhere}
+.fline.small{font-size:15px;margin:0 0 6px}
+.legend{list-style:none;margin:0 0 6px;padding:0;display:flex;flex-direction:column;gap:4px;font-size:15px;color:var(--ink-2)}
+.legend .t-a,.legend .t-y,.legend .t-d{font-family:"IBM Plex Mono",monospace;margin-right:6px}
+table.ftab{width:auto;border-collapse:collapse;font-size:14px;margin:8px 0}
+table.ftab th,table.ftab td{border:1px solid var(--line);padding:5px 9px;text-align:center;white-space:nowrap;font-variant-numeric:tabular-nums}
+table.ftab th{background:var(--surface-2);font-family:"Barlow Condensed",sans-serif;letter-spacing:.06em;text-transform:none;font-size:14px;color:var(--ink-2)}
+table.ftab td:last-child{text-align:left}
+.ystrip{display:flex;align-items:center;gap:4px;margin:10px 0;width:max-content}
+.yc{display:flex;flex-direction:column;align-items:center;border:1px solid var(--line);border-radius:6px;padding:4px 7px;background:var(--surface);font-size:13px;color:var(--ink-2);min-width:46px}
+.yc b{font-family:"IBM Plex Mono",monospace;font-size:12.5px;color:var(--ink)}
+.yc.lp{border-color:var(--brass)}
+.yj{display:flex;flex-direction:column;align-items:center;font-family:"IBM Plex Mono",monospace;font-size:12px;color:var(--accent);font-weight:600}
+.yj.two{color:var(--brass)}
+.yj small{font-family:"Barlow",sans-serif;font-weight:400;font-size:10.5px}
+.chain{display:flex;flex-wrap:wrap;align-items:center;gap:6px 4px;margin:10px 0}
+.chain .dt{font-family:"IBM Plex Mono",monospace;font-weight:600;color:var(--t-month);border:1px solid var(--line);background:var(--surface);border-radius:6px;padding:3px 7px}
+.chain .gap{font-size:11.5px;line-height:1.15;color:var(--muted);text-align:center;padding:0 2px}
+.chain .gap::after{content:"→";display:block;color:var(--line-strong);font-size:14px}
+.dd-work{display:grid;grid-template-columns:minmax(0,230px) minmax(0,1fr);gap:16px;align-items:start;margin-top:6px}
+@media (max-width:620px){.dd-work{grid-template-columns:minmax(0,1fr)}}
+.wheel-wrap{max-width:230px;width:100%;margin:0 auto}
+#dd-wheel{width:100%;height:auto;display:block}
+#dd-wheel .face{fill:var(--surface-2);stroke:var(--line-strong);stroke-width:1.5}
+#dd-wheel .dw{fill:var(--surface);stroke:var(--line-strong);stroke-width:1.5}
+#dd-wheel .dw.anc{stroke:var(--brass);stroke-width:3}
+#dd-wheel .dw.dd{stroke:var(--accent);stroke-width:3}
+#dd-wheel .dw.ans{fill:var(--accent);stroke:var(--accent)}
+#dd-wheel .wl{font:600 11px "IBM Plex Mono",monospace;fill:var(--ink-2)}
+#dd-wheel .wl.on{fill:var(--accent-ink)}
+#dd-wheel path.a1{fill:none;stroke:var(--brass);stroke-width:3;stroke-linecap:round}
+#dd-wheel path.a2{fill:none;stroke:var(--accent);stroke-width:3;stroke-linecap:round}
+#dd-wheel text.al{font:700 12px "IBM Plex Mono",monospace}
+#dd-wheel text.al.a1{fill:var(--brass)}
+#dd-wheel text.al.a2{fill:var(--accent)}
+#dd-wheel .wc{font:600 16px "Barlow Condensed",sans-serif;fill:var(--ink)}
+#dd-wheel .wc2{font:600 13px "IBM Plex Mono",monospace;fill:var(--muted)}
+.dd-right{min-width:0}
 @media (prefers-reduced-motion:no-preference){#clock-svg .hand{transition:none}}
 </style>
 </head>
@@ -499,19 +543,67 @@ ol.ddsteps li{margin:6px 0}
     <div class="panel-head"><span class="step">Bonus</span><h2 id="h-dd">The day of the week for any date</h2></div>
     <div class="explain">
       <p>The calendar is modular arithmetic too, and the mathematician John Conway turned that into a party trick you can do in your head: the <b>Doomsday rule</b>. Each year, a set of easy-to-remember dates all fall on the same day of the week, called that year's <b>doomsday</b>. Find it, then count from the nearest one.</p>
+      <div class="fbox" role="group" aria-label="The whole rule as one formula">
+        <span class="step">The whole rule in one line</span>
+        <div class="fline">weekday = ( <span class="t-a">A(c)</span> + <span class="t-y">y + ⌊y/4⌋</span> + <span class="t-d">d − D(m)</span> ) mod 7</div>
+        <ul class="legend">
+          <li><span class="t-a">A(c)</span> the century's <b>anchor day</b>, from the first two digits of the year, <var>c</var> (Step 1)</li>
+          <li><span class="t-y">y + ⌊y/4⌋</span> how far the doomsday has moved since the century began, from the last two digits, <var>y</var> (Step 2)</li>
+          <li><span class="t-d">d − D(m)</span> how far your day <var>d</var> is from <var>D(m)</var>, that month's doomsday date (Steps 3 and 4)</li>
+        </ul>
+        <p class="help">⌊ ⌋ means “round down”: ⌊26/4⌋ = 6. Every piece is just a count of days, and “mod 7” turns a count of days into a day of the week, exactly like the 7-position clock in section 1.</p>
+      </div>
+
       <h3>Number the days</h3>
       <p>Sunday = 0, Monday = 1, … Saturday = 6. Conway's memory aids: <b>Noneday</b>, <b>Oneday</b>, <b>Twosday</b>, <b>Treblesday</b>, <b>Foursday</b>, <b>Fiveday</b>, <b>Six-a-day</b>.</p>
-      <h3>Step 1: the century's anchor day</h3>
-      <div class="anchors" id="anchors"></div>
-      <p>The pattern <b>Tuesday, Sunday, Friday, Wednesday</b> repeats every 400 years, because 400 Gregorian years are exactly 20,871 weeks. As a formula, with <var>c</var> the first two digits of the year: <var>anchor = (5 × (c mod 4) + 2) mod 7</var>. To remember the two you'll use most: 1900 is a <b>We</b>dnesday (“<b>We</b> were born in the 1900s”), and 2000 is a <b>Twos</b>day (“Y<b>2</b>K”).</p>
-      <h3>Step 2: this year's doomsday</h3>
-      <p>Take the last two digits of the year, <var>y</var>. Two ways to turn them into a number of days to count forward from the anchor:</p>
+
+      <h3>Step 1: the century's anchor, <span class="t-a">A(c)</span></h3>
+      <div class="math">A(c) = (5 × (c mod 4) + 2) mod 7
+(c = the first two digits of the year)</div>
+      <div class="scroll"><table class="ftab">
+        <thead><tr><th>c mod 4</th><th>5 × (c mod 4) + 2</th><th>mod 7</th><th>Anchor</th><th>Centuries</th></tr></thead>
+        <tbody>
+          <tr><td>0</td><td>2</td><td>2</td><td><b>Tuesday</b></td><td>1600s, 2000s, 2400s</td></tr>
+          <tr><td>1</td><td>7</td><td>0</td><td><b>Sunday</b></td><td>1700s, 2100s</td></tr>
+          <tr><td>2</td><td>12</td><td>5</td><td><b>Friday</b></td><td>1800s, 2200s</td></tr>
+          <tr><td>3</td><td>17</td><td>3</td><td><b>Wednesday</b></td><td>1900s, 2300s</td></tr>
+        </tbody>
+      </table></div>
+      <p><b>Why it works.</b> A century normally has 76 ordinary years and 24 leap years: 76 × 365 + 24 × 366 = 36,524 days, which is 5,217 weeks and <b>5 days</b>. So each new century's doomsday lands 5 days later in the week, and on a 7-day clock, 5 forward is the same as 2 back. That's why the anchors step Tuesday → Sunday → Friday → Wednesday. The step into a year divisible by 400 (like 2000) also picks up that year's extra leap day, so it moves 6 instead of 5, and 5 + 5 + 5 + 6 = 21 days is exactly 3 weeks. The pattern therefore repeats every 400 years. In the formula, the “+ 2” is the starting point (2000 is a Tuesday, day 2), and the “5 ×” is that 5-day step per century.</p>
+      <p>To remember the two you'll use most: 1900 is a <b>We</b>dnesday (“<b>We</b> were born in the 1900s”), and 2000 is a <b>Twos</b>day (“Y<b>2</b>K”).</p>
+
+      <h3>Step 2: the year's shift, <span class="t-y">y + ⌊y/4⌋</span></h3>
+      <div class="math">doomsday of the year = (A(c) + y + ⌊y/4⌋) mod 7
+(y = the last two digits of the year)</div>
+      <p><b>Why it works.</b> An ordinary year is 365 days, which is 52 weeks and <b>1 day</b>, so each year's doomsday falls 1 day later in the week than the last. A leap year has 366 days, so the doomsday jumps 2. From the start of the century to year <var>y</var>, that's <var>y</var> one-day steps, plus one extra for each leap year along the way, and there are <var>⌊y/4⌋</var> of those:</p>
+      <div class="scroll"><div class="ystrip" id="ystrip"></div></div>
+      <p>For 2026: <var>26 + ⌊26/4⌋ = 26 + 6 = 32</var>, and <var>32 mod 7 = 4</var>. Tuesday (2) + 4 = day 6, <b>Saturday</b>, the doomsday for 2026.</p>
+      <p>Two shortcuts give the same number with smaller arithmetic. Both are just <var>y + ⌊y/4⌋</var> rearranged:</p>
       <ul class="facts">
-        <li><b>Conway's twelves:</b> how many 12s fit in <var>y</var>, plus the remainder, plus how many 4s fit in that remainder. For 2026: <var>y = 26</var> → 2 twelves, remainder 2, no 4s → 2 + 2 + 0 = 4.</li>
-        <li><b>“Odd + 11”:</b> if <var>y</var> is odd, add 11. Halve it. If that's odd, add 11. Take it mod 7, and subtract from 7. For 26: even → 13, odd → 24, 24 mod 7 = 3, 7 − 3 = 4. Same answer.</li>
+        <li><b>Conway's twelves.</b> Write <var>y = 12a + r</var> (<var>a</var> twelves, remainder <var>r</var>). Then <var>y + ⌊y/4⌋ = 12a + r + 3a + ⌊r/4⌋ = 15a + r + ⌊r/4⌋</var>. Since 15 = 14 + 1 and 14 is two whole weeks, <var>15a</var> counts the same as <var>a</var>:
+          <div class="math">shift = ⌊y/12⌋ + (y mod 12) + ⌊(y mod 12)/4⌋
+2026:   2 + 2 + 0 = 4</div></li>
+        <li><b>“Odd + 11”.</b> The same total, rearranged so you only ever halve and add 11:
+          <div class="math">T₁ = y, plus 11 if y is odd
+T₂ = T₁ / 2, plus 11 if that's odd
+shift = (7 − (T₂ mod 7)) mod 7
+
+2026:  T₁ = 26 (even, so no +11)
+       T₂ = 26 / 2 = 13, odd, so 13 + 11 = 24
+       shift = 7 − (24 mod 7) = 7 − 3 = 4</div></li>
       </ul>
-      <p>Count that many days forward from the anchor: 2000s anchor Tuesday + 4 = <b>Saturday</b>, the doomsday for 2026. Taking it mod 7 at the end keeps the count small.</p>
-      <h3>Step 3: the doomsday dates</h3>
+
+      <h3>Step 3: the doomsday dates, <span class="t-d">D(m)</span></h3>
+      <div class="scroll"><table class="ftab">
+        <thead><tr><th>Month</th><th>Jan</th><th>Feb</th><th>Mar</th><th>Apr</th><th>May</th><th>Jun</th><th>Jul</th><th>Aug</th><th>Sep</th><th>Oct</th><th>Nov</th><th>Dec</th></tr></thead>
+        <tbody><tr><th scope="row">D(m)</th><td>3 / 4*</td><td>28 / 29*</td><td>14</td><td>4</td><td>9</td><td>6</td><td>11</td><td>8</td><td>5</td><td>10</td><td>7</td><td>12</td></tr></tbody>
+      </table></div>
+      <p class="help">* The second number is for leap years.</p>
+      <p><b>Why they all share a weekday.</b> The gap between each doomsday date and the next is a whole number of weeks, so they all land on the same day of the week:</p>
+      <div class="chain">
+        <span class="dt">2/28</span><span class="gap">14 days<br>2 wk</span><span class="dt">3/14</span><span class="gap">21 days<br>3 wk</span><span class="dt">4/4</span><span class="gap">35 days<br>5 wk</span><span class="dt">5/9</span><span class="gap">28 days<br>4 wk</span><span class="dt">6/6</span><span class="gap">35 days<br>5 wk</span><span class="dt">7/11</span><span class="gap">28 days<br>4 wk</span><span class="dt">8/8</span><span class="gap">28 days<br>4 wk</span><span class="dt">9/5</span><span class="gap">35 days<br>5 wk</span><span class="dt">10/10</span><span class="gap">28 days<br>4 wk</span><span class="dt">11/7</span><span class="gap">35 days<br>5 wk</span><span class="dt">12/12</span>
+      </div>
+      <p>How to remember them:</p>
       <div class="dd-dates">
         <div><b>4/4, 6/6, 8/8, 10/10, 12/12</b><span>Even months: the day matches the month.</span></div>
         <div><b>9/5, 5/9, 7/11, 11/7</b><span>“I work <b>9 to 5</b> at the <b>7-Eleven</b>”: each pair works either way round.</span></div>
@@ -520,8 +612,11 @@ ol.ddsteps li{margin:6px 0}
         <div><b>Last day of February</b><span>The 28th, or the 29th in a leap year.</span></div>
         <div><b>Bonus anchors</b><span>July 4, Halloween (10/31) and Boxing Day (12/26) are doomsdays too.</span></div>
       </div>
-      <h3>Step 4: count to your date</h3>
-      <p>Find the doomsday date nearest your date in the same month, and count the difference mod 7. Christmas: 12/12 is a doomsday, and 25 − 12 = 13 ≡ 6, so Christmas is 6 days after the doomsday, or 1 day before it.</p>
+
+      <h3>Step 4: count to your date, <span class="t-d">d − D(m)</span></h3>
+      <div class="math">weekday = (doomsday of the year + d − D(m)) mod 7</div>
+      <p>Christmas 2026: the year's doomsday is Saturday (6), and December's doomsday date is the 12th, so <var>(6 + 25 − 12) mod 7 = 19 mod 7 = 5</var>, a <b>Friday</b>. Going backwards works the same way: December 1 gives <var>(6 + 1 − 12) mod 7 = −5 mod 7 = 2</var>, a <b>Tuesday</b>. (−5 mod 7 is 2, just as going back 5 hours on a 7-position clock lands on 2.)</p>
+      <p>All in one line, for Christmas 2026: <var><span class="t-a">2</span> + <span class="t-y">26 + 6</span> + <span class="t-d">25 − 12</span> = 47</var>, and <var>47 mod 7 = 5</var>, Friday.</p>
       <p class="help">Leap years: every year divisible by 4, except century years, unless they're divisible by 400 (so 2000 was a leap year, and 1900 wasn't). The rule uses the Gregorian calendar, which most of Europe adopted in 1582 and Britain and its colonies in 1752. Earlier dates in those places were recorded in the Julian calendar, so a historical date may not match.</p>
     </div>
 
@@ -532,7 +627,10 @@ ol.ddsteps li{margin:6px 0}
       <button class="btn small" type="button" id="dd-today">Today</button>
     </div>
     <div class="out" id="dd-out" aria-live="polite"></div>
-    <ol class="ddsteps" id="dd-steps"></ol>
+    <div class="dd-work">
+      <div class="wheel-wrap"><svg id="dd-wheel" viewBox="0 0 240 240" role="img" aria-label="The steps on a 7-day clock"></svg></div>
+      <div class="dd-right"><div class="fline small" id="dd-fline"></div><ol class="ddsteps" id="dd-steps"></ol></div>
+    </div>
     <details class="more">
       <summary>The same answer from one formula (Zeller's congruence)</summary>
       <div class="explain"><p>Christian Zeller's 1882 formula does the whole thing in one line. Treat January and February as months 13 and 14 of the previous year. With <var>q</var> the day, <var>m</var> the month, <var>K</var> the year's last two digits and <var>J</var> its first two:</p></div>
@@ -731,9 +829,37 @@ ol.ddsteps li{margin:6px 0}
     const dd = DOOM(m, y), w = modN(yd + d - dd, 7);
     return { anchor, T, a, b, c, yd, dd, w };
   }
-  $('#anchors').innerHTML = [1600, 1700, 1800, 1900, 2000, 2100, 2200, 2300].map((c) => `<span class="anc"><b>${c}s</b>${DAYS[anchorOf(c)]}</span>`).join('');
+  (function yearStrip(){
+    let h = '';
+    for (let y = 0; y <= 12; y++) {
+      const dd = (anchorOf(2000) + y + Math.floor(y / 4)) % 7;
+      if (y) { const jump = leap(2000 + y) ? 2 : 1; h += `<span class="yj${jump === 2 ? ' two' : ''}">+${jump}${jump === 2 ? '<small>leap</small>' : ''}</span>`; }
+      h += `<span class="yc${leap(2000 + y) ? ' lp' : ''}"><b>${2000 + y}</b>${DAYS[dd].slice(0, 3)}</span>`;
+    }
+    $('#ystrip').innerHTML = h;
+  })();
   $('#dd-m').innerHTML = MONTHS.map((n, i) => `<option value="${i + 1}">${n}</option>`).join('');
   $('#dd-m').value = '12';
+  function drawWheel(r){
+    const cx = 120, cy = 120, R = 88, pt = (k, rr) => { const a = (k / 7) * 2 * Math.PI - Math.PI / 2; return [cx + rr * Math.cos(a), cy + rr * Math.sin(a)]; };
+    const arc = (from, steps, rr, cls) => {
+      if (!steps) return '';
+      let d = ''; for (let i = 0; i <= steps * 10; i++) { const [x, y] = pt(from + i / 10, rr); d += (i ? 'L' : 'M') + x.toFixed(1) + ' ' + y.toFixed(1); }
+      const [lx, ly] = pt(from + steps / 2, rr + (cls === 'a1' ? 13 : -13));
+      return `<path d="${d}" class="${cls}"/><text x="${lx}" y="${ly}" class="al ${cls}" text-anchor="middle" dominant-baseline="central">+${steps}</text>`;
+    };
+    const s1 = modN(r.yd - r.anchor, 7), s2 = r.w;
+    let h = `<circle cx="${cx}" cy="${cy}" r="${R + 18}" class="face"/>`;
+    h += arc(r.anchor, s1, R + 4, 'a1') + arc(r.yd, modN(r.w - r.yd, 7), R - 22, 'a2');
+    for (let k = 0; k < 7; k++) {
+      const [dx, dy] = pt(k, R - 4);
+      const cls = k === r.w ? 'dw ans' : k === r.yd ? 'dw dd' : k === r.anchor ? 'dw anc' : 'dw';
+      h += `<circle cx="${dx}" cy="${dy}" r="15" class="${cls}"/><text x="${dx}" y="${dy}" class="wl${k === r.w ? ' on' : ''}" text-anchor="middle" dominant-baseline="central">${DAYS[k].slice(0, 3)}</text>`;
+    }
+    h += `<text x="${cx}" y="${cy - 8}" class="wc" text-anchor="middle">${DAYS[r.w]}</text><text x="${cx}" y="${cy + 12}" class="wc2" text-anchor="middle">${(s2 + 7) % 7}</text>`;
+    $('#dd-wheel').innerHTML = h;
+    $('#dd-wheel').setAttribute('aria-label', `On a 7-day clock: start at ${DAYS[r.anchor]}, move ${s1} to the doomsday ${DAYS[r.yd]}, then ${modN(r.w - r.yd, 7)} more to ${DAYS[r.w]}.`);
+  }
   function doDoom(){
     const y = int($('#dd-y'), 1, 9999, 2026), m = +$('#dd-m').value, d = int($('#dd-d'), 1, 31, 1);
     if (d > dim(m, y)) { $('#dd-out').innerHTML = `<p>${MONTHS[m - 1]} ${y} has only ${dim(m, y)} days.</p>`; $('#dd-steps').innerHTML = ''; $('#zeller').textContent = ''; return; }
@@ -741,13 +867,16 @@ ol.ddsteps li{margin:6px 0}
     $('#dd-out').innerHTML = `<p class="big">${MONTHS[m - 1]} ${d}, ${y} is a <b>${DAYS[r.w]}</b>.</p>`;
     const odd = (() => { let t = r.T; const s = [String(t)]; if (t % 2) { t += 11; s.push(`odd, +11 → ${t}`); } t /= 2; s.push(`halve → ${t}`); if (t % 2) { t += 11; s.push(`odd, +11 → ${t}`); } const m7 = t % 7; s.push(`mod 7 → ${m7}`); s.push(`7 − ${m7} → ${(7 - m7) % 7}`); return s.join(', '); })();
     const diff = d - r.dd;
+    const ys = r.T + Math.floor(r.T / 4), total = r.anchor + ys + diff;
+    $('#dd-fline').innerHTML = `weekday = (<span class="t-a">${r.anchor}</span> + <span class="t-y">${r.T} + ${Math.floor(r.T / 4)}</span> + <span class="t-d">${d} − ${r.dd}</span>) mod 7 = ${String(total).replace('-', '−')} mod 7 = <b>${r.w}</b>, ${DAYS[r.w]}`;
     $('#dd-steps').innerHTML = [
-      `<b>Anchor day for the ${c * 100}s:</b> (5 × (${c} mod 4) + 2) mod 7 = ${r.anchor}, a <b>${DAYS[r.anchor]}</b> (“${NICK[r.anchor]}”).`,
-      `<b>Last two digits:</b> ${r.T}. Twelves: ${r.a}, remainder ${r.b}, fours in the remainder: ${r.c}. Total ${r.a} + ${r.b} + ${r.c} = ${r.a + r.b + r.c}.<br><span class="help">Or “odd + 11”: ${odd}.</span>`,
-      `<b>Doomsday for ${y}:</b> ${DAYS[r.anchor]} + ${r.a + r.b + r.c} = (${r.anchor} + ${r.a + r.b + r.c}) mod 7 = ${r.yd}, a <b>${DAYS[r.yd]}</b>.${leap(y) ? ` (${y} is a leap year.)` : ''}`,
-      `<b>Nearest doomsday date in ${MONTHS[m - 1]}:</b> the ${r.dd}${['th','st','nd','rd'][(r.dd % 10 > 3 || [11,12,13].includes(r.dd)) ? 0 : r.dd % 10]} (${DOOM_WHY[m - 1]}), a ${DAYS[r.yd]}.`,
-      `<b>Count:</b> ${d} − ${r.dd} = ${diff}${diff < 0 || diff >= 7 ? `, and ${diff} mod 7 = ${modN(diff, 7)}` : ''}, so ${modN(diff, 7) === 0 ? 'it’s the same day' : `${modN(diff, 7)} day${modN(diff, 7) === 1 ? '' : 's'} after ${DAYS[r.yd]}`}: <b>${DAYS[r.w]}</b>.`
+      `<b>Anchor:</b> <var>c = ${c}</var>, so <var class="t-a">A = (5 × (${c} mod 4) + 2) mod 7 = (5 × ${c % 4} + 2) mod 7 = ${r.anchor}</var>, ${DAYS[r.anchor]} (“${NICK[r.anchor]}”).`,
+      `<b>Year shift:</b> <var>y = ${r.T}</var>, so <var class="t-y">${r.T} + ⌊${r.T}/4⌋ = ${r.T} + ${Math.floor(r.T / 4)} = ${ys}</var>, and ${ys} mod 7 = ${ys % 7}.<br><span class="help">Twelves: ${r.a} + ${r.b} + ${r.c} = ${r.a + r.b + r.c}. Odd + 11: ${odd}.</span>`,
+      `<b>Doomsday for ${y}:</b> (${r.anchor} + ${ys % 7}) mod 7 = ${r.yd}, a <b>${DAYS[r.yd]}</b>.${leap(y) ? ` (${y} is a leap year.)` : ''}`,
+      `<b>Month:</b> <var class="t-d">D(${m}) = ${r.dd}</var> (${DOOM_WHY[m - 1]}), so <var class="t-d">d − D(m) = ${d} − ${r.dd} = ${String(diff).replace('-', '−')}</var>.`,
+      `<b>Answer:</b> (${r.yd} + ${String(diff).replace('-', '−')}) mod 7 = ${r.w}: <b>${DAYS[r.w]}</b>.`
     ].map((x) => `<li>${x}</li>`).join('');
+    drawWheel(r);
     // Zeller
     let Y = y, M = m; if (M < 3) { M += 12; Y -= 1; }
     const K = Y % 100, J = Math.floor(Y / 100), t1 = Math.floor(13 * (M + 1) / 5), sum = d + t1 + K + Math.floor(K / 4) + Math.floor(J / 4) + 5 * J, h = sum % 7;

@@ -246,6 +246,8 @@ footer a{color:inherit}
 .choice input{margin:4px 0 0;width:17px;height:17px;flex:none}
 .choice var{font-family:"IBM Plex Mono",monospace;font-style:normal;font-weight:600}
 .num.small{font-size:13px;color:var(--muted);font-weight:400}
+var{overflow-wrap:anywhere}
+.conv-opts input[type=number]{width:5.5em;border:1px solid var(--line-strong);border-radius:6px;background:var(--surface);padding:6px 8px;font-size:15px;color:var(--ink);font-family:"IBM Plex Mono",monospace}
 details.more > summary var{font-family:"IBM Plex Mono",monospace;font-style:normal}
 .next{margin-top:14px;border:1px solid var(--line);border-left:4px solid var(--brass);border-radius:8px;padding:10px 14px;background:var(--surface-2);color:var(--ink-2)}
 .next h3{font-family:"Barlow Condensed",sans-serif;font-weight:600;font-size:18px;letter-spacing:.06em;text-transform:uppercase;color:var(--ink);margin:2px 0 6px}
@@ -360,7 +362,7 @@ Bob:   s = A^b = 8^15 mod 23 = 2    (the same)  ✓</div>
       <ul class="checks" id="ck-s" aria-live="polite"></ul>
       <div class="next" id="next" hidden>
         <h3>What happens next</h3>
-        <p>Diffie–Hellman only <b>agrees on a key</b>; it doesn't encrypt anything. If the puzzle also gives a message, that message is probably still encrypted, with another cipher that uses <var>s</var> as its key. In a puzzle that's often a classical cipher. The key may be all of <var>s</var>, just its digits, or part of it, so look at how the puzzle describes the message. That cipher is the next thing to work out.</p>
+        <p>Diffie–Hellman only <b>agrees on a key</b>; it doesn't encrypt anything. If the puzzle also gives a message, that message is probably still encrypted, with another cipher that uses <var>s</var> as its key. In a puzzle that's often a classical cipher. The key might be the whole number <var>s</var>, only some of its digits (the first few, say), or <var>s</var> turned into letters, so look at how the puzzle describes the message. That cipher is the next thing to work out.</p>
       </div>
     </div>
   </section>
@@ -1304,18 +1306,32 @@ onmessage=function(ev){const m=ev.data;try{
   }
 
   /* ---------- message reader: renders into a container, keeps its options in state.cv ---------- */
+  // 3-digit blocks: ASCII and Latin-1 (ß is 223). 4-digit blocks: any Unicode character (Cyrillic, Greek, …).
+  const printable = (v, size) => size === 3 ? (v >= 32 && v <= 126) || (v >= 160 && v <= 255) : v >= 32 && v <= 0x10FFFF && !(v >= 127 && v < 160) && !(v >= 0xD800 && v <= 0xDFFF);
+  function coordsFrom(s){ // two common layouts of coordinates written as plain digits
+    const out = [];
+    const fit = (lat, lm, lon, om) => lat <= 90 && lm < 60 && lon <= 180 && om < 60;
+    if (s.length >= 15) { const lat = +s.slice(0, 2), lm = +s.slice(2, 7) / 1000, lon = +s.slice(7, 10), om = +s.slice(10, 15) / 1000;
+      out.push({ n: 15, text: `${s.slice(0, 2)}° ${s.slice(2, 4)}.${s.slice(4, 7)}′  ${s.slice(7, 10)}° ${s.slice(10, 12)}.${s.slice(12, 15)}′`, ok: fit(lat, lm, lon, om), rest: s.slice(15), how: '2 + 5 digits, then 3 + 5 digits (longitude written with 3 degree digits, like 077°)' }); }
+    if (s.length >= 14) { const lat = +s.slice(0, 2), lm = +s.slice(2, 7) / 1000, lon = +s.slice(7, 9), om = +s.slice(9, 14) / 1000;
+      out.push({ n: 14, text: `${s.slice(0, 2)}° ${s.slice(2, 4)}.${s.slice(4, 7)}′  ${s.slice(7, 9)}° ${s.slice(9, 11)}.${s.slice(11, 14)}′`, ok: fit(lat, lm, lon, om), rest: s.slice(14), how: '2 + 5 digits, then 2 + 5 digits (longitude written with 2 degree digits, like 77°)' }); }
+    return out;
+  }
   function reader(root, st, onChange){
+    if (typeof st.cv.skip !== 'number') st.cv.skip = 0;
     root.innerHTML = `
       <div class="conv-opts">
         <label>Reading
           <select data-r="mode">
             <option value="digits">Digits as they are</option>
-            <option value="ascii3">Blocks of 3 digits → ASCII (072 = H)</option>
-            <option value="ascii4">Blocks of 4 digits → ASCII (0072 = H)</option>
+            <option value="coords">Digits as coordinates</option>
+            <option value="ascii3">Blocks of 3 digits → character codes (072 = H)</option>
+            <option value="ascii4">Blocks of 4 digits → character codes (0072 = H)</option>
             <option value="az2">Blocks of 2 digits → letters (01 = A … 26 = Z)</option>
             <option value="hex">Hexadecimal bytes → text</option>
           </select>
         </label>
+        <label>Skip the first <input type="number" data-r="skip" min="0" max="999" value="0" inputmode="numeric"> digits</label>
         <label>Line blocks up from
           <select data-r="align"><option value="left">The start</option><option value="right">The end</option></select>
         </label>
@@ -1329,40 +1345,59 @@ onmessage=function(ev){const m=ev.data;try{
     q('mode').addEventListener('change', (e) => { st.cv.mode = e.target.value; onChange(); });
     q('align').addEventListener('change', (e) => { st.cv.align = e.target.value; onChange(); });
     q('pad').addEventListener('change', (e) => { st.cv.pad = e.target.checked; onChange(); });
+    q('skip').addEventListener('input', (e) => { const v = parseInt(e.target.value, 10); st.cv.skip = Number.isFinite(v) && v > 0 ? Math.min(v, 999) : 0; onChange(); });
     q('copy').addEventListener('click', () => copy(q('text').textContent));
     return function render(m){
-      const { mode, align, pad } = st.cv;
+      const { mode, align, pad } = st.cv, skip = st.cv.skip || 0;
       q('mode').value = mode; q('align').value = align; q('pad').checked = pad;
+      if (document.activeElement !== q('skip')) q('skip').value = skip;
       const checks = [], chips = []; let text = '';
       const blocky = mode === 'ascii3' || mode === 'ascii4' || mode === 'az2';
-      q('pad').disabled = !blocky; q('align').disabled = !blocky;
+      q('pad').disabled = !blocky || skip > 0; q('align').disabled = !blocky || skip > 0; q('skip').disabled = !(blocky || mode === 'coords');
+      const all = m.toString();
+      const skipped = (blocky || mode === 'coords') && skip ? all.slice(0, skip) : '';
+      const body = (blocky || mode === 'coords') && skip ? all.slice(skip) : all;
+      if (skipped) chips.push({ d: skipped.length > 12 ? skipped.slice(0, 6) + '…' + skipped.slice(-3) : skipped, t: 'skipped', odd: true });
+      if (skip && skip >= all.length) checks.push(['warn', `There are only ${plural(all.length, 'digit')}, so skipping ${skip} leaves nothing to read.`]);
       if (mode === 'digits') {
-        const s = m.toString(); for (let i = 0; i < s.length; i += 3) chips.push({ d: s.slice(i, i + 3), t: '' }); text = s;
+        for (let i = 0; i < all.length; i += 3) chips.push({ d: all.slice(i, i + 3), t: '' }); text = all;
+      } else if (mode === 'coords') {
+        const opts = coordsFrom(body);
+        if (!opts.length) checks.push(['warn', `Coordinates need at least 14 digits, and there ${body.length === 1 ? 'is' : 'are'} only ${body.length}.`]);
+        for (const o of opts) checks.push([o.ok ? 'ok' : 'info', `<b>${o.n}-digit layout:</b> <span class="num">${esc(o.text)}</span>. ${o.how}. ${o.ok ? 'The degrees and minutes are in range.' : 'Some part is out of range (minutes must be under 60, latitude at most 90°), so this layout probably isn’t it.'}${o.rest ? ` The ${plural(o.rest.length, 'digit')} after it may be a message: try a block reading with “skip the first ${skip + o.n} digits”.` : ''}`]);
+        if (opts.length) checks.push(['info', 'Add the hemispheres (N or S, E or W) from where the cache is. If no layout fits, the coordinates may start later in the number, or this may be the wrong reading.']);
+        const best = opts.find((o) => o.ok) || opts[0];
+        text = best ? best.text : body;
+        for (let i = 0; i < body.length; i += 3) chips.push({ d: body.slice(i, i + 3), t: '' });
       } else if (mode === 'hex') {
         let h = m.toString(16); if (h.length % 2) h = '0' + h;
         for (let i = 0; i < h.length; i += 2) { const b = parseInt(h.slice(i, i + 2), 16), pr = b >= 32 && b < 127; chips.push({ d: h.slice(i, i + 2), t: pr ? String.fromCharCode(b) : '·', odd: !pr }); text += pr ? String.fromCharCode(b) : '·'; }
         checks.push(['info', 'This is how real systems store text: the number is written in base 16 and each pair of hex digits is one byte.']);
       } else {
         const size = mode === 'ascii3' ? 3 : mode === 'ascii4' ? 4 : 2;
-        let s = m.toString(); const rem = s.length % size; let padded = 0;
-        if (rem) {
-          if (pad && align === 'left') { padded = size - rem; s = '0'.repeat(padded) + s; checks.push(['info', `The number has ${plural(m.toString().length, 'digit')}, not a multiple of ${size}, so ${padded === 1 ? 'a zero has' : padded + ' zeros have'} been put back on the front. A number can’t start with 0, so if the message began with a block like <b>${mode === 'ascii3' ? '072' : mode === 'ascii4' ? '0072' : '08'}</b>, that zero vanished when the message was turned into a number. Untick the box to see it without.`]); }
-          else if (align === 'left') checks.push(['warn', `The number has ${plural(m.toString().length, 'digit')}, not a multiple of ${size}, so the last block is short. If the reading looks off, tick “put back a missing leading zero”.`]);
+        let s = body; const rem = s.length % size; let padded = 0;
+        if (rem && !skip) {
+          if (pad && align === 'left') { padded = size - rem; s = '0'.repeat(padded) + s; checks.push(['info', `The number has ${plural(all.length, 'digit')}, not a multiple of ${size}, so ${padded === 1 ? 'a zero has' : padded + ' zeros have'} been put back on the front. A number can’t start with 0, so if the message began with a block like <b>${mode === 'ascii3' ? '072' : mode === 'ascii4' ? '0072' : '08'}</b>, that zero vanished when the message was turned into a number. Untick the box to see it without.`]); }
+          else if (align === 'left') checks.push(['warn', `The number has ${plural(all.length, 'digit')}, not a multiple of ${size}, so the last block is short. If the reading looks off, tick “put back a missing leading zero”.`]);
         }
         const blocks = [];
-        if (align === 'right' && s.length % size) { blocks.push({ d: s.slice(0, s.length % size), lead: true }); s = s.slice(s.length % size); }
+        if (align === 'right' && !skip && s.length % size) { blocks.push({ d: s.slice(0, s.length % size), lead: true }); s = s.slice(s.length % size); }
         for (let i = 0; i < s.length; i += size) blocks.push({ d: s.slice(i, i + size) });
         if (blocks[0] && blocks[0].lead) checks.push(['info', `Blocks are lined up from the end, which leaves <b>${blocks[0].d}</b> on its own at the front.`]);
+        let high = false, shortLast = null;
         blocks.forEach((b, i) => {
           const v = parseInt(b.d, 10); let t, odd = false;
-          if (b.lead || b.d.length < size) { t = '…'; odd = true; }
-          else if (mode !== 'az2') { if (v >= 32 && v < 127) t = String.fromCharCode(v); else { t = '·'; odd = true; } }
+          if (b.lead) { t = '…'; odd = true; }
+          else if (b.d.length < size) { odd = true; t = mode !== 'az2' && printable(v, size) ? String.fromCodePoint(v) : mode === 'az2' && v >= 1 && v <= 26 ? String.fromCharCode(64 + v) : '…'; if (t !== '…') shortLast = t; }
+          else if (mode !== 'az2') { if (printable(v, size)) { t = String.fromCodePoint(v); if (v > 126) high = true; } else { t = '·'; odd = true; } }
           else if (v >= 1 && v <= 26) t = String.fromCharCode(64 + v); else if (v === 0) { t = '␣'; odd = true; } else { t = '·'; odd = true; }
           chips.push({ d: b.d, t, odd, pad: i === 0 && padded > 0 });
-          text += odd ? (t === '␣' ? ' ' : '·') : t;
+          text += odd ? (t === '␣' ? ' ' : t === shortLast ? t : '·') : t;
         });
-        const oddCount = chips.filter((c) => c.odd).length;
-        if (oddCount > chips.length / 3) checks.push(['warn', `${oddCount} of ${chips.length} blocks don’t turn into a ${mode === 'az2' ? 'letter' : 'printable character'}. This may not be the right reading: try another, or line the blocks up from the other end.`]);
+        if (shortLast) checks.push(['info', `The last block is short (fewer than ${size} digits). Read as it is, it’s “${esc(shortLast)}”; some puzzles end that way on purpose.`]);
+        if (mode !== 'az2') checks.push(['info', `Codes 32 to 126 are ordinary ASCII (letters, digits, punctuation). ${size === 3 ? 'Codes 160 to 255 add accented letters such as ß (223). Other alphabets need 4-digit blocks.' : 'Higher codes are other Unicode characters, such as the Cyrillic М (1052) or the Greek Ω (937).'}${high ? ' This reading uses some of them.' : ''}`]);
+        const blockChips = chips.filter((c) => c.t !== 'skipped'), oddCount = blockChips.filter((c) => c.odd).length;
+        if (oddCount > blockChips.length / 3) checks.push(['warn', `${oddCount} of ${blockChips.length} blocks don’t turn into a ${mode === 'az2' ? 'letter' : 'character'}. If part of the number is plain digits (coordinates, say), only the rest will read as text: try “Digits as coordinates”, or skip the digits before the text. Otherwise try another reading, or line the blocks up from the other end.`]);
       }
       q('checks').innerHTML = checks.map(([l, h]) => li(l, h)).join('');
       q('chips').innerHTML = chips.map((c) => `<span class="chip${c.odd ? ' odd' : ''}${c.pad ? ' pad' : ''}"><span class="d">${esc(c.d)}</span>${c.t !== '' ? `<span class="t">${esc(c.t)}</span>` : ''}</span>`).join('');

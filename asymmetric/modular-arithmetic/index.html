@@ -354,6 +354,18 @@ table.ftab td:last-child{text-align:left}
 #dd-wheel .wc{font:600 16px "Barlow Condensed",sans-serif;fill:var(--ink)}
 #dd-wheel .wc2{font:600 13px "IBM Plex Mono",monospace;fill:var(--muted)}
 .dd-right{min-width:0}
+.try{border:1px dashed var(--line-strong);border-radius:10px;padding:10px 14px;margin:14px 0 2px;background:var(--surface)}
+.try ol{margin:6px 0 0;padding-left:22px;display:flex;flex-direction:column;gap:8px}
+.try li{color:var(--ink-2)}
+.try li > span{display:block}
+.try details{margin-top:3px}
+.try summary{cursor:pointer;color:var(--accent);font-size:14px;font-weight:500}
+.try details p{margin:4px 0 0;color:var(--ink)}
+.try var,.explain var{font-family:"IBM Plex Mono",monospace;font-style:normal;font-weight:600}
+table tr.hit td{background:var(--accent-soft);font-weight:600}
+table.ftab tr.none td{color:var(--muted)}
+#iv-table,#fp-table{font-size:13.5px}
+
 .defbox{border:1px solid var(--line);border-left:4px solid var(--accent);border-radius:10px;background:var(--surface-2);padding:6px 12px 4px;margin:8px 0}
 .defs{display:grid;grid-template-columns:auto minmax(0,1fr);gap:6px 18px;align-items:baseline;padding:8px 0}
 .defs .dl{font-family:"IBM Plex Mono",monospace;font-size:15px;color:var(--ink);overflow-wrap:anywhere}
@@ -386,7 +398,7 @@ table.ftab td:last-child{text-align:left}
         <h1>Modular <span class="hl">Arithmetic</span> Basics</h1>
         <p>The math behind every asymmetric cryptosystem, starting from something you already use every day: the clock. Everything here is interactive, so change the numbers and see what happens.</p>
       </div>
-      <div class="top-actions"><a class="btn quiet" href="#doomsday">Skip to the calendar trick</a></div>
+      <div class="top-actions"><a class="btn quiet" href="../../day-of-the-week/">The day-of-the-week trick</a></div>
     </div>
   </div>
 </header>
@@ -400,11 +412,16 @@ table.ftab td:last-child{text-align:left}
       <li><a href="#calendar">Clocks, calendars and odometers</a></li>
       <li><a href="#times">Multiplying, and when you can divide</a></li>
       <li><a href="#powers">Powers that go round in circles</a></li>
+      <li><a href="#euler">Fermat, Euler and φ</a></li>
+      <li><a href="#primes">Primes and factoring</a></li>
       <li><a href="#tools">Two tools: fast powers and inverses</a></li>
       <li><a href="#crt">Two clocks at once</a></li>
+      <li><a href="#roots">Square roots on a clock</a></li>
+      <li><a href="#dlog">Why these discrete logs break</a></li>
+      <li><a href="#tiny">Put it together: a tiny RSA</a></li>
       <li><a href="#crypto">How the worksheets use all this</a></li>
-      <li><a href="#doomsday">Bonus: the day of the week for any date</a></li>
     </ol>
+    <p class="help">New to public-key systems? Start with <a href="../symmetric-and-asymmetric/">Symmetric and Asymmetric</a>. For turning a decrypted number back into words or coordinates, see <a href="../letters-to-numbers/">From Letters to Numbers</a>.</p>
   </nav>
 
   <!-- 1 -->
@@ -434,13 +451,14 @@ table.ftab td:last-child{text-align:left}
     <div class="explain">
       <p><var>a mod n</var> is the <b>remainder</b> when you divide <var>a</var> by <var>n</var>. 14 ÷ 12 is 1 with 2 left over, so <var>14 mod 12 = 2</var>. The “1” counts the full laps of the clock, and the remainder is where you end up.</p>
       <p>Every whole number can be written as <var>a = q × n + r</var>, with <var>r</var> between 0 and <var>n − 1</var>. The remainder <var>r</var> is the answer. Negative numbers work too: going back 3 hours from 0 lands on 9, so <var>−3 mod 12 = 9</var>. (Some calculators and programming languages answer −3 instead; on a clock that's the same position.)</p>
-      <p>When two numbers land on the same position, we say they're <b>congruent</b> and write <var>14 ≡ 2 (mod 12)</var>, read “14 is congruent to 2, mod 12”. Every puzzle number in the worksheets is a remainder like this.</p>
+      <p>When two numbers land on the same position, we say they're <b>congruent</b> and write <var>14 ≡ 2 (mod 12)</var>, read “14 is congruent to 2, mod 12”. Every ciphertext, message and shared secret in the worksheets is a remainder like this.</p>
     </div>
     <div class="calc">
       <label><var>a</var> <input type="text" id="md-a" value="-3" inputmode="numeric" spellcheck="false"></label>
       <label><var>n</var> <input type="text" id="md-n" value="12" inputmode="numeric" spellcheck="false"></label>
     </div>
     <div class="out" id="md-out" aria-live="polite"></div>
+    <div class="try"><span class="step">Check yourself</span><ol><li><span>What is 100 mod 7?</span><details><summary>Show answer</summary><p>2, because 100 = 14 × 7 + 2.</p></details></li><li><span>What is −1 mod 12?</span><details><summary>Show answer</summary><p>11. One step back from 0 on a 12-position clock lands on 11.</p></details></li></ol></div>
   </section>
 
   <!-- 3 -->
@@ -474,6 +492,7 @@ table.ftab td:last-child{text-align:left}
     <div class="calc"><label>Modulus <select id="tt-n"></select></label></div>
     <div class="scroll"><table class="tt" id="tt"></table></div>
     <p class="help" id="tt-say"></p>
+    <div class="try"><span class="step">Check yourself</span><ol><li><span>Mod 9, which numbers from 1 to 8 have an inverse?</span><details><summary>Show answer</summary><p>1, 2, 4, 5, 7 and 8: the ones that share no factor with 9. (3 and 6 share the factor 3.)</p></details></li><li><span>What is the inverse of 2, mod 9?</span><details><summary>Show answer</summary><p>5, because 2 × 5 = 10 = 9 + 1. Switch the table to mod 9 and look along row 2.</p></details></li></ol></div>
   </section>
 
   <!-- 5 -->
@@ -481,8 +500,7 @@ table.ftab td:last-child{text-align:left}
     <div class="panel-head"><span class="step">5</span><h2 id="h-pow">Powers that go round in circles</h2></div>
     <div class="explain">
       <p>Keep multiplying by the same number and the remainders eventually repeat. Powers of 3 mod 7 go 3, 2, 6, 4, 5, 1, and then start again. The length of the loop is the <b>order</b> of 3. Here, 3 visits every non-zero position before repeating, so it's called a <b>generator</b>.</p>
-      <p><b>Fermat's little theorem:</b> if <var>p</var> is prime and <var>a</var> isn't a multiple of it, then <var>a<sup>p−1</sup> ≡ 1 (mod p)</var>, so the loop length always divides <var>p − 1</var>. Euler extended this to any modulus with <var>φ(n)</var>, the count of numbers below <var>n</var> that share no factor with it. RSA decryption works because of exactly this.</p>
-      <p>Going forwards is easy: <var>3<sup>5</sup> mod 7 = 5</var>. Going backwards, from “5” to “which power?”, is the <b>discrete logarithm</b>. Here you can just read it off the list. With a 45-digit prime the list would be longer than the number of stars in the observable universe, which is what makes ElGamal, Diffie–Hellman and their cousins secure.</p>
+      <p>Going forwards is easy: <var>3<sup>5</sup> mod 7 = 5</var>. Going backwards, from “5” to “which power?”, is the <b>discrete logarithm</b>. Here you can just read it off the list. For a 45-digit prime the loop can be about 10<sup>45</sup> steps long, far too long to list. In general that's what makes ElGamal, Diffie–Hellman and their cousins secure. Puzzles get around it by choosing primes with a special weakness; section 11 shows what it is.</p>
     </div>
     <div class="calc">
       <label>Base <var>g</var> <input type="number" id="pw-g" value="3" min="1" max="999" inputmode="numeric"></label>
@@ -490,11 +508,59 @@ table.ftab td:last-child{text-align:left}
     </div>
     <div class="chips" id="pw-chips"></div>
     <p class="say" id="pw-say" aria-live="polite"></p>
+    <div class="try"><span class="step">Check yourself</span><ol><li><span>What is the order of 2, mod 11? Is 2 a generator?</span><details><summary>Show answer</summary><p>The powers go 2, 4, 8, 5, 10, 9, 7, 3, 6, 1, so the order is 10. That covers every number from 1 to 10, so yes, 2 is a generator mod 11.</p></details></li><li><span>Using the same list, which power of 2 gives 9, mod 11?</span><details><summary>Show answer</summary><p>The 6th: 2<sup>6</sup> = 64 = 5 × 11 + 9. That backwards question is a discrete logarithm.</p></details></li></ol></div>
   </section>
 
   <!-- 6 -->
+  <section class="panel" id="euler" aria-labelledby="h-euler">
+    <div class="panel-head"><span class="step">6</span><h2 id="h-euler">Fermat, Euler and <var>φ</var></h2></div>
+    <div class="explain">
+      <p><b>Fermat's little theorem.</b> If <var>p</var> is prime and <var>a</var> isn't a multiple of <var>p</var>, then</p>
+      <div class="math">a^(p−1) ≡ 1 (mod p)
+
+example: 3^6 = 729 = 104 × 7 + 1</div>
+      <p>So every loop of powers mod a prime closes within <var>p − 1</var> steps, and its length divides <var>p − 1</var>. Try it in section 5: every order mod 7 is 1, 2, 3 or 6.</p>
+      <p><b>Euler's φ (“phi”).</b> <var>φ(n)</var> counts the numbers from 1 to <var>n</var> that share no factor with <var>n</var>. For <var>n = 15</var> they are 1, 2, 4, 7, 8, 11, 13 and 14, so <var>φ(15) = 8</var>. Two cases come up again and again:</p>
+      <div class="math">φ(p)  = p − 1             (p prime: every smaller number qualifies)
+φ(pq) = (p − 1)(q − 1)    (p and q two different primes)</div>
+      <p>Why the second one: from 1 to <var>pq</var>, the numbers that do share a factor are the <var>q</var> multiples of <var>p</var> and the <var>p</var> multiples of <var>q</var>, and <var>pq</var> itself is counted in both lists. That leaves <var>pq − q − p + 1 = (p − 1)(q − 1)</var>. For 15: 15 − 5 − 3 + 1 = 8.</p>
+      <p><b>Euler's theorem</b> extends Fermat's to any modulus. If <var>a</var> shares no factor with <var>n</var>, then</p>
+      <div class="math">a^φ(n) ≡ 1 (mod n)
+
+example: φ(15) = 8, and 2^8 = 256 = 17 × 15 + 1</div>
+      <p><b>Why RSA decryption works.</b> RSA picks <var>d</var> so that <var>e × d = 1 + k × φ(n)</var> for some whole number <var>k</var>. Then</p>
+      <div class="math">c^d = (m^e)^d
+    = m^(1 + k·φ(n))
+    = m × (m^φ(n))^k
+    ≡ m × 1^k = m      (mod n)</div>
+      <p>Finding <var>d</var> needs <var>φ(n)</var>, and finding <var>φ(n)</var> needs the primes <var>p</var> and <var>q</var>. That's why factoring breaks RSA.</p>
+    </div>
+    <div class="calc"><label><var>n</var> <input type="number" id="ph-n" value="15" min="2" max="1000000" inputmode="numeric"></label></div>
+    <div class="out" id="ph-out" aria-live="polite"></div>
+    <div class="try"><span class="step">Check yourself</span><ol><li><span>What is φ(21)? (21 = 3 × 7)</span><details><summary>Show answer</summary><p>(3 − 1)(7 − 1) = 12.</p></details></li><li><span>Without multiplying it out, what is 5<sup>12</sup> mod 21?</span><details><summary>Show answer</summary><p>1, by Euler’s theorem: 5 shares no factor with 21, and 12 = φ(21).</p></details></li></ol></div>
+  </section>
+
+  <!-- 7 -->
+  <section class="panel" id="primes" aria-labelledby="h-primes">
+    <div class="panel-head"><span class="step">7</span><h2 id="h-primes">Primes and factoring</h2></div>
+    <div class="explain">
+      <p>A <b>prime</b> has no factors except 1 and itself: 2, 3, 5, 7, 11, 13, … Every whole number splits into primes in exactly one way, for example <var>360 = 2<sup>3</sup> × 3<sup>2</sup> × 5</var>.</p>
+      <p>The <b>greatest common divisor</b>, <var>gcd(a, b)</var>, is the biggest number that divides both. When it's 1, the numbers “share no factor” (they're <b>coprime</b>), and that's the condition behind inverses (section 4) and Euler's theorem (section 6). Euclid's algorithm finds it without factoring anything; section 8 shows the steps.</p>
+      <p><b>φ from the factors.</b> Once you know the primes, φ is quick: multiply <var>n</var> by <var>(1 − 1/p)</var> for each different prime <var>p</var>. For 360: <var>360 × ½ × ⅔ × ⅘ = 96</var>. With two primes this is the <var>(p − 1)(q − 1)</var> from section 6.</p>
+      <p><b>Why factoring is hard.</b> The simplest method tries dividing by every number up to <var>√n</var>. That's instant for the 15-digit numbers below, but a 45-digit number would need about 10<sup>22</sup> tries. Cleverer methods, like the quadratic sieve the worksheets use, split 45 digits in about a second. They still slow down steeply: the largest RSA challenge number factored so far, 250 digits, took about 2,700 CPU-core-years in 2020, and real keys are around 600 digits.</p>
+    </div>
+    <div class="calc"><label>Factor <input type="text" id="fa-n" value="360" inputmode="numeric" spellcheck="false"></label></div>
+    <div class="out" id="fa-out" aria-live="polite"></div>
+    <div class="calc">
+      <label>gcd of <input type="text" id="gc-a" value="84" inputmode="numeric" spellcheck="false"></label>
+      <label>and <input type="text" id="gc-b" value="360" inputmode="numeric" spellcheck="false"></label>
+    </div>
+    <div class="out" id="gc-out" aria-live="polite"></div>
+  </section>
+
+  <!-- 8 -->
   <section class="panel" id="tools" aria-labelledby="h-tools">
-    <div class="panel-head"><span class="step">6</span><h2 id="h-tools">Two tools: fast powers and inverses</h2></div>
+    <div class="panel-head"><span class="step">8</span><h2 id="h-tools">Two tools: fast powers and inverses</h2></div>
     <h3>Square and multiply</h3>
     <div class="explain">
       <p>Working out <var>7<sup>560</sup> mod 561</var> by multiplying 7 by itself 559 times is slow, and a 45-digit exponent would take forever. Instead, square repeatedly (<var>7, 7<sup>2</sup>, 7<sup>4</sup>, 7<sup>8</sup>, …</var>, taking the remainder each time), and multiply together the squares matching the 1s in the exponent written in binary. A 45-digit exponent needs only about 150 squarings. Big numbers work in these boxes.</p>
@@ -509,7 +575,9 @@ table.ftab td:last-child{text-align:left}
 
     <h3>The extended Euclidean algorithm</h3>
     <div class="explain">
-      <p>To find an inverse, run Euclid's algorithm for the greatest common divisor: divide, keep the remainder, repeat. If it ends at 1, the inverse exists, and keeping track of the multipliers along the way gives it to you. This is how RSA's private exponent <var>d</var> is found from <var>e</var>.</p>
+      <p>To find an inverse, run Euclid's algorithm for the greatest common divisor: divide, keep the remainder, repeat. If the remainders reach 1, the inverse exists. Alongside each remainder the table keeps a <b>multiplier</b>, chosen so that</p>
+      <div class="math">remainder ≡ multiplier × a   (mod n)</div>
+      <p>Each new multiplier is the one from two rows up, minus “goes in” times the one from the row above. Start with 0 for <var>n</var> and 1 for <var>a</var>. On the row where the remainder is 1, the multiplier is the inverse. If it's negative, add <var>n</var>: for 7 mod 40 that row says −17, and −17 + 40 = 23. This is how RSA's private exponent <var>d</var> is found from <var>e</var>.</p>
     </div>
     <div class="calc">
       <label>Inverse of <var>a</var> <input type="text" id="iv-a" value="7" inputmode="numeric" spellcheck="false"></label>
@@ -519,9 +587,9 @@ table.ftab td:last-child{text-align:left}
     <div class="scroll"><table id="iv-table"></table></div>
   </section>
 
-  <!-- 7 -->
+  <!-- 9 -->
   <section class="panel" id="crt" aria-labelledby="h-crt">
-    <div class="panel-head"><span class="step">7</span><h2 id="h-crt">Two clocks at once</h2></div>
+    <div class="panel-head"><span class="step">9</span><h2 id="h-crt">Two clocks at once</h2></div>
     <div class="explain">
       <p>Picture a 3-hour clock and a 5-hour clock ticking together. Which count shows 2 on the first and 3 on the second? Counting up: 8 (8 mod 3 = 2, 8 mod 5 = 3). Because 3 and 5 share no factor, the pair of positions repeats only every 3 × 5 = 15 ticks, so 8 is the only answer between 0 and 14.</p>
       <p>That's the <b>Chinese Remainder Theorem</b> (CRT): knowing a number modulo several moduli that share no factors pins it down modulo their product. Cryptosystems use it to split one big calculation into smaller ones, mod <var>p</var> and mod <var>q</var>, and glue the answers back together.</p>
@@ -532,153 +600,97 @@ table.ftab td:last-child{text-align:left}
     </div>
     <div class="out" id="cr-out" aria-live="polite"></div>
     <div class="scroll"><div class="ticks" id="cr-ticks"></div></div>
+    <div class="try"><span class="step">Check yourself</span><ol><li><span>Which x from 0 to 35 has x mod 4 = 3 and x mod 9 = 5?</span><details><summary>Show answer</summary><p>23: 23 = 5 × 4 + 3 and 23 = 2 × 9 + 5. Put 4, 3, 9, 5 in the boxes above to check.</p></details></li></ol></div>
   </section>
 
-  <!-- 8 -->
+  <!-- 10 -->
+  <section class="panel" id="roots" aria-labelledby="h-roots">
+    <div class="panel-head"><span class="step">10</span><h2 id="h-roots">Square roots on a clock</h2></div>
+    <div class="explain">
+      <p>Which numbers <var>x</var> have <var>x<sup>2</sup> ≡ a (mod n)</var>? Mod 7, squaring 1 to 6 gives 1, 4, 2, 2, 4, 1, so only 1, 2 and 4 have square roots. Those are called <b>quadratic residues</b> (squares, for short). Mod an odd prime, exactly half the non-zero numbers are squares, and each has two roots, <var>x</var> and <var>p − x</var> (on the clock, <var>x</var> and its mirror image).</p>
+      <p><b>Euler's criterion</b> tells squares from non-squares in one power:</p>
+      <div class="math">a^((p−1)/2) mod p = 1          if a is a square
+a^((p−1)/2) mod p = p − 1      if it isn't (that's −1)
+
+mod 7:  2^3 = 8 ≡ 1        so 2 is a square
+        3^3 = 27 ≡ 6 ≡ −1  so 3 isn't</div>
+      <p><b>The shortcut for primes that leave remainder 3 when divided by 4</b> (like 7, 11, 19, 23):</p>
+      <div class="math">x = a^((p+1)/4) mod p
+
+√2 mod 7:  2^((7+1)/4) = 2^2 = 4,  and 4^2 = 16 ≡ 2 ✓</div>
+      <p>It works because <var>x<sup>2</sup> = a<sup>(p+1)/2</sup> = a × a<sup>(p−1)/2</sup> ≡ a × 1 = a</var>, using Euler's criterion. Other primes need a longer method (Tonelli–Shanks), which the worksheets do for you.</p>
+      <p><b>Mod a product of two primes, a square has four roots.</b> Solve mod each prime, then glue the pieces together with the CRT (section 9). For <var>x<sup>2</sup> ≡ 1 (mod 15)</var>: mod 3 the roots are ±1, mod 5 they're ±1, and the four combinations are:</p>
+      <div class="scroll"><table class="ftab"><thead><tr><th>mod 3</th><th>mod 5</th><th>x mod 15</th></tr></thead><tbody>
+        <tr><td>1</td><td>1</td><td><b>1</b></td></tr><tr><td>1</td><td>4</td><td><b>4</b></td></tr><tr><td>2</td><td>1</td><td><b>11</b></td></tr><tr><td>2</td><td>4</td><td><b>14</b></td></tr>
+      </tbody></table></div>
+      <p>Check: 4<sup>2</sup> = 16, 11<sup>2</sup> = 121 and 14<sup>2</sup> = 196 all leave remainder 1 mod 15. Anyone can square, but finding all four roots needs the two primes. A system that encrypts by squaring rests on exactly that.</p>
+    </div>
+    <div class="calc"><label>Modulus <var>n</var> <input type="number" id="sq-n" value="15" min="2" max="60" inputmode="numeric"></label></div>
+    <div class="scroll"><table class="ftab" id="sq-table"></table></div>
+    <p class="help" id="sq-say"></p>
+    <div class="try"><span class="step">Check yourself</span><ol><li><span>Which numbers are squares mod 11?</span><details><summary>Show answer</summary><p>1, 3, 4, 5 and 9 (from 1<sup>2</sup>, 5<sup>2</sup>, 2<sup>2</sup>, 4<sup>2</sup>, 3<sup>2</sup>, and their mirror images).</p></details></li><li><span>Use the shortcut to find a square root of 3 mod 11.</span><details><summary>Show answer</summary><p>11 leaves remainder 3 when divided by 4, so x = 3<sup>(11+1)/4</sup> = 3<sup>3</sup> = 27 ≡ 5. Check: 5<sup>2</sup> = 25 = 2 × 11 + 3. The other root is 11 − 5 = 6.</p></details></li></ol></div>
+  </section>
+
+  <!-- 11 -->
+  <section class="panel" id="dlog" aria-labelledby="h-dlog">
+    <div class="panel-head"><span class="step">11</span><h2 id="h-dlog">Why these discrete logs break</h2></div>
+    <div class="explain">
+      <p>Finding <var>x</var> with <var>g<sup>x</sup> ≡ h (mod p)</var> is hard in general: the best general methods take about <var>√p</var> steps, around 10<sup>22</sup> for a 45-digit prime. But the loop of powers of <var>g</var> has a length that divides <var>p − 1</var> (section 6), and when <var>p − 1</var> splits into small primes, the <b>Pohlig–Hellman</b> method solves the problem one small prime at a time:</p>
+      <ol>
+        <li>For each prime <var>q</var> dividing <var>p − 1</var>, raise both <var>g</var> and <var>h</var> to the power <var>(p − 1)/q</var>. That pushes both into a loop only <var>q</var> long, where only <var>x mod q</var> matters.</li>
+        <li>Find <var>x mod q</var> by searching that short loop.</li>
+        <li>Glue the answers together with the CRT (section 9).</li>
+      </ol>
+      <p><b>Worked example.</b> Find <var>x</var> with <var>3<sup>x</sup> ≡ 22 (mod 31)</var>. Here <var>p − 1 = 30 = 2 × 3 × 5</var>.</p>
+      <div class="scroll"><table class="ftab"><thead><tr><th>q</th><th>3<sup>30/q</sup> mod 31</th><th>22<sup>30/q</sup> mod 31</th><th>The short loop</th><th>x mod q</th></tr></thead><tbody>
+        <tr><td>2</td><td>30</td><td>30</td><td>1, 30</td><td><b>1</b></td></tr>
+        <tr><td>3</td><td>25</td><td>5</td><td>1, 25, 5</td><td><b>2</b></td></tr>
+        <tr><td>5</td><td>16</td><td>8</td><td>1, 16, 8, 4, 2</td><td><b>2</b></td></tr>
+      </tbody></table></div>
+      <p>Read each answer from the loop's position: 22<sup>15</sup> ≡ 30 is step 1 of the first loop, 5 is step 2 of the second, 8 is step 2 of the third. Then the CRT: <var>x ≡ 1 (mod 2)</var>, <var>x ≡ 2 (mod 3)</var>, <var>x ≡ 2 (mod 5)</var> gives <var>x = 17</var>, and indeed <var>3<sup>17</sup> mod 31 = 22</var>.</p>
+      <p><b>What decides the difficulty</b> is the largest prime factor of <var>p − 1</var>, not the size of <var>p</var>. A 45-digit prime whose <var>p − 1</var> is built from primes of 13 digits or fewer needs only a few million steps per piece. Real systems avoid this by using “safe primes” <var>p = 2q + 1</var> with <var>q</var> prime, so one piece is almost as big as <var>p</var> and the trick gains nothing. The worksheets show the pieces for any prime you give them.</p>
+    </div>
+  </section>
+
+  <!-- 12 -->
+  <section class="panel" id="tiny" aria-labelledby="h-tiny">
+    <div class="panel-head"><span class="step">12</span><h2 id="h-tiny">Put it together: a tiny RSA</h2></div>
+    <div class="explain">
+      <p>Every step of RSA, small enough to check by hand. Work each one out (the widgets above help), then open the answer.</p>
+    </div>
+    <div class="try"><span class="step">Make the keys, then send a message</span><ol>
+      <li><span>Take the primes <var>p = 11</var> and <var>q = 23</var>. What is <var>n = p × q</var>?</span><details><summary>Show answer</summary><p>253.</p></details></li>
+      <li><span>What is <var>φ(n) = (p − 1)(q − 1)</var>? (Section 6.)</span><details><summary>Show answer</summary><p>10 × 22 = 220.</p></details></li>
+      <li><span>Choose <var>e = 3</var>. Does it share a factor with 220? (Section 7's gcd box.)</span><details><summary>Show answer</summary><p>No: gcd(3, 220) = 1, so <var>e = 3</var> works.</p></details></li>
+      <li><span>Find <var>d = 3<sup>−1</sup> mod 220</var>. (Section 8's inverse box.)</span><details><summary>Show answer</summary><p>147, because 3 × 147 = 441 = 2 × 220 + 1.</p></details></li>
+      <li><span>Encrypt <var>m = 100</var>: <var>c = 100<sup>3</sup> mod 253</var>. (Section 8's power box.)</span><details><summary>Show answer</summary><p>144.</p></details></li>
+      <li><span>Decrypt: what is <var>144<sup>147</sup> mod 253</var>?</span><details><summary>Show answer</summary><p>100, the message again.</p></details></li>
+      <li><span>Now be the eavesdropper. You only know <var>n = 253</var>, <var>e = 3</var> and <var>c = 144</var>. What do you do first?</span><details><summary>Show answer</summary><p>Factor 253 (section 7's box): 11 × 23. From there, steps 2, 4 and 6 give you the message. That's everything the RSA worksheet does, with bigger numbers.</p></details></li>
+    </ol></div>
+  </section>
+
+  <!-- 13 -->
   <section class="panel" id="crypto" aria-labelledby="h-crypto">
-    <div class="panel-head"><span class="step">8</span><h2 id="h-crypto">How the worksheets use all this</h2></div>
+    <div class="panel-head"><span class="step">13</span><h2 id="h-crypto">How the worksheets use all this</h2></div>
     <div class="explain">
       <ul class="facts">
-        <li><b>Remainders</b> (sections 1–3): every public number, ciphertext and message is a remainder mod something.</li>
-        <li><b>Inverses</b> (sections 4 and 6): private exponents and “dividing out” a shared secret.</li>
-        <li><b>Powers and their loops</b> (sections 5 and 6): encrypting and decrypting; Fermat's and Euler's theorems are why decryption undoes encryption.</li>
-        <li><b>Discrete logarithms</b> (section 5): the hard problem behind the systems built on powers of a base.</li>
-        <li><b>Factoring</b>: the hard problem behind the systems built on a product of secret primes. Knowing the primes unlocks φ and the CRT.</li>
-        <li><b>The CRT</b> (section 7): splitting work into mod <var>p</var> and mod <var>q</var>, then gluing it back together.</li>
+        <li><b>Remainders</b> (sections 1–3): every ciphertext, message and shared secret is a remainder after dividing by the public modulus.</li>
+        <li><b>Inverses</b> (sections 4 and 8): private exponents, and “dividing out” a shared secret.</li>
+        <li><b>Powers, Fermat and Euler</b> (sections 5, 6 and 8): encrypting and decrypting, and why decryption undoes encryption.</li>
+        <li><b>Factoring and φ</b> (sections 6 and 7): the hard problem behind the systems built on a product of secret primes.</li>
+        <li><b>The CRT</b> (section 9): splitting work into mod <var>p</var> and mod <var>q</var>, then gluing it back together.</li>
+        <li><b>Square roots</b> (section 10): the systems that encrypt by squaring.</li>
+        <li><b>Discrete logarithms</b> (sections 5 and 11): the hard problem behind the systems built on powers of a base, and why puzzle-sized ones break.</li>
+        <li><b>Turning numbers into text</b>: see <a href="../letters-to-numbers/">From Letters to Numbers</a>.</li>
       </ul>
       <p>Which system a puzzle uses, and which of these ideas it leans on, is for you to work out. <a href="../">Back to the worksheets.</a></p>
     </div>
   </section>
 
-  <!-- 9 -->
-  <section class="panel" id="doomsday" aria-labelledby="h-dd">
-    <div class="panel-head"><span class="step">Bonus</span><h2 id="h-dd">The day of the week for any date</h2></div>
+  <section class="panel" id="bonus" aria-labelledby="h-bonus">
+    <div class="panel-head"><span class="step">Bonus</span><h2 id="h-bonus">The calendar is a clock too</h2></div>
     <div class="explain">
-      <p>The calendar is modular arithmetic too, and the mathematician John Conway turned that into a party trick you can do in your head: the <b>Doomsday rule</b>. Each year, a set of easy-to-remember dates all fall on the same day of the week, called that year's <b>doomsday</b>. Find it, then count from the nearest one.</p>
-      <div class="fbox" role="group" aria-label="The whole rule as one formula">
-        <span class="step">The whole rule in one line</span>
-        <div class="fline">weekday = ( <span class="t-a">A(c)</span> + <span class="t-y">S(y)</span> + <span class="t-d">d − D(m)</span> ) mod 7</div>
-        <ul class="legend">
-          <li><span class="t-a">A(c)</span> the century's <b>anchor day</b>, from the first two digits of the year, <var>c</var> (Step 1)</li>
-          <li><span class="t-y">S(y)</span> the year's <b>shift</b>: how far the doomsday has moved since the century began, from the last two digits, <var>y</var> (Step 2)</li>
-          <li><span class="t-d">d − D(m)</span> how far your day <var>d</var> is from <var>D(m)</var>, that month's doomsday date (Steps 3 and 4)</li>
-        </ul>
-        <p class="help">Every piece is just a count of days, and “mod 7” turns a count of days into a day of the week, exactly like the 7-position clock in section 1.</p>
-      </div>
-
-      <h3>Number the days</h3>
-      <p>Sunday = 0, Monday = 1, … Saturday = 6. Conway's memory aids: <b>Noneday</b>, <b>Oneday</b>, <b>Twosday</b>, <b>Treblesday</b>, <b>Foursday</b>, <b>Fiveday</b>, <b>Six-a-day</b>.</p>
-
-      <h3>Step 1: the century's anchor, <span class="t-a">A(c)</span></h3>
-      <div class="math">A(c) = (5 × (c mod 4) + 2) mod 7
-(c = the first two digits of the year)</div>
-      <div class="scroll"><table class="ftab">
-        <thead><tr><th>c mod 4</th><th>5 × (c mod 4) + 2</th><th>mod 7</th><th>Anchor</th><th>Centuries</th></tr></thead>
-        <tbody>
-          <tr><td>0</td><td>2</td><td>2</td><td><b>Tuesday</b></td><td>1600s, 2000s, 2400s</td></tr>
-          <tr><td>1</td><td>7</td><td>0</td><td><b>Sunday</b></td><td>1700s, 2100s</td></tr>
-          <tr><td>2</td><td>12</td><td>5</td><td><b>Friday</b></td><td>1800s, 2200s</td></tr>
-          <tr><td>3</td><td>17</td><td>3</td><td><b>Wednesday</b></td><td>1900s, 2300s</td></tr>
-        </tbody>
-      </table></div>
-      <p><b>Why it works.</b> A century normally has 76 ordinary years and 24 leap years: 76 × 365 + 24 × 366 = 36,524 days, which is 5,217 weeks and <b>5 days</b>. So each new century's doomsday lands 5 days later in the week, and on a 7-day clock, 5 forward is the same as 2 back. That's why the anchors step Tuesday → Sunday → Friday → Wednesday. The step into a year divisible by 400 (like 2000) also picks up that year's extra leap day, so it moves 6 instead of 5, and 5 + 5 + 5 + 6 = 21 days is exactly 3 weeks. The pattern therefore repeats every 400 years. In the formula, the “+ 2” is the starting point (2000 is a Tuesday, day 2), and the “5 ×” is that 5-day step per century.</p>
-      <p>To remember the two you'll use most: 1900 is a <b>We</b>dnesday (“<b>We</b> were born in the 1900s”), and 2000 is a <b>Twos</b>day (“Y<b>2</b>K”).</p>
-
-      <h3>Step 2: the year's shift, <span class="t-y">S(y)</span></h3>
-      <div class="defbox">
-        <div class="defs">
-          <div class="dl">S(y) = y + ⌊y/4⌋</div><div class="dn">the definition</div>
-          <div class="dl"><span class="ind">≡</span> ⌊y/12⌋ + (y mod 12) + ⌊(y mod 12)/4⌋</div><div class="dn">Conway's twelves</div>
-          <div class="dl"><span class="ind">≡</span> (7 − (T₂ mod 7)) mod 7</div><div class="dn">“odd + 11” (T₂ is explained below)</div>
-        </div>
-        <p class="help"><var>y</var> is the last two digits of the year, and ⌊ ⌋ means “round down”: ⌊26/4⌋ = 6. The three lines give different numbers (32, 4 and 4 for 2026), but the same remainder after dividing by 7, which is all that matters on a 7-day clock. That's what ≡ (mod 7) means. Use whichever you find easiest.</p>
-      </div>
-      <div class="math">doomsday of the year = (A(c) + S(y)) mod 7</div>
-      <p><b>Why it works.</b> An ordinary year is 365 days, which is 52 weeks and <b>1 day</b>, so each year's doomsday falls 1 day later in the week than the last. A leap year has 366 days, so the doomsday jumps 2. From the start of the century to year <var>y</var>, that's <var>y</var> one-day steps, plus one extra for each leap year along the way, and there are <var>⌊y/4⌋</var> of those. (A leap year's own extra day counts here, because its February 29 comes before that year's doomsday dates from March onward; Step 3 deals with January and February.)</p>
-      <div class="scroll"><div class="ystrip" id="ystrip"></div></div>
-      <p>For 2026: <var class="t-y">S(26) = 26 + ⌊26/4⌋ = 26 + 6 = 32</var>, and <var>32 mod 7 = 4</var>. Tuesday (2) + 4 = day 6, <b>Saturday</b>, the doomsday for 2026.</p>
-      <p><b>Where the shortcuts come from.</b> Both are <var>y + ⌊y/4⌋</var> rearranged to keep the numbers small:</p>
-      <ul class="facts">
-        <li><b>Conway's twelves.</b> Write <var>y = 12a + r</var> (<var>a</var> twelves, remainder <var>r</var>). Then <var>y + ⌊y/4⌋ = 12a + r + 3a + ⌊r/4⌋ = 15a + r + ⌊r/4⌋</var>. Since 15 = 14 + 1 and 14 is two whole weeks, <var>15a</var> counts the same as <var>a</var>:
-          <div class="math">S(y) ≡ a + r + ⌊r/4⌋
-2026:  a = 2, r = 2, ⌊2/4⌋ = 0   →   2 + 2 + 0 = 4</div></li>
-        <li><b>“Odd + 11”.</b> The same total, rearranged so you only ever halve and add 11:
-          <div class="math">T₁ = y, plus 11 if y is odd
-T₂ = T₁ / 2, plus 11 if that's odd
-S(y) ≡ (7 − (T₂ mod 7)) mod 7
-
-2026:  T₁ = 26 (even, so no +11)
-       T₂ = 26 / 2 = 13, odd, so 13 + 11 = 24
-       S ≡ 7 − (24 mod 7) = 7 − 3 = 4</div></li>
-      </ul>
-
-      <h3>Step 3: the doomsday dates, <span class="t-d">D(m)</span></h3>
-      <div class="scroll"><table class="ftab">
-        <thead><tr><th>Month</th><th>Jan</th><th>Feb</th><th>Mar</th><th>Apr</th><th>May</th><th>Jun</th><th>Jul</th><th>Aug</th><th>Sep</th><th>Oct</th><th>Nov</th><th>Dec</th></tr></thead>
-        <tbody><tr><th scope="row">D(m)</th><td>3 / 4*</td><td>28 / 29*</td><td>14</td><td>4</td><td>9</td><td>6</td><td>11</td><td>8</td><td>5</td><td>10</td><td>7</td><td>12</td></tr></tbody>
-      </table></div>
-      <p class="help">* The second number is for leap years. Only January and February change; see the box below.</p>
-      <p><b>Why they all share a weekday.</b> The gap between each doomsday date and the next is a whole number of weeks, so they all land on the same day of the week:</p>
-      <div class="chain">
-        <span class="dt">2/28</span><span class="gap">14 days<br>2 wk</span><span class="dt">3/14</span><span class="gap">21 days<br>3 wk</span><span class="dt">4/4</span><span class="gap">35 days<br>5 wk</span><span class="dt">5/9</span><span class="gap">28 days<br>4 wk</span><span class="dt">6/6</span><span class="gap">35 days<br>5 wk</span><span class="dt">7/11</span><span class="gap">28 days<br>4 wk</span><span class="dt">8/8</span><span class="gap">28 days<br>4 wk</span><span class="dt">9/5</span><span class="gap">35 days<br>5 wk</span><span class="dt">10/10</span><span class="gap">28 days<br>4 wk</span><span class="dt">11/7</span><span class="gap">35 days<br>5 wk</span><span class="dt">12/12</span>
-      </div>
-      <div class="leapbox" role="group" aria-labelledby="leap-h">
-        <span class="step" id="leap-h">January and February in a leap year</span>
-        <p>The year's doomsday, <var>A(c) + S(y)</var>, already includes that year's February 29. That's right for March to December, which come after the leap day. January and February come <i>before</i> it, so in a leap year their doomsday dates move one day later:</p>
-        <div class="scroll"><table class="ftab">
-          <thead><tr><th></th><th>January doomsdays</th><th>February doomsdays</th></tr></thead>
-          <tbody>
-            <tr><th scope="row">Common year</th><td><b>3</b>, 10, 17, 24, 31</td><td>7, 14, 21, <b>28</b></td></tr>
-            <tr><th scope="row">Leap year</th><td><b>4</b>, 11, 18, 25</td><td>1, 8, 15, 22, <b>29</b></td></tr>
-          </tbody>
-        </table></div>
-        <p><b>Why.</b> The last day of February is always a doomsday, because March 14 is exactly 2 weeks later (it's “March 0”). In a leap year the last day is the 29th, not the 28th, so every January and February doomsday date shifts with it. Count back 8 weeks (56 days) from the last day of February and you land on January 3 in a common year, or January 4 in a leap year.</p>
-        <p><b>Example: January 1, 2024.</b> 2024 is a leap year. <var>A = 2</var>, <var>S(24) = 24 + 6 = 30</var>, so the doomsday is <var>(2 + 30) mod 7 = 4</var>, Thursday. With the leap-year date <var class="t-d">D(1) = 4</var>: <var>(4 + 1 − 4) mod 7 = 1</var>, <b>Monday</b>, which is correct. Using 3 by mistake gives Tuesday, one day off. That's the most common slip with this rule.</p>
-        <p class="help"><b>Is it a leap year?</b> If the year is divisible by 4, yes, except century years, which are leap years only when divisible by 400. So 2024 and 2000 were leap years; 1900 and 2100 aren't.</p>
-      </div>
-
-      <p>How to remember them:</p>
-      <div class="dd-dates">
-        <div><b>4/4, 6/6, 8/8, 10/10, 12/12</b><span>Even months: the day matches the month.</span></div>
-        <div><b>9/5, 5/9, 7/11, 11/7</b><span>“I work <b>9 to 5</b> at the <b>7-Eleven</b>”: each pair works either way round.</span></div>
-        <div><b>March 14</b><span>Pi Day. Also “March 0”, the last day of February.</span></div>
-        <div><b>January 3, or 4 in a leap year</b><span>“The 3rd, three years in four; the 4th in the fourth.”</span></div>
-        <div><b>Last day of February</b><span>The 28th, or the 29th in a leap year.</span></div>
-        <div><b>Bonus anchors</b><span>July 4, Halloween (10/31) and Boxing Day (12/26) are doomsdays too.</span></div>
-      </div>
-
-      <h3>Step 4: count to your date, <span class="t-d">d − D(m)</span></h3>
-      <div class="math">weekday = (doomsday of the year + d − D(m)) mod 7</div>
-      <p>Christmas 2026: the year's doomsday is Saturday (6), and December's doomsday date is the 12th, so <var>(6 + 25 − 12) mod 7 = 19 mod 7 = 5</var>, a <b>Friday</b>. Going backwards works the same way: December 1 gives <var>(6 + 1 − 12) mod 7 = −5 mod 7 = 2</var>, a <b>Tuesday</b>. (−5 mod 7 is 2, just as going back 5 hours on a 7-position clock lands on 2.)</p>
-      <p>All in one line, for Christmas 2026: <var><span class="t-a">2</span> + <span class="t-y">32</span> + <span class="t-d">25 − 12</span> = 47</var>, and <var>47 mod 7 = 5</var>, Friday.</p>
-      <p class="help">The rule uses the Gregorian calendar, which most of Europe adopted in 1582 and Britain and its colonies in 1752. Earlier dates in those places were recorded in the Julian calendar, so a historical date may not match.</p>
-    </div>
-
-    <div class="calc">
-      <label>Year <input type="number" id="dd-y" value="2026" min="1" max="9999" inputmode="numeric"></label>
-      <label>Month <select id="dd-m"></select></label>
-      <label>Day <input type="number" id="dd-d" value="25" min="1" max="31" inputmode="numeric"></label>
-      <button class="btn small" type="button" id="dd-today">Today</button>
-    </div>
-    <div class="out" id="dd-out" aria-live="polite"></div>
-    <div class="dd-work">
-      <div class="wheel-wrap"><svg id="dd-wheel" viewBox="0 0 240 240" role="img" aria-label="The steps on a 7-day clock"></svg></div>
-      <div class="dd-right"><div class="fline small" id="dd-fline"></div><ol class="ddsteps" id="dd-steps"></ol></div>
-    </div>
-    <details class="more">
-      <summary>The same answer from one formula (Zeller's congruence)</summary>
-      <div class="explain"><p>Christian Zeller's 1882 formula does the whole thing in one line. Treat January and February as months 13 and 14 of the previous year. With <var>q</var> the day, <var>m</var> the month, <var>K</var> the year's last two digits and <var>J</var> its first two:</p></div>
-      <div class="math">h = (q + ⌊13(m + 1)/5⌋ + K + ⌊K/4⌋ + ⌊J/4⌋ + 5J) mod 7      (0 = Saturday, 1 = Sunday, …)</div>
-      <div class="math" id="zeller"></div>
-    </details>
-
-    <h3>Practice</h3>
-    <p class="explain">A random date appears. Work out its day in your head, then tap your answer.</p>
-    <div class="practice">
-      <div class="q" id="pr-q" aria-live="polite"></div>
-      <div class="dows" id="pr-btns" role="group" aria-label="Your answer"></div>
-      <div class="pr-say" id="pr-say" aria-live="polite"></div>
-      <div class="btnrow"><button class="btn small" type="button" id="pr-next">New date</button><select id="pr-range" aria-label="Date range"><option value="1">1900–2099</option><option value="2">1600–2399</option></select><span class="streak" id="pr-streak"></span></div>
+      <p>Days of the week are arithmetic mod 7, and John Conway turned that into a trick for finding the day of the week of any date in your head: the <b>Doomsday rule</b>. It has its own page, with the formulas, why each one works, a calculator and a practice game: <a href="../../day-of-the-week/">Day of the Week</a>.</p>
     </div>
   </section>
 
@@ -817,7 +829,8 @@ S(y) ≡ (7 − (T₂ mod 7)) mod 7
       if (comp) note = ` That looks like Fermat's little theorem, but ${n} isn't prime! Numbers like this, which fool Fermat's test for every base sharing no factor with them, are called <b>Carmichael numbers</b>, and 561 = 3 × 11 × 17 is the smallest.`;
       else note = ' That’s Fermat’s little theorem in action.';
     }
-    $('#fp-out').innerHTML = `<p><var>a<sup>e</sup> mod n</var> = <b class="num">${r}</b>, using ${bits.length} squarings and ${bits.split('').filter((b) => b === '1').length} multiplications (the exponent in binary is ${bits.length > 64 ? bits.slice(0, 64) + '…' : bits}).${note}</p>`;
+    const nSq = e > 0n ? bits.length - 1 : 0, nMul = e > 0n ? bits.split('').filter((b) => b === '1').length - 1 : 0;
+    $('#fp-out').innerHTML = `<p><var>a<sup>e</sup> mod n</var> = <b class="num">${r}</b>, using ${nSq} squaring${nSq === 1 ? '' : 's'} and ${nMul} multiplication${nMul === 1 ? '' : 's'} (the exponent in binary is ${bits.length > 64 ? bits.slice(0, 64) + '…' : bits}: one squaring per digit after the first, one multiplication per extra 1).${note}</p>`;
     $('#fp-table').innerHTML = '<thead><tr><th>Power of 2</th><th>Bit of e</th><th>a to that power, mod n</th><th>Running result</th></tr></thead><tbody>' + rows.join('') + (rows.length >= 80 ? '<tr><td colspan="4">…</td></tr>' : '') + '</tbody>';
   }
   for (const id of ['#fp-a', '#fp-e', '#fp-n']) $(id).addEventListener('input', doFast);
@@ -826,13 +839,62 @@ S(y) ≡ (7 − (T₂ mod 7)) mod 7
     if (a === null || n === null || n < 2n) { $('#iv-out').innerHTML = 'Type whole numbers, with <var>n</var> at least 2.'; $('#iv-table').innerHTML = ''; return; }
     let r0 = modB(a, n), r1 = n, s0 = 1n, s1 = 0n; const rows = [];
     let A = n, B = modB(a, n), t0 = 0n, t1 = 1n;
-    while (B) { const q = A / B; rows.push(`<tr><td class="num">${A}</td><td class="num">${B}</td><td class="num">${q}</td><td class="num">${A - q * B}</td><td class="num">${t0 - q * t1}</td></tr>`); [A, B] = [B, A - q * B]; [t0, t1] = [t1, t0 - q * t1]; }
+    while (B) { const q = A / B, rr = A - q * B; rows.push(`<tr class="${rr === 1n ? 'hit' : ''}"><td class="num">${A}</td><td class="num">${B}</td><td class="num">${q}</td><td class="num">${rr}</td><td class="num">${t0 - q * t1}</td></tr>`); [A, B] = [B, A - q * B]; [t0, t1] = [t1, t0 - q * t1]; }
     const g = A;
-    $('#iv-table').innerHTML = '<thead><tr><th>Divide</th><th>by</th><th>Goes in</th><th>Remainder</th><th>Running multiplier</th></tr></thead><tbody>' + rows.slice(0, 200).join('') + '</tbody>';
+    $('#iv-table').innerHTML = '<thead><tr><th>Divide</th><th>by</th><th>Goes in</th><th>Remainder</th><th>Multiplier (remainder ≡ this × a)</th></tr></thead><tbody>' + rows.slice(0, 200).join('') + '</tbody>';
     if (g !== 1n) $('#iv-out').innerHTML = `<p>No inverse: ${a} and ${n} share the factor <b>${g}</b> (the last non-zero remainder), so no multiple of ${a} is ever 1 more than a multiple of ${n}.</p>`;
-    else { const x = modB(t0, n); $('#iv-out').innerHTML = `<p>The last non-zero remainder is 1, so the inverse exists: <var>${a}<sup>−1</sup> mod ${n}</var> = <b class="num">${x}</b>. Check: ${a} × ${x} = ${a * x} = ${(a * x - 1n) / n} × ${n} + 1.</p>`; }
+    else { const x = modB(t0, n); $('#iv-out').innerHTML = `<p>The remainders reach 1, so the inverse exists. On that row (highlighted) the multiplier is ${String(t0).replace('-', '−')}${t0 < 0n ? `, and adding ${n} gives ${x}` : ''}: <var>${a}<sup>−1</sup> mod ${n}</var> = <b class="num">${x}</b>. Check: ${a} × ${x} = ${a * x} = ${(a * x - 1n) / n} × ${n} + 1.</p>`; }
   }
   $('#iv-a').addEventListener('input', doInv); $('#iv-n').addEventListener('input', doInv);
+
+  /* ---------- 6. phi ---------- */
+  const factorN = (n) => { const f = []; let d = 2; while (d * d <= n) { while (n % d === 0) { f.push(d); n /= d; } d += d === 2 ? 1 : 2; } if (n > 1) f.push(n); return f; };
+  const groupF = (f) => { const m = new Map(); for (const p of f) m.set(p, (m.get(p) || 0) + 1); return [...m]; };
+  const fmtF = (g) => g.map(([p, e]) => p + (e > 1 ? `<sup>${e}</sup>` : '')).join(' × ');
+  function doPhi(){
+    const n = int($('#ph-n'), 2, 1000000, 15), g = groupF(factorN(n));
+    let phi = n; for (const [p] of g) phi = phi / p * (p - 1);
+    let list = '';
+    if (n <= 200) { const xs = []; for (let i = 1; i <= n; i++) if (gcdN(i, n) === 1) xs.push(i); list = `<p>The ${phi} numbers from 1 to ${n} that share no factor with it: ${xs.join(', ')}.</p>`; }
+    const how = g.length === 1 && g[0][1] === 1 ? `${n} is prime, so φ(${n}) = ${n} − 1 = ${phi}.`
+      : g.length === 2 && g.every(([, e]) => e === 1) ? `${n} = ${g[0][0]} × ${g[1][0]}, two different primes, so φ(${n}) = (${g[0][0]} − 1)(${g[1][0]} − 1) = ${phi}.`
+      : `${n} = ${fmtF(g)}, so φ(${n}) = ${n} × ${g.map(([p]) => `(1 − 1/${p})`).join(' × ')} = ${phi}.`;
+    $('#ph-out').innerHTML = `<p>${how}</p>${list}`;
+  }
+  $('#ph-n').addEventListener('input', doPhi);
+
+  /* ---------- 7. factoring and gcd ---------- */
+  function doFactor(){
+    const t = $('#fa-n').value.replace(/[\s,_]/g, '');
+    if (!/^\d+$/.test(t)) { $('#fa-out').innerHTML = '<p>Type a whole number.</p>'; return; }
+    if (t.length > 15) { $('#fa-out').innerHTML = '<p>This box tries every divisor up to the square root, so it stops at 15 digits. The worksheets use much faster methods for bigger numbers.</p>'; return; }
+    const n = Number(t); if (n < 2) { $('#fa-out').innerHTML = '<p>Pick a number of at least 2.</p>'; return; }
+    const t0 = performance.now(); let m = n, d = 2, tries = 0; const f = [];
+    while (d * d <= m) { tries++; while (m % d === 0) { f.push(d); m /= d; } d += d === 2 ? 1 : 2; }
+    if (m > 1) f.push(m);
+    const g = groupF(f); let phi = n; for (const [p] of g) phi = phi / p * (p - 1);
+    $('#fa-out').innerHTML = `<p><var>${n}</var> = <b>${fmtF(g)}</b>${f.length === 1 ? ' (it’s prime)' : ''}. That took ${tries.toLocaleString()} trial divisions and ${(performance.now() - t0).toFixed(1)} ms. From the factors, <var>φ(${n}) = ${phi.toLocaleString()}</var>.</p>`;
+  }
+  $('#fa-n').addEventListener('input', doFactor);
+  function doGcd(){
+    let a = big($('#gc-a').value), b = big($('#gc-b').value);
+    if (a === null || b === null) { $('#gc-out').innerHTML = '<p>Type two whole numbers.</p>'; return; }
+    a = a < 0n ? -a : a; b = b < 0n ? -b : b; const A0 = a, B0 = b; const steps = []; if (a < b) [a, b] = [b, a];
+    while (b) { steps.push(`${a} = ${a / b} × ${b} + ${a % b}`); [a, b] = [b, a % b]; }
+    $('#gc-out').innerHTML = `<p><var>gcd(${short(A0)}, ${short(B0)})</var> = <b class="num">${a}</b>${a === 1n ? ': they share no factor' : ''}.</p>${steps.length && steps.length <= 12 ? `<div class="math">${steps.join('\n')}</div>` : ''}`;
+  }
+  $('#gc-a').addEventListener('input', doGcd); $('#gc-b').addEventListener('input', doGcd);
+
+  /* ---------- 10. square roots ---------- */
+  function doSquares(){
+    const n = int($('#sq-n'), 2, 60, 15); const roots = Array.from({ length: n }, () => []);
+    for (let x = 0; x < n; x++) roots[(x * x) % n].push(x);
+    const rows = roots.map((r, a) => `<tr class="${r.length ? '' : 'none'}"><td>${a}</td><td>${r.length ? r.join(', ') : '—'}</td><td>${r.length}</td></tr>`).join('');
+    $('#sq-table').innerHTML = `<thead><tr><th>a</th><th>x with x² ≡ a (mod ${n})</th><th>How many</th></tr></thead><tbody>${rows}</tbody>`;
+    const sq = roots.filter((r, a) => a && r.length).length, most = Math.max(...roots.slice(1).map((r) => r.length));
+    $('#sq-say').innerHTML = `${sq} of the ${n - 1} non-zero numbers mod ${n} have square roots. ${most > 2 ? `Some have ${most} roots, which can’t happen mod a prime.` : `None has more than 2.`}`;
+  }
+  $('#sq-n').addEventListener('input', doSquares);
 
   /* ---------- 7. CRT ---------- */
   function doCRT(){
@@ -850,105 +912,9 @@ S(y) ≡ (7 − (T₂ mod 7)) mod 7
   }
   for (const id of ['#cr-n1', '#cr-r1', '#cr-n2', '#cr-r2']) $(id).addEventListener('input', doCRT);
 
-  /* ---------- 9. Doomsday ---------- */
-  const leap = (y) => y % 4 === 0 && (y % 100 !== 0 || y % 400 === 0);
-  const anchorOf = (y) => (5 * (Math.floor(y / 100) % 4) + 2) % 7;
-  const DOOM = (m, y) => [leap(y) ? 4 : 3, leap(y) ? 29 : 28, 14, 4, 9, 6, 11, 8, 5, 10, 7, 12][m - 1];
-  const DOOM_WHY = ['3rd (4th in a leap year)', 'last day of February', 'Pi Day', '4/4', '“9 to 5”: 5/9', '6/6', '“7-Eleven”: 7/11', '8/8', '“9 to 5”: 9/5', '10/10', '“7-Eleven”: 11/7', '12/12'];
-  const dim = (m, y) => [31, leap(y) ? 29 : 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31][m - 1];
-  function doomsday(y, m, d){
-    const anchor = anchorOf(y), T = y % 100;
-    const a = Math.floor(T / 12), b = T % 12, c = Math.floor(b / 4);
-    const yd = (anchor + a + b + c) % 7;
-    const dd = DOOM(m, y), w = modN(yd + d - dd, 7);
-    return { anchor, T, a, b, c, yd, dd, w };
-  }
-  (function yearStrip(){
-    let h = '';
-    for (let y = 0; y <= 12; y++) {
-      const dd = (anchorOf(2000) + y + Math.floor(y / 4)) % 7;
-      if (y) { const jump = leap(2000 + y) ? 2 : 1; h += `<span class="yj${jump === 2 ? ' two' : ''}">+${jump}${jump === 2 ? '<small>leap</small>' : ''}</span>`; }
-      h += `<span class="yc${leap(2000 + y) ? ' lp' : ''}"><b>${2000 + y}</b>${DAYS[dd].slice(0, 3)}</span>`;
-    }
-    $('#ystrip').innerHTML = h;
-  })();
-  $('#dd-m').innerHTML = MONTHS.map((n, i) => `<option value="${i + 1}">${n}</option>`).join('');
-  $('#dd-m').value = '12';
-  function drawWheel(r){
-    const cx = 120, cy = 120, R = 88, pt = (k, rr) => { const a = (k / 7) * 2 * Math.PI - Math.PI / 2; return [cx + rr * Math.cos(a), cy + rr * Math.sin(a)]; };
-    const arc = (from, steps, rr, cls) => {
-      if (!steps) return '';
-      let d = ''; for (let i = 0; i <= steps * 10; i++) { const [x, y] = pt(from + i / 10, rr); d += (i ? 'L' : 'M') + x.toFixed(1) + ' ' + y.toFixed(1); }
-      const [lx, ly] = pt(from + steps / 2, rr + (cls === 'a1' ? 13 : -13));
-      return `<path d="${d}" class="${cls}"/><text x="${lx}" y="${ly}" class="al ${cls}" text-anchor="middle" dominant-baseline="central">+${steps}</text>`;
-    };
-    const s1 = modN(r.yd - r.anchor, 7), s2 = r.w;
-    let h = `<circle cx="${cx}" cy="${cy}" r="${R + 18}" class="face"/>`;
-    h += arc(r.anchor, s1, R + 4, 'a1') + arc(r.yd, modN(r.w - r.yd, 7), R - 22, 'a2');
-    for (let k = 0; k < 7; k++) {
-      const [dx, dy] = pt(k, R - 4);
-      const cls = k === r.w ? 'dw ans' : k === r.yd ? 'dw dd' : k === r.anchor ? 'dw anc' : 'dw';
-      h += `<circle cx="${dx}" cy="${dy}" r="15" class="${cls}"/><text x="${dx}" y="${dy}" class="wl${k === r.w ? ' on' : ''}" text-anchor="middle" dominant-baseline="central">${DAYS[k].slice(0, 3)}</text>`;
-    }
-    h += `<text x="${cx}" y="${cy - 8}" class="wc" text-anchor="middle">${DAYS[r.w]}</text><text x="${cx}" y="${cy + 12}" class="wc2" text-anchor="middle">${(s2 + 7) % 7}</text>`;
-    $('#dd-wheel').innerHTML = h;
-    $('#dd-wheel').setAttribute('aria-label', `On a 7-day clock: start at ${DAYS[r.anchor]}, move ${s1} to the doomsday ${DAYS[r.yd]}, then ${modN(r.w - r.yd, 7)} more to ${DAYS[r.w]}.`);
-  }
-  function doDoom(){
-    const y = int($('#dd-y'), 1, 9999, 2026), m = +$('#dd-m').value, d = int($('#dd-d'), 1, 31, 1);
-    if (d > dim(m, y)) { $('#dd-out').innerHTML = `<p>${MONTHS[m - 1]} ${y} has only ${dim(m, y)} days.</p>`; $('#dd-steps').innerHTML = ''; $('#zeller').textContent = ''; return; }
-    const r = doomsday(y, m, d), c = Math.floor(y / 100);
-    $('#dd-out').innerHTML = `<p class="big">${MONTHS[m - 1]} ${d}, ${y} is a <b>${DAYS[r.w]}</b>.</p>`;
-    const odd = (() => { let t = r.T; const s = [String(t)]; if (t % 2) { t += 11; s.push(`odd, +11 → ${t}`); } t /= 2; s.push(`halve → ${t}`); if (t % 2) { t += 11; s.push(`odd, +11 → ${t}`); } const m7 = t % 7; s.push(`mod 7 → ${m7}`); s.push(`7 − ${m7} → ${(7 - m7) % 7}`); return s.join(', '); })();
-    const diff = d - r.dd;
-    const ys = r.T + Math.floor(r.T / 4), total = r.anchor + ys + diff;
-    $('#dd-fline').innerHTML = `weekday = (<span class="t-a">${r.anchor}</span> + <span class="t-y">${ys}</span> + <span class="t-d">${d} − ${r.dd}</span>) mod 7 = ${String(total).replace('-', '−')} mod 7 = <b>${r.w}</b>, ${DAYS[r.w]}`;
-    $('#dd-steps').innerHTML = [
-      `<b>Anchor:</b> <var>c = ${c}</var>, so <var class="t-a">A = (5 × (${c} mod 4) + 2) mod 7 = (5 × ${c % 4} + 2) mod 7 = ${r.anchor}</var>, ${DAYS[r.anchor]} (“${NICK[r.anchor]}”).`,
-      `<b>Year shift:</b> <var>y = ${r.T}</var>, so <var class="t-y">S(${r.T}) = ${r.T} + ⌊${r.T}/4⌋ = ${r.T} + ${Math.floor(r.T / 4)} = ${ys}</var>, and ${ys} mod 7 = ${ys % 7}.<br><span class="help">Twelves: ${r.a} + ${r.b} + ${r.c} = ${r.a + r.b + r.c}. Odd + 11: ${odd}.</span>`,
-      `<b>Doomsday for ${y}:</b> (${r.anchor} + ${ys % 7}) mod 7 = ${r.yd}, a <b>${DAYS[r.yd]}</b>.${leap(y) ? ` (${y} is a leap year.)` : ''}`,
-      `<b>Month:</b> <var class="t-d">D(${m}) = ${r.dd}</var> (${m === 1 ? (leap(y) ? `the 4th, because ${y} is a leap year` : `the 3rd, because ${y} isn’t a leap year`) : m === 2 ? (leap(y) ? `the 29th, the last day of February in a leap year` : `the 28th, the last day of February`) : DOOM_WHY[m - 1]}), so <var class="t-d">d − D(m) = ${d} − ${r.dd} = ${String(diff).replace('-', '−')}</var>.`,
-      `<b>Answer:</b> (${r.yd} + ${String(diff).replace('-', '−')}) mod 7 = ${r.w}: <b>${DAYS[r.w]}</b>.`
-    ].map((x) => `<li>${x}</li>`).join('');
-    drawWheel(r);
-    // Zeller
-    let Y = y, M = m; if (M < 3) { M += 12; Y -= 1; }
-    const K = Y % 100, J = Math.floor(Y / 100), t1 = Math.floor(13 * (M + 1) / 5), sum = d + t1 + K + Math.floor(K / 4) + Math.floor(J / 4) + 5 * J, h = sum % 7;
-    $('#zeller').textContent = `q = ${d}, m = ${M}${M > 12 ? ' (counted in the previous year)' : ''}, K = ${K}, J = ${J}\nh = (${d} + ${t1} + ${K} + ${Math.floor(K / 4)} + ${Math.floor(J / 4)} + ${5 * J}) mod 7 = ${sum} mod 7 = ${h}  →  ${['Saturday','Sunday','Monday','Tuesday','Wednesday','Thursday','Friday'][h]}`;
-    st.dd = { y, m, d }; save();
-  }
-  for (const id of ['#dd-y', '#dd-d']) $(id).addEventListener('input', doDoom);
-  $('#dd-m').addEventListener('change', doDoom);
-  $('#dd-today').addEventListener('click', () => { const t = new Date(); $('#dd-y').value = t.getFullYear(); $('#dd-m').value = t.getMonth() + 1; $('#dd-d').value = t.getDate(); doDoom(); });
-
-  /* practice */
-  let cur = null;
-  st.streak = st.streak || 0; st.best = st.best || 0;
-  $('#pr-btns').innerHTML = DAYS.map((d, i) => `<button class="btn" type="button" data-dow="${i}">${d.slice(0, 3)}</button>`).join('');
-  const showStreak = () => { $('#pr-streak').textContent = `Streak ${st.streak} · best ${st.best}`; };
-  function newDate(){
-    const wide = $('#pr-range').value === '2', lo = wide ? 1600 : 1900, hi = wide ? 2399 : 2099;
-    const y = lo + Math.floor(Math.random() * (hi - lo + 1)), m = 1 + Math.floor(Math.random() * 12), d = 1 + Math.floor(Math.random() * dim(m, y));
-    cur = { y, m, d, done: false };
-    $('#pr-q').innerHTML = `<span class="big">${MONTHS[m - 1]} ${d}, ${y}</span>`;
-    $('#pr-say').innerHTML = '';
-    for (const b of document.querySelectorAll('#pr-btns button')) { b.disabled = false; b.classList.remove('right', 'wrong'); }
-  }
-  $('#pr-btns').addEventListener('click', (ev) => {
-    const b = ev.target.closest('[data-dow]'); if (!b || !cur || cur.done) return;
-    const r = doomsday(cur.y, cur.m, cur.d), guess = +b.getAttribute('data-dow');
-    cur.done = true;
-    for (const x of document.querySelectorAll('#pr-btns button')) { x.disabled = true; if (+x.getAttribute('data-dow') === r.w) x.classList.add('right'); }
-    if (guess === r.w) { st.streak++; st.best = Math.max(st.best, st.streak); $('#pr-say').innerHTML = `<b>Right!</b> It's a ${DAYS[r.w]}.`; }
-    else { b.classList.add('wrong'); st.streak = 0; $('#pr-say').innerHTML = `Not quite: it's a <b>${DAYS[r.w]}</b>. Anchor ${DAYS[r.anchor]}, doomsday ${DAYS[r.yd]} for ${cur.y}, nearest doomsday date ${MONTHS[cur.m - 1]} ${r.dd}.`; }
-    save(); showStreak();
-  });
-  $('#pr-next').addEventListener('click', newDate); $('#pr-range').addEventListener('change', newDate);
-
   /* restore & first draw */
   if (st.ck) { $('#ck-n').value = st.ck.n; $('#ck-a').value = st.ck.a; $('#ck-b').value = st.ck.b; }
-  if (st.dd) { $('#dd-y').value = st.dd.y; $('#dd-m').value = st.dd.m; $('#dd-d').value = st.dd.d; }
-  drawClock(); doMod(); doWeekday(); doTable(); doPowers(); doFast(); doInv(); doCRT(); doDoom(); newDate(); showStreak();
+  drawClock(); doMod(); doWeekday(); doTable(); doPowers(); doPhi(); doFactor(); doGcd(); doFast(); doInv(); doCRT(); doSquares();
 })();
 </script>
 </body>

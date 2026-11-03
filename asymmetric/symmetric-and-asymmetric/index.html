@@ -479,6 +479,10 @@ result    J  L  M  T  Q</div>
       </table></div>
       <p>A <b>trapdoor</b> is a secret that makes the hard direction easy. Knowing the two primes lets you take square roots and undo RSA's powers; knowing the secret exponent lets you finish a key exchange. The private key <i>is</i> the trapdoor.</p>
       <p>At real-world sizes the hard direction would take longer than the age of the universe. Puzzle-sized numbers are chosen so a computer can do it in seconds, which is exactly the part the worksheets do for you.</p>
+      <h3>Related problems, and how safe they are</h3>
+      <p>Factoring and the discrete logarithm are different problems, but close relatives: both ask you to undo a calculation in a group of remainders, and in 1994 Peter Shor found a single algorithm for a quantum computer that solves both quickly. So in that sense they share the same weakness.</p>
+      <p>Nobody has proved that either is truly hard for ordinary computers. If P = NP, the most famous open question in computer science, both would be easy; but even a proof that P ≠ NP wouldn't settle it, because neither is known to be among the hardest problems in NP. (The Riemann hypothesis, about how primes are spread out, comes up in proofs about testing whether a number is prime, but isn't known to make factoring easier or harder.) Their security rests on decades of failed attempts to break them, not on a proof.</p>
+      <p>That's why cryptographers keep replacements ready. If large quantum computers arrive, or someone finds a faster method (with or without help from AI), these systems would fall. In 2024 the U.S. standards agency NIST published “post-quantum” systems built on different problems, mostly about lattices, for exactly that reason.</p>
     </div>
   </section>
 

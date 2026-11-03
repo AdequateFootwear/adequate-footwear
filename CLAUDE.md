@@ -51,8 +51,8 @@ Make puzzles *slightly* more accessible: take the tedium out, never hand solvers
   Keep every copy of each identical. The folder page lists worksheets alphabetically, never in
   series order, so the list doesn't map systems to caches. Not every worksheet has a cache: some are
   deliberate red herrings, which is fine, since each is a complete, working tool.
-  The folder also holds three lessons, listed under “Start here”: `symmetric-and-asymmetric/`,
-  `modular-arithmetic/` and `letters-to-numbers/`. They aren't worksheets, so they don't carry
+  The folder also holds four lessons, listed under “Start here”: `symmetric-and-asymmetric/`,
+  `modular-arithmetic/`, `letters-to-numbers/` and `working-mod-n-squared/`. They aren't worksheets, so they don't carry
   `ntModule` or `asymKit`, and like the worksheets they never mention a specific cache.
 - **Never rename or move a published tool's folder.** Cache pages link to these addresses, and
   GitHub doesn't redirect Pages URLs.

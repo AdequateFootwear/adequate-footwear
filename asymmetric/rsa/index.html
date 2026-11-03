@@ -464,6 +464,15 @@ decrypt c = 74:  m = 74^173 mod 247 = 42  ✓</div>
 /* Number-theory engine for the Asymmetric tools.
    Everything is BigInt except the sieve internals (factor-base primes < 2^26, so Number math is exact).
    Wrapped in a function so a page can run it on the main thread AND ship its source to a Web Worker. */
+/* Number-theory engine for the Asymmetric tools.
+   Everything is BigInt except the sieve internals (factor-base primes < 2^26, so Number math is exact).
+   Wrapped in a function so a page can run it on the main thread AND ship its source to a Web Worker. */
+/* Number-theory engine for the Asymmetric tools.
+   Everything is BigInt except the sieve internals (factor-base primes < 2^26, so Number math is exact).
+   Wrapped in a function so a page can run it on the main thread AND ship its source to a Web Worker. */
+/* Number-theory engine for the Asymmetric tools.
+   Everything is BigInt except the sieve internals (factor-base primes < 2^26, so Number math is exact).
+   Wrapped in a function so a page can run it on the main thread AND ship its source to a Web Worker. */
 function ntModule(){
   'use strict';
   const abs = (a) => a < 0n ? -a : a;
@@ -773,6 +782,16 @@ function ntModule(){
 
   /* ---------- square roots mod a prime, CRT ---------- */
   function legendre(a, p){ a = mod(a, p); if (a === 0n) return 0; return modPow(a, (p - 1n) / 2n, p) === 1n ? 1 : -1; }
+  function jacobi(a, n){ // Jacobi symbol (a/n), n odd positive; computable without factoring n
+    a = mod(a, n); let t = 1;
+    while (a !== 0n) {
+      while (!(a & 1n)) { a >>= 1n; const r = n % 8n; if (r === 3n || r === 5n) t = -t; }
+      [a, n] = [n, a];
+      if (a % 4n === 3n && n % 4n === 3n) t = -t;
+      a %= n;
+    }
+    return n === 1n ? t : 0;
+  }
   function sqrtModP(a, p){ // returns a root r with r^2 = a (mod p), or null if a is not a square
     a = mod(a, p);
     if (a === 0n) return 0n;
@@ -975,7 +994,7 @@ function ntModule(){
   }
 
   return { abs, mod, gcd, modPow, egcdSteps, modInv, bitLength, iroot, isqrt, isProbablePrime, smallestFactorBelow, factor, SMALL_PRIMES: SMALL,
-    legendre, sqrtModP, crt, countFactors, orderOf, rand, bsgs, rhoPlan, rhoWalker, rhoSolve, rhoSync, solvePrimeSync, dlog, hasFastWalk: () => !!getWasm() };
+    legendre, jacobi, sqrtModP, crt, countFactors, orderOf, rand, bsgs, rhoPlan, rhoWalker, rhoSolve, rhoSync, solvePrimeSync, dlog, hasFastWalk: () => !!getWasm() };
 }
 </script>
 <script>
@@ -1124,7 +1143,8 @@ function ntModule(){
     /* --- c --- */
     const cChecks = [];
     if (c !== undefined) {
-      if (n !== undefined && c >= n) cChecks.push(['bad', '<b>c is not smaller than n.</b> A ciphertext is a remainder after dividing by <var>n</var>, so it’s always smaller. Usually that means an extra digit, or <var>c</var> and <var>n</var> in each other’s boxes.']);
+      if (n !== undefined && c >= n && D(c) >= 1.8 * D(n)) cChecks.push(['bad', '<b>c is about twice as long as n.</b> In RSA a ciphertext is always smaller than <var>n</var>. If the puzzle’s ciphertext really is this long, it isn’t a copying slip: reread how the puzzle describes its system, because some systems do produce ciphertexts longer than their key.']);
+      else if (n !== undefined && c >= n) cChecks.push(['bad', '<b>c is not smaller than n.</b> A ciphertext is a remainder after dividing by <var>n</var>, so it’s always smaller. Usually that means an extra digit, or <var>c</var> and <var>n</var> in each other’s boxes.']);
       else if (c < 2n) cChecks.push(['warn', `<var>c = ${c}</var> decrypts to ${c} no matter the key. Is this the whole ciphertext?`]);
       else if (n !== undefined && D(n) - D(c) >= 3) cChecks.push(['info', `<var>c</var> is ${D(n) - D(c)} digits shorter than <var>n</var>. That can happen, but it’s rare, so if the puzzle shows a longer number, look for dropped digits.`]);
       if (n !== undefined && c > 1n && c < n && NT.gcd(c, n) !== 1n) cChecks.push(['warn', '<var>c</var> shares a factor with <var>n</var>. A real ciphertext almost never does, so one of the two may have a wrong digit.']);

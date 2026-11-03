@@ -47,9 +47,10 @@ Make puzzles *slightly* more accessible: take the tedium out, never hand solvers
   never names another system. The worksheets do the hard computation (factoring, discrete logs)
   and explain each step. They share a number-theory engine, the `ntModule` function inlined in
   every worksheet (it includes a small WebAssembly routine, base64-encoded, for the discrete-log
-  walk), and the Rabin, ElGamal and Diffie–Hellman pages also share the `asymKit` page helpers.
+  walk), and every worksheet except RSA also shares the `asymKit` page helpers.
   Keep every copy of each identical. The folder page lists worksheets alphabetically, never in
-  series order, so the list doesn't map systems to caches.
+  series order, so the list doesn't map systems to caches. Not every worksheet has a cache: some are
+  deliberate red herrings, which is fine, since each is a complete, working tool.
 - **Never rename or move a published tool's folder.** Cache pages link to these addresses, and
   GitHub doesn't redirect Pages URLs.
 

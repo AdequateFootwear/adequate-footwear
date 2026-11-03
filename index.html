@@ -1,0 +1,70 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>AdequateFootwear — Tools of the Trade</title>
+<meta name="description" content="Optional solver helpers for AdequateFootwear's geocaches.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@600;700&family=Barlow:wght@400;500&display=swap">
+<style>
+:root{
+  --ground:#F5F4EF; --surface:#FFFFFF; --ink:#1B1A17; --ink-2:#4F4C45; --muted:#7A776F;
+  --line:#D6D3CA; --accent:#C4122E; --focus:#1F5FBF;
+}
+@media (prefers-color-scheme: dark){
+  :root{
+    --ground:#17181B; --surface:#1F2126; --ink:#ECEAE4; --ink-2:#C5C2B9; --muted:#918E86;
+    --line:#34373E; --accent:#EA4560; --focus:#7FB0FF;
+  }
+}
+*,*::before,*::after{box-sizing:border-box}
+html,body{margin:0;padding:0}
+body{
+  background:var(--ground); color:var(--ink);
+  font-family:"Barlow",system-ui,-apple-system,"Segoe UI",Helvetica,Arial,sans-serif;
+  font-size:17px; line-height:1.5; -webkit-font-smoothing:antialiased;
+}
+:focus-visible{outline:2px solid var(--focus);outline-offset:2px}
+.wrap{max-width:720px;margin:0 auto;padding:36px 16px 64px}
+h1{
+  font-family:"Barlow Condensed","Barlow",sans-serif;font-weight:700;font-size:44px;line-height:.95;
+  text-transform:uppercase;letter-spacing:.01em;margin:0;text-wrap:balance;
+}
+h1 .red{color:var(--accent)}
+.lede{margin:12px 0 0;color:var(--ink-2);max-width:60ch}
+.note{margin:18px 0 28px;padding:12px 14px;border-left:3px solid var(--accent);background:var(--surface);color:var(--ink-2);font-size:15px}
+ul.tools{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:12px}
+ul.tools a{
+  display:block;text-decoration:none;color:inherit;background:var(--surface);
+  border:1px solid var(--line);border-radius:10px;padding:16px 18px;
+}
+ul.tools a:hover{border-color:var(--accent)}
+.tool-name{
+  font-family:"Barlow Condensed","Barlow",sans-serif;font-weight:600;font-size:24px;line-height:1.1;
+  text-transform:uppercase;letter-spacing:.02em;
+}
+.tool-desc{margin:4px 0 0;color:var(--ink-2);font-size:15px}
+footer{margin-top:36px;color:var(--muted);font-size:13px}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>Tools <span class="red">of</span> the Trade</h1>
+  <p class="lede">Small, optional helpers for AdequateFootwear's geocaches. They take some of the tedium out of a puzzle. The puzzle itself is still yours to solve.</p>
+  <p class="note">You never need these. Everything required to solve each cache is on its cache page and in the field. Each tool runs entirely in your browser: nothing you type is sent anywhere, and it keeps working once it has loaded, even if you lose signal.</p>
+
+  <ul class="tools">
+    <li>
+      <a href="read-the-sign/">
+        <div class="tool-name">Read the Sign</div>
+        <p class="tool-desc">For (line, word, character) sign puzzles: type the sign, paste the formula, and see what the sign says, with a trace of every triple.</p>
+      </a>
+    </li>
+  </ul>
+
+  <footer>AdequateFootwear · Tools of the Trade</footer>
+</div>
+</body>
+</html>

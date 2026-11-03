@@ -47,12 +47,13 @@ Make puzzles *slightly* more accessible: take the tedium out, never hand solvers
   never names another system. The worksheets do the hard computation (factoring, discrete logs)
   and explain each step. They share a number-theory engine, the `ntModule` function inlined in
   every worksheet (it includes a small WebAssembly routine, base64-encoded, for the discrete-log
-  walk), and every worksheet except RSA also shares the `asymKit` page helpers.
+  walk), and every worksheet also shares the `asymKit` page helpers (including the message reader).
   Keep every copy of each identical. The folder page lists worksheets alphabetically, never in
   series order, so the list doesn't map systems to caches. Not every worksheet has a cache: some are
   deliberate red herrings, which is fine, since each is a complete, working tool.
-  The folder also holds `modular-arithmetic/`, an interactive lesson listed under “Start here”. It
-  isn't a worksheet, so it doesn't carry `ntModule` or `asymKit`.
+  The folder also holds three lessons, listed under “Start here”: `symmetric-and-asymmetric/`,
+  `modular-arithmetic/` and `letters-to-numbers/`. They aren't worksheets, so they don't carry
+  `ntModule` or `asymKit`, and like the worksheets they never mention a specific cache.
 - **Never rename or move a published tool's folder.** Cache pages link to these addresses, and
   GitHub doesn't redirect Pages URLs.
 

@@ -458,6 +458,12 @@ decrypt c = 74:  m = 74^173 mod 247 = 42  ✓</div>
 /* Number-theory engine for the Asymmetric tools.
    Everything is BigInt except the sieve internals (factor-base primes < 2^26, so Number math is exact).
    Wrapped in a function so a page can run it on the main thread AND ship its source to a Web Worker. */
+/* Number-theory engine for the Asymmetric tools.
+   Everything is BigInt except the sieve internals (factor-base primes < 2^26, so Number math is exact).
+   Wrapped in a function so a page can run it on the main thread AND ship its source to a Web Worker. */
+/* Number-theory engine for the Asymmetric tools.
+   Everything is BigInt except the sieve internals (factor-base primes < 2^26, so Number math is exact).
+   Wrapped in a function so a page can run it on the main thread AND ship its source to a Web Worker. */
 function ntModule(){
   'use strict';
   const abs = (a) => a < 0n ? -a : a;
@@ -765,6 +771,178 @@ function ntModule(){
     return null; // extremely unlikely; caller retries
   }
 
+  /* ---------- square roots mod a prime, CRT ---------- */
+  function legendre(a, p){ a = mod(a, p); if (a === 0n) return 0; return modPow(a, (p - 1n) / 2n, p) === 1n ? 1 : -1; }
+  function sqrtModP(a, p){ // returns a root r with r^2 = a (mod p), or null if a is not a square
+    a = mod(a, p);
+    if (a === 0n) return 0n;
+    if (p === 2n) return a;
+    if (legendre(a, p) !== 1) return null;
+    if (p % 4n === 3n) return modPow(a, (p + 1n) / 4n, p);
+    let q = p - 1n, s = 0n; while (!(q & 1n)) { q >>= 1n; s++; }
+    let z = 2n; while (legendre(z, p) !== -1) z++;
+    let M = s, c = modPow(z, q, p), t = modPow(a, q, p), R = modPow(a, (q + 1n) / 2n, p);
+    while (t !== 1n) {
+      let i = 0n, tt = t; while (tt !== 1n) { tt = tt * tt % p; i++; }
+      const b = modPow(c, 1n << (M - i - 1n), p);
+      M = i; c = b * b % p; t = t * c % p; R = R * b % p;
+    }
+    return R;
+  }
+  function crt(rs, ms){ // pairwise-coprime moduli
+    let x = 0n, M = 1n;
+    for (const m of ms) M *= m;
+    for (let i = 0; i < rs.length; i++) { const Mi = M / ms[i]; x += mod(rs[i], ms[i]) * Mi * modInv(Mi % ms[i], ms[i]); }
+    return { x: mod(x, M), M };
+  }
+  function countFactors(fs){ const m = new Map(); for (const f of fs) { const k = f.toString(); m.set(k, (m.get(k) || 0) + 1); } return [...m].map(([k, e]) => [BigInt(k), e]); }
+  function orderOf(g, p, pm1Factors){ // multiplicative order of g mod prime p, given the prime factors of p-1
+    let n = p - 1n;
+    for (const [q] of countFactors(pm1Factors)) while (n % q === 0n && modPow(g, n / q, p) === 1n) n /= q;
+    return n;
+  }
+
+  /* ---------- discrete logs ---------- */
+  function rand(below){ // uniform-ish random BigInt in [0, below)
+    const bytes = Math.ceil(bitLength(below) / 8) + 8, buf = new Uint8Array(bytes);
+    crypto.getRandomValues(buf);
+    let v = 0n; for (const b of buf) v = (v << 8n) | BigInt(b);
+    return v % below;
+  }
+  function bsgs(g, h, p, q){ // x in [0,q) with g^x = h, g of order q; for q up to ~1e10
+    const m = isqrt(q - 1n) + 1n, table = new Map();
+    let e = 1n;
+    for (let j = 0n; j < m; j++) { if (!table.has(e)) table.set(e, j); e = e * g % p; }
+    const step = modPow(modInv(g, p), m, p);
+    let y = mod(h, p);
+    for (let i = 0n; i < m; i++) { const j = table.get(y); if (j !== undefined) return mod(i * m + j, q); y = y * step % p; }
+    return null;
+  }
+  const WALK_WASM = 'AGFzbQEAAAABEQNgAX8AYAJ/fwBgA39/fwF/AwUEAAEBAgUDAQABBgYBfgFCAAsHHwQDbWVtAgAHc2V0TmludgAABG11bFgAAgR3YWxrAAMK8wUEBwAgAK0kAAuEBQMCfwR+AX9BACEIAkADQCAIIAFBAWpLDQFBwAEgCEECdGpBADYCACAIQQFqIQgMAAsLQQAhAgJAA0AgAiABTw0BIAAgAkECdGo1AgAhBkIAIQRBACEDAkADQCADIAFPDQFBwAEgA0ECdGo1AgBBgAEgA0ECdGo1AgAgBn58IAR8IQVBwAEgA0ECdGogBT4CACAFQiCIIQQgA0EBaiEDDAALC0HAASABQQJ0ajUCACAEfCEFQcABIAFBAnRqIAU+AgBBxAEgAUECdGogBUIgiD4CAEHAATUCACMAfkL/////D4MhB0HAATUCACAHQcAANQIAfnwhBSAFQiCIIQRBASEDAkADQCADIAFPDQFBwAEgA0ECdGo1AgAgB0HAACADQQJ0ajUCAH58IAR8IQVBvAEgA0ECdGogBT4CACAFQiCIIQQgA0EBaiEDDAALC0HAASABQQJ0ajUCACAEfCEFQbwBIAFBAnRqIAU+AgBBwAEgAUECdGpBxAEgAUECdGo1AgAgBUIgiHynNgIAIAJBAWohAgwACwtBACEIQcABIAFBAnRqKAIAQQBHBEBBASEIBSABIQNBASEIAkADQCADRQ0BIANBAWshA0HAASADQQJ0aigCAEHAACADQQJ0aigCAEsEQEEBIQgMAgtBwAEgA0ECdGooAgBBwAAgA0ECdGooAgBJBEBBACEIDAILDAALCwtCACEEQQAhAwJAA0AgAyABTw0BIAgEQEHAASADQQJ0ajUCAEHAACADQQJ0ajUCAH0gBH0hBUGAASADQQJ0aiAFPgIAIAVCP4hCAYMhBAVBgAEgA0ECdGpBwAEgA0ECdGooAgA2AgALIANBAWohAwwACwsLCAAgACABEAELWgEDf0EAIQMCQANAQYABKAIAQR9xIQRBgAIgBEEFdGogABABQYAQIARBAnRqIQUgBSAFKAIAQQFqNgIAIANBAWohA0GEASgCACACcUUNASADIAFJDQALCyADCw==';
+  let wasmModule = null, wasmTried = false;
+  function getWasm(){
+    if (wasmTried) return wasmModule;
+    wasmTried = true;
+    try {
+      const bin = typeof atob === 'function' ? Uint8Array.from(atob(WALK_WASM), (ch) => ch.charCodeAt(0)) : Uint8Array.from(Buffer.from(WALK_WASM, 'base64'));
+      wasmModule = new WebAssembly.Module(bin);
+    } catch (e) { wasmModule = null; }
+    return wasmModule;
+  }
+  /* A plan fixes the walk (the same for every worker, so their trails can meet). */
+  function rhoPlan(g, h, p, q){
+    const table = [];
+    for (let j = 0; j < 32; j++) { const a = rand(q), b = rand(q); table.push({ a, b, M: modPow(g, a, p) * modPow(h, b, p) % p }); }
+    const expected = Math.sqrt(Math.PI * Number(q) / 2);
+    const dbits = Math.max(0, Math.min(24, Math.floor(Math.log2(expected)) - 12));
+    return { g, h, p, q, table, dbits, expected };
+  }
+  /* One walker: x = g^a h^b, stepping x <- x * M[x mod 32]; reports distinguished points. */
+  function rhoWalker(plan){
+    const { g, h, p, q, table, dbits } = plan;
+    const dmask = (1 << dbits) - 1;
+    const W = getWasm();
+    const n = Math.ceil(bitLength(p) / 32);
+    let a, b, sinceDP = 0, ex = null, u32 = null, xBig = 0n, counts = null;
+    if (W && n >= 2 && n <= 8) {
+      ex = new WebAssembly.Instance(W).exports; u32 = new Uint32Array(ex.mem.buffer);
+      const R = 1n << BigInt(32 * n);
+      ex.setNinv(Number((R - modInv(p, 1n << 32n)) % (1n << 32n)) | 0);
+      const put = (off, v) => { for (let i = 0; i < 8; i++) { u32[off / 4 + i] = Number(v & 0xffffffffn); v >>= 32n; } };
+      put(64, p);
+      table.forEach((t, j) => put(256 + 32 * j, t.M * R % p));
+      counts = u32.subarray(512, 544);
+      var setX = (v) => put(128, v * R % p);
+      var keyX = () => { let s = ''; for (let i = n - 1; i >= 0; i--) s += u32[32 + i].toString(16).padStart(8, '0'); return s; };
+    } else {
+      counts = new Float64Array(32);
+      var setX = (v) => { xBig = v; };
+      var keyX = () => xBig.toString(16);
+    }
+    function restart(){ a = rand(q); b = rand(q); setX(modPow(g, a, p) * modPow(h, b, p) % p); counts.fill(0); sinceDP = 0; }
+    restart();
+    function collect(){
+      for (let j = 0; j < 32; j++) { const c = counts[j]; if (c) { a += BigInt(c) * table[j].a; b += BigInt(c) * table[j].b; } }
+      counts.fill(0); a %= q; b %= q;
+    }
+    function jsWalk(steps){
+      let s = 0;
+      const big = BigInt(dbits ? 32 : 0), dm = BigInt(dmask);
+      while (s < steps) {
+        const j = Number(xBig & 31n); xBig = xBig * table[j].M % p; counts[j]++; s++;
+        if (((xBig >> 32n) & dm) === 0n) break;
+      }
+      return s;
+    }
+    return {
+      fast: !!ex,
+      run(maxSteps){ // walk up to maxSteps; returns { steps, dps: [{key, a, b}] }
+        const dps = []; let steps = 0;
+        while (steps < maxSteps) {
+          const want = Math.min(maxSteps - steps, 1 << 22);
+          const s = ex ? ex.walk(n, want, dmask) : jsWalk(want);
+          steps += s; sinceDP += s;
+          const isDP = ex ? (u32[33] & dmask) === 0 : ((xBig >> 32n) & BigInt(dmask)) === 0n;
+          if (isDP && s > 0) { collect(); dps.push({ key: keyX(), a, b }); sinceDP = 0; }
+          else if (sinceDP > 40 * (dmask + 1) + 100000) restart(); // stuck in a loop with no distinguished point
+        }
+        return { steps, dps };
+      },
+      restart
+    };
+  }
+  /* Two visits to one distinguished point: g^a1 h^b1 = g^a2 h^b2, so x = (a2 - a1)/(b1 - b2) mod q. */
+  function rhoSolve(plan, d1, d2){
+    const { g, h, p, q } = plan;
+    const db = mod(d1.b - d2.b, q);
+    if (db === 0n) return null;
+    const x = mod((d2.a - d1.a) * modInv(db, q), q);
+    return modPow(g, x, p) === mod(h, p) ? x : null;
+  }
+  function rhoSync(g, h, p, q, onProgress){ // single-threaded version (used for testing and as a fallback)
+    const plan = rhoPlan(g, h, p, q), w = rhoWalker(plan), seen = new Map();
+    let total = 0;
+    for (;;) {
+      const r = w.run(1 << 20); total += r.steps;
+      for (const d of r.dps) {
+        const prev = seen.get(d.key);
+        if (prev) { const x = rhoSolve(plan, prev, d); if (x !== null) return x; w.restart(); }
+        else seen.set(d.key, d);
+      }
+      if (onProgress) onProgress({ phase: 'rho', steps: total, expected: plan.expected });
+    }
+  }
+  function solvePrimeSync(g, h, p, q){
+    h = mod(h, p);
+    if (h === 1n) return 0n;
+    if (q <= 10000000000n) return bsgs(g, h, p, q);
+    return rhoSync(g, h, p, q);
+  }
+  /* Pohlig-Hellman: solve g^x = h mod p using the factors of p-1. solvePrime(g, h, q) solves in a group of prime order q
+     and may return a Promise. Returns { x, order, parts: [{ q, e, mod, residue }] } or { noSolution } */
+  async function dlog(g, h, p, pm1Factors, solvePrime){
+    g = mod(g, p); h = mod(h, p);
+    const order = orderOf(g, p, pm1Factors);
+    if (modPow(h, order, p) !== 1n) return { noSolution: true, order };
+    const parts = [];
+    for (const [q, e] of countFactors(pm1Factors)) {
+      let k = 0; let nn = order; while (nn % q === 0n) { nn /= q; k++; }
+      if (!k) continue;
+      const gq = modPow(g, order / q, p), ginv = modInv(g, p);
+      let xk = 0n, qi = 1n;
+      for (let i = 0; i < k; i++) {
+        const hk = modPow(h * modPow(ginv, xk, p) % p, order / (qi * q), p);
+        const d = hk === 1n ? 0n : await solvePrime(gq, hk, q);
+        if (d === null) throw new Error('no solution in the subgroup of order ' + q);
+        xk += d * qi; qi *= q;
+      }
+      parts.push({ q, e: k, mod: qi, residue: xk });
+    }
+    const { x } = parts.length ? crt(parts.map((t) => t.residue), parts.map((t) => t.mod)) : { x: 0n };
+    if (modPow(g, x, p) !== h) throw new Error('check failed');
+    return { x, order, parts };
+  }
+
   /* ---------- full factorisation ---------- */
   function factor(n, onProgress){
     const t0 = Date.now(), out = [], notes = [];
@@ -796,7 +974,8 @@ function ntModule(){
     return { factors: out, notes, ms: Date.now() - t0 };
   }
 
-  return { abs, mod, gcd, modPow, egcdSteps, modInv, bitLength, iroot, isqrt, isProbablePrime, smallestFactorBelow, factor, SMALL_PRIMES: SMALL };
+  return { abs, mod, gcd, modPow, egcdSteps, modInv, bitLength, iroot, isqrt, isProbablePrime, smallestFactorBelow, factor, SMALL_PRIMES: SMALL,
+    legendre, sqrtModP, crt, countFactors, orderOf, rand, bsgs, rhoPlan, rhoWalker, rhoSolve, rhoSync, solvePrimeSync, dlog, hasFastWalk: () => !!getWasm() };
 }
 </script>
 <script>

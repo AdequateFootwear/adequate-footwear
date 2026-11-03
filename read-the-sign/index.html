@@ -1,0 +1,853 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Read the Sign</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600;700&family=Barlow:ital,wght@0,400;0,500;0,600;1,400&family=IBM+Plex+Mono:wght@400;500;600&display=swap">
+<style>
+/* ---------- tokens ---------- */
+:root{
+  --ground:#F5F4EF; --surface:#FFFFFF; --surface-2:#EEECE5; --surface-3:#E5E2D9;
+  --ink:#1B1A17; --ink-2:#4F4C45; --muted:#7A776F;
+  --line:#D6D3CA; --line-strong:#A9A599;
+  --accent:#C4122E; --accent-ink:#FFFFFF; --accent-soft:#FBE7EA;
+  --warn:#8F6410; --warn-soft:#FBF0D3;
+  --good:#2E6B3A; --good-soft:#E1F0E3;
+  --focus:#1F5FBF;
+  --shadow:0 1px 2px rgba(27,26,23,.06), 0 6px 18px -8px rgba(27,26,23,.18);
+  --screw:#B9B5AA; --screw-slot:#7A776F;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --ground:#17181B; --surface:#1F2126; --surface-2:#272A30; --surface-3:#30343B;
+    --ink:#ECEAE4; --ink-2:#C5C2B9; --muted:#918E86;
+    --line:#34373E; --line-strong:#555A64;
+    --accent:#EA4560; --accent-ink:#1B1A17; --accent-soft:#3B2026;
+    --warn:#E3B04B; --warn-soft:#3A3016;
+    --good:#74C484; --good-soft:#1E3424;
+    --focus:#7FB0FF;
+    --shadow:0 1px 2px rgba(0,0,0,.4), 0 8px 24px -10px rgba(0,0,0,.6);
+    --screw:#4A4E57; --screw-slot:#8A8E97;
+  }
+}
+:root[data-theme="dark"]{
+  --ground:#17181B; --surface:#1F2126; --surface-2:#272A30; --surface-3:#30343B;
+  --ink:#ECEAE4; --ink-2:#C5C2B9; --muted:#918E86;
+  --line:#34373E; --line-strong:#555A64;
+  --accent:#EA4560; --accent-ink:#1B1A17; --accent-soft:#3B2026;
+  --warn:#E3B04B; --warn-soft:#3A3016;
+  --good:#74C484; --good-soft:#1E3424;
+  --focus:#7FB0FF;
+  --shadow:0 1px 2px rgba(0,0,0,.4), 0 8px 24px -10px rgba(0,0,0,.6);
+  --screw:#4A4E57; --screw-slot:#8A8E97;
+}
+
+/* ---------- base ---------- */
+*,*::before,*::after{box-sizing:border-box}
+html,body{margin:0;padding:0}
+body{
+  background:var(--ground); color:var(--ink);
+  font-family:"Barlow",system-ui,-apple-system,"Segoe UI",Helvetica,Arial,sans-serif;
+  font-size:16px; line-height:1.45;
+  -webkit-font-smoothing:antialiased;
+}
+button,input,textarea,select{font:inherit;color:inherit}
+:focus-visible{outline:2px solid var(--focus);outline-offset:2px}
+.mono{font-family:"IBM Plex Mono","SFMono-Regular",Menlo,Consolas,monospace}
+.cond{font-family:"Barlow Condensed","Barlow",system-ui,sans-serif}
+
+.wrap{max-width:1180px;margin:0 auto;padding:28px 20px 64px}
+
+/* ---------- header ---------- */
+header.top{display:flex;align-items:flex-end;justify-content:space-between;gap:16px;flex-wrap:wrap;margin-bottom:22px}
+.brand h1{
+  font-family:"Barlow Condensed","Barlow",sans-serif;font-weight:700;font-size:44px;line-height:.95;
+  letter-spacing:.01em;text-transform:uppercase;margin:0;text-wrap:balance;
+}
+.brand h1 .red{color:var(--accent)}
+.brand p{margin:8px 0 0;color:var(--ink-2);max-width:62ch}
+.top-actions{display:flex;gap:8px;flex-wrap:wrap}
+
+/* ---------- buttons ---------- */
+.btn{
+  display:inline-flex;align-items:center;gap:6px;
+  border:1px solid var(--line-strong);background:var(--surface);color:var(--ink);
+  border-radius:6px;padding:7px 12px;cursor:pointer;line-height:1.1;
+  font-family:"Barlow Condensed","Barlow",sans-serif;font-weight:600;font-size:15px;letter-spacing:.04em;text-transform:uppercase;
+}
+.btn:hover{background:var(--surface-2)}
+.btn.primary{background:var(--accent);border-color:var(--accent);color:var(--accent-ink)}
+.btn.primary:hover{filter:brightness(1.06)}
+.btn.quiet{border-color:transparent;background:transparent;color:var(--ink-2)}
+.btn.quiet:hover{background:var(--surface-2);color:var(--ink)}
+.btn.small{padding:4px 8px;font-size:13px}
+.btn:disabled{opacity:.45;cursor:not-allowed}
+
+/* ---------- panels ---------- */
+.grid{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:20px;align-items:start}
+@media (max-width:860px){.grid{grid-template-columns:minmax(0,1fr)}}
+.panel{
+  background:var(--surface);border:1px solid var(--line);border-radius:10px;
+  box-shadow:var(--shadow);padding:18px 20px 20px;position:relative;
+}
+.panel.full{margin-top:20px}
+.panel-head{display:flex;align-items:baseline;gap:12px;margin-bottom:12px;flex-wrap:wrap}
+.step{
+  font-family:"Barlow Condensed","Barlow",sans-serif;font-weight:700;font-size:13px;letter-spacing:.12em;
+  color:var(--accent);text-transform:uppercase;
+}
+.panel h2{
+  font-family:"Barlow Condensed","Barlow",sans-serif;font-weight:600;font-size:26px;line-height:1;margin:0;
+  text-transform:uppercase;letter-spacing:.02em;
+}
+.panel-head .spacer{flex:1}
+.hint{color:var(--muted);font-size:14px;margin:0 0 10px}
+.hint code{font-family:"IBM Plex Mono",monospace;font-size:13px;background:var(--surface-2);padding:1px 5px;border-radius:4px}
+
+/* the sign: enamel plate with two screws */
+.sign{
+  position:relative;border:2px solid var(--ink);border-radius:8px;background:var(--surface);
+  padding:22px 16px 14px;
+}
+:root[data-theme="dark"] .sign{border-color:var(--line-strong)}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]) .sign{border-color:var(--line-strong)}}
+.sign::before,.sign::after{
+  content:"";position:absolute;top:7px;width:10px;height:10px;border-radius:50%;
+  background:radial-gradient(circle at 40% 35%,var(--surface) 0 18%,var(--screw) 22% 100%);
+  box-shadow:inset 0 0 0 1px var(--screw-slot);
+}
+.sign::before{left:8px}.sign::after{right:8px}
+
+.rows{display:flex;flex-direction:column}
+.seam{
+  display:flex;align-items:center;justify-content:center;height:16px;position:relative;
+}
+.seam::before{content:"";position:absolute;left:8px;right:8px;top:50%;border-top:1px dashed var(--line);}
+.seam button{
+  position:relative;z-index:1;border:1px solid var(--line);background:var(--surface);color:var(--muted);
+  width:22px;height:22px;border-radius:50%;padding:0;cursor:pointer;line-height:1;font-size:15px;
+  display:inline-flex;align-items:center;justify-content:center;transition:transform .12s ease,color .12s ease,border-color .12s ease;
+}
+.seam:hover button,.seam button:focus-visible{color:var(--accent);border-color:var(--accent);transform:scale(1.15)}
+.seam:hover::before{border-color:var(--accent)}
+.seam .label{
+  position:absolute;right:36px;font-size:12px;color:var(--accent);opacity:0;pointer-events:none;
+  font-family:"Barlow Condensed",sans-serif;letter-spacing:.08em;text-transform:uppercase;font-weight:600;
+}
+.seam:hover .label,.seam button:focus-visible ~ .label{opacity:1}
+@media (prefers-reduced-motion:reduce){.seam button{transition:none}}
+
+.row{display:grid;grid-template-columns:auto minmax(0,1fr) auto;align-items:center;gap:10px;padding:2px 0}
+.row-label{
+  font-family:"Barlow Condensed","Barlow",sans-serif;font-weight:600;font-size:15px;letter-spacing:.08em;text-transform:uppercase;
+  color:var(--ink-2);min-width:62px;font-variant-numeric:tabular-nums;
+}
+.row-input{
+  width:100%;border:1px solid var(--line);border-radius:6px;background:var(--surface);padding:8px 10px;
+  font-family:"IBM Plex Mono",monospace;font-size:15px;
+}
+.row-input:hover{border-color:var(--line-strong)}
+.row .del{
+  border:1px solid transparent;background:transparent;color:var(--muted);width:30px;height:30px;border-radius:6px;cursor:pointer;
+  display:inline-flex;align-items:center;justify-content:center;padding:0;
+}
+.row .del:hover{color:var(--accent);background:var(--accent-soft)}
+.row .del:disabled{opacity:.3;cursor:not-allowed;background:transparent;color:var(--muted)}
+.row .del svg{width:15px;height:15px}
+
+/* ---------- formula ---------- */
+textarea{
+  width:100%;border:1px solid var(--line);border-radius:6px;background:var(--surface);padding:10px 12px;
+  font-family:"IBM Plex Mono",monospace;font-size:14px;line-height:1.5;resize:vertical;
+}
+textarea:hover{border-color:var(--line-strong)}
+textarea.interp{background:var(--surface-2)}
+.field{margin-bottom:14px}
+.field-head{display:flex;align-items:baseline;gap:10px;margin-bottom:6px;flex-wrap:wrap}
+.field label,.field .lbl{
+  font-family:"Barlow Condensed","Barlow",sans-serif;font-weight:600;font-size:15px;letter-spacing:.08em;text-transform:uppercase;color:var(--ink-2)
+}
+.field .meta{color:var(--muted);font-size:13px;font-variant-numeric:tabular-nums}
+.field .meta.warn{color:var(--warn)}
+.field .spacer{flex:1}
+.field-foot{display:flex;align-items:flex-start;gap:10px;margin-top:6px}
+.field-foot .hint{flex:1;margin:0}
+.field-foot .btn{flex:none;white-space:nowrap}
+
+/* ---------- options ---------- */
+details.opts{border:1px solid var(--line);border-radius:8px;background:var(--surface);margin-top:2px}
+details.opts summary{
+  cursor:pointer;padding:9px 12px;list-style:none;display:flex;align-items:center;gap:8px;
+  font-family:"Barlow Condensed","Barlow",sans-serif;font-weight:600;font-size:15px;letter-spacing:.08em;text-transform:uppercase;color:var(--ink-2)
+}
+details.opts summary::-webkit-details-marker{display:none}
+details.opts summary::before{content:"";width:0;height:0;border:5px solid transparent;border-left:7px solid var(--muted);transition:transform .15s}
+details.opts[open] summary::before{transform:rotate(90deg)}
+.opt-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px 16px;padding:4px 12px 14px}
+@media (max-width:520px){.opt-grid{grid-template-columns:1fr}}
+.opt{display:flex;flex-direction:column;gap:4px}
+.opt .k{font-size:13px;color:var(--muted)}
+.opt select{
+  border:1px solid var(--line);border-radius:6px;background:var(--surface);padding:6px 8px;font-size:14px;max-width:100%;
+}
+.opt.check{flex-direction:row;align-items:center;gap:8px;grid-column:1 / -1}
+.opt.check input{width:16px;height:16px;accent-color:var(--accent)}
+
+/* ---------- output ---------- */
+.decoded{
+  border:1px solid var(--line);border-radius:8px;background:var(--surface-2);padding:16px 18px;min-height:64px;
+  font-family:"IBM Plex Mono",monospace;font-size:22px;line-height:1.6;letter-spacing:.06em;
+  display:flex;flex-wrap:wrap;gap:6px 18px;
+}
+.decoded .g{white-space:nowrap}
+.decoded .bad{color:var(--accent);font-weight:600}
+.decoded .empty{color:var(--muted);font-size:16px;letter-spacing:0;font-family:"Barlow",sans-serif}
+.decoded .space{display:none}
+.decoded-actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px;align-items:center}
+.status{font-size:14px;color:var(--muted);font-variant-numeric:tabular-nums}
+.status.warn{color:var(--warn)}
+.status.good{color:var(--good)}
+
+.subpanels{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:20px;margin-top:18px;align-items:start}
+@media (max-width:860px){.subpanels{grid-template-columns:minmax(0,1fr)}}
+details.sub{border:1px solid var(--line);border-radius:8px;background:var(--surface)}
+details.sub summary{
+  cursor:pointer;padding:10px 14px;list-style:none;display:flex;align-items:center;gap:8px;
+  font-family:"Barlow Condensed","Barlow",sans-serif;font-weight:600;font-size:17px;letter-spacing:.06em;text-transform:uppercase;
+}
+details.sub summary::-webkit-details-marker{display:none}
+details.sub summary::before{content:"";width:0;height:0;border:5px solid transparent;border-left:7px solid var(--muted);transition:transform .15s}
+details.sub[open] summary::before{transform:rotate(90deg)}
+details.sub summary .meta{margin-left:auto;font-family:"Barlow",sans-serif;font-weight:400;font-size:13px;color:var(--muted);text-transform:none;letter-spacing:0}
+.sub-body{padding:2px 14px 14px}
+.sub-body .hint{margin-top:0}
+.scroll{overflow-x:auto}
+
+table{border-collapse:collapse;width:100%;font-size:14px}
+th{
+  text-align:left;font-family:"Barlow Condensed",sans-serif;font-weight:600;letter-spacing:.08em;text-transform:uppercase;font-size:13px;
+  color:var(--muted);padding:6px 8px;border-bottom:1px solid var(--line);white-space:nowrap
+}
+td{padding:5px 8px;border-bottom:1px solid var(--line);vertical-align:top;font-variant-numeric:tabular-nums}
+tr:last-child td{border-bottom:0}
+td.mono,th.mono{font-family:"IBM Plex Mono",monospace;font-size:13.5px}
+tr.bad td{background:var(--accent-soft)}
+tr.bad td .why{color:var(--accent);font-size:13px}
+td .ch{display:inline-block;min-width:1.4em;text-align:center;font-weight:600;background:var(--surface-2);border-radius:4px;padding:0 4px}
+tr.bad td .ch{background:transparent;color:var(--accent)}
+.gsep td{border-bottom:2px solid var(--line-strong)}
+td.gnum{color:var(--muted)}
+
+/* numbering view */
+.numlines{display:flex;flex-direction:column;gap:8px}
+.numline{display:grid;grid-template-columns:auto minmax(0,1fr);gap:10px;align-items:baseline}
+.numline .nl{font-family:"Barlow Condensed",sans-serif;font-weight:600;letter-spacing:.08em;text-transform:uppercase;font-size:13px;color:var(--ink-2);min-width:52px;font-variant-numeric:tabular-nums}
+.chips{display:flex;flex-wrap:wrap;gap:6px}
+.chip{
+  display:inline-flex;align-items:stretch;border:1px solid var(--line);border-radius:5px;overflow:hidden;
+  font-family:"IBM Plex Mono",monospace;font-size:13.5px;
+}
+.chip .wi{background:var(--surface-2);color:var(--muted);padding:2px 6px;font-size:12px;font-variant-numeric:tabular-nums;border-right:1px solid var(--line)}
+.chip .wt{padding:2px 7px;display:inline-flex}
+.chip .c{position:relative;padding-top:10px}
+.chip .c::before{
+  content:attr(data-i);position:absolute;top:-1px;left:0;right:0;text-align:center;font-size:8.5px;color:var(--muted);line-height:1;
+  font-family:"Barlow",sans-serif;
+}
+.chip .c.skip{color:var(--muted);opacity:.55}
+.chip .c.skip::before{content:"·"}
+.chip.skipword{opacity:.5;border-style:dashed}
+.numline .none{color:var(--muted);font-size:13px}
+
+/* convert */
+.conv-opts{display:flex;gap:14px;flex-wrap:wrap;align-items:center;margin-bottom:10px}
+.conv-opts label{display:inline-flex;align-items:center;gap:6px;font-size:14px}
+.conv-opts input[type=checkbox]{accent-color:var(--accent);width:15px;height:15px}
+.conv-opts select{border:1px solid var(--line);border-radius:6px;background:var(--surface);padding:4px 8px;font-size:14px}
+.vals{font-family:"IBM Plex Mono",monospace;font-size:13.5px;letter-spacing:.02em}
+.vals .dot{color:var(--muted)}
+.tot{font-weight:600}
+
+footer{margin-top:28px;color:var(--muted);font-size:13px;display:flex;gap:14px;flex-wrap:wrap;justify-content:space-between}
+footer .k{font-family:"IBM Plex Mono",monospace;font-size:12px}
+.toast{
+  position:fixed;left:50%;bottom:22px;transform:translateX(-50%) translateY(20px);opacity:0;
+  background:var(--ink);color:var(--ground);padding:8px 14px;border-radius:6px;font-size:14px;pointer-events:none;
+  transition:opacity .15s,transform .15s;
+}
+.toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
+.sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header class="top">
+    <div class="brand">
+      <h1>Read <span class="red">the</span> Sign</h1>
+      <p>Type the sign line by line, paste the cache's formula, and see what the sign says. Nothing leaves this page — your work is saved in this browser only.</p>
+    </div>
+    <div class="top-actions">
+      <button class="btn quiet" id="btn-example" type="button">Load example</button>
+      <button class="btn quiet" id="btn-clear" type="button">Clear everything</button>
+    </div>
+  </header>
+
+  <div class="grid">
+    <!-- STEP 1: the sign -->
+    <section class="panel" aria-labelledby="h-sign">
+      <div class="panel-head">
+        <span class="step">Step 1</span>
+        <h2 id="h-sign">The sign</h2>
+        <span class="spacer"></span>
+        <span class="status" id="sign-status"></span>
+      </div>
+      <p class="hint">One physical line of the sign per box, exactly as written. Use spaces between words. Press <code>Enter</code> to start a new line below; the <code>+</code> seams insert a line anywhere.</p>
+      <div class="sign">
+        <div class="rows" id="rows"></div>
+      </div>
+    </section>
+
+    <!-- STEP 2: the formula -->
+    <section class="panel" aria-labelledby="h-formula">
+      <div class="panel-head">
+        <span class="step">Step 2</span>
+        <h2 id="h-formula">The formula</h2>
+      </div>
+      <div class="field">
+        <div class="field-head">
+          <label for="formula">Paste the full conversion formula here</label>
+        </div>
+        <textarea id="formula" rows="7" placeholder="Paste straight from the cache page. Any of these work:&#10;(3, 1, 1) (1, 1, 7)   {3,1,1}   [3-1-1]   3.1.1   L3W1C1   line 3 word 1 character 1&#10;&#10;A blank line between sets of triples starts a new word."></textarea>
+      </div>
+      <div class="field">
+        <div class="field-head">
+          <label for="interp">Interpreted formula</label>
+          <span class="meta" id="interp-meta"></span>
+        </div>
+        <textarea id="interp" class="interp" rows="6" spellcheck="false" placeholder="Each line here becomes one decoded word. Triples are (line, word, character). Edit freely if the reading isn't quite right — or write the formula here directly."></textarea>
+        <div class="field-foot">
+          <p class="hint">Each line above becomes one decoded word; edit it if the automatic reading missed something.</p>
+          <button class="btn quiet small" id="btn-reinterp" type="button" title="Throw away edits above and re-read the pasted formula">Re-read pasted formula</button>
+        </div>
+      </div>
+      <details class="opts" id="opts">
+        <summary>Counting rules</summary>
+        <div class="opt-grid">
+          <div class="opt">
+            <span class="k">Triple order</span>
+            <select id="opt-order">
+              <option value="LWC">(line, word, character)</option>
+              <option value="LCW">(line, character, word)</option>
+              <option value="WLC">(word, line, character)</option>
+              <option value="WCL">(word, character, line)</option>
+              <option value="CLW">(character, line, word)</option>
+              <option value="CWL">(character, word, line)</option>
+            </select>
+          </div>
+          <div class="opt">
+            <span class="k">Counting starts at</span>
+            <select id="opt-base">
+              <option value="1">1 — first line is line 1</option>
+              <option value="0">0 — first line is line 0</option>
+            </select>
+          </div>
+          <div class="opt">
+            <span class="k">What counts as a character</span>
+            <select id="opt-chars">
+              <option value="alnum">Letters and digits only (skip punctuation)</option>
+              <option value="letters">Letters only</option>
+              <option value="all">Every character, punctuation included</option>
+            </select>
+          </div>
+          <div class="opt">
+            <span class="k">Hyphenated words</span>
+            <select id="opt-hyphen">
+              <option value="one">One word (PARK-AND-RIDE = 1)</option>
+              <option value="split">Split at hyphens (PARK-AND-RIDE = 3)</option>
+            </select>
+          </div>
+          <div class="opt">
+            <span class="k">Numbers on the sign</span>
+            <select id="opt-numbers">
+              <option value="word">Count as words</option>
+              <option value="skip">Don't count as words</option>
+            </select>
+          </div>
+          <div class="opt">
+            <span class="k">Stand-alone symbols (&amp;, —, •)</span>
+            <select id="opt-punct">
+              <option value="skip">Don't count as words</option>
+              <option value="word">Count as words</option>
+            </select>
+          </div>
+          <div class="opt">
+            <span class="k">New word in the pasted formula starts at</span>
+            <select id="opt-group">
+              <option value="blank">A blank line</option>
+              <option value="newline">Every line break</option>
+            </select>
+          </div>
+          <div class="opt">
+            <span class="k">Show decoded text</span>
+            <select id="opt-case">
+              <option value="asis">As typed</option>
+              <option value="upper">UPPERCASE</option>
+            </select>
+          </div>
+        </div>
+      </details>
+    </section>
+  </div>
+
+  <!-- STEP 3: the result -->
+  <section class="panel full" aria-labelledby="h-result">
+    <div class="panel-head">
+      <span class="step">Step 3</span>
+      <h2 id="h-result">What it says</h2>
+      <span class="spacer"></span>
+      <span class="status" id="result-status"></span>
+    </div>
+    <div class="decoded" id="decoded" aria-live="polite"></div>
+    <div class="decoded-actions">
+      <button class="btn" id="btn-copy" type="button">Copy text</button>
+      <button class="btn quiet" id="btn-copy-compact" type="button">Copy without spaces</button>
+    </div>
+
+    <div class="subpanels">
+      <details class="sub" id="sub-convert">
+        <summary>Letters → numbers <span class="meta">A=1 … Z=26</span></summary>
+        <div class="sub-body">
+          <div class="conv-opts">
+            <label><span>A =</span>
+              <select id="conv-a">
+                <option value="1">1 (A=1 … Z=26)</option>
+                <option value="0">0 (A=0 … Z=25)</option>
+              </select>
+            </label>
+            <label><input type="checkbox" id="conv-reduce"> Reduce to one digit (last digit)</label>
+            <label><input type="checkbox" id="conv-root"> Reduce to one digit (digital root)</label>
+          </div>
+          <div class="scroll"><table id="conv-table"></table></div>
+        </div>
+      </details>
+
+      <details class="sub" id="sub-trace">
+        <summary>Trace <span class="meta" id="trace-meta">each triple, what it hit</span></summary>
+        <div class="sub-body">
+          <div class="scroll"><table id="trace-table"></table></div>
+        </div>
+      </details>
+    </div>
+
+    <details class="sub" id="sub-numbering" style="margin-top:20px">
+      <summary>How the sign is being counted <span class="meta">word numbers and character numbers, under the current rules</span></summary>
+      <div class="sub-body">
+        <p class="hint">Dimmed characters aren't counted. Dashed words aren't counted as words.</p>
+        <div class="numlines" id="numlines"></div>
+      </div>
+    </details>
+  </section>
+
+  <footer>
+    <span>Read the Sign · a geocaching tool of the trade · <a href="../" style="color:inherit">all AdequateFootwear tools</a></span>
+    <span class="k">triples: (line, word, character) · counted from 1 unless you say otherwise</span>
+  </footer>
+</div>
+<div class="toast" id="toast" role="status"></div>
+
+<script>
+(function(){
+  'use strict';
+  const LS_KEY = 'read-the-sign:v1';
+  const $ = (s) => document.querySelector(s);
+
+  const DEFAULT_OPTS = { order:'LWC', base:1, chars:'alnum', hyphen:'one', numbers:'word', punct:'skip', group:'blank', caseMode:'asis', convA:1, convReduce:false, convRoot:false };
+  let state = { lines:['',''], formula:'', interp:'', interpDirty:false, opts:{...DEFAULT_OPTS} };
+
+  /* ---------- persistence ---------- */
+  function load(){
+    try{
+      const raw = localStorage.getItem(LS_KEY);
+      if(!raw) return;
+      const s = JSON.parse(raw);
+      if(s && Array.isArray(s.lines)){
+        state.lines = s.lines.length ? s.lines.map(String) : [''];
+        state.formula = String(s.formula||'');
+        state.interp = String(s.interp||'');
+        state.interpDirty = !!s.interpDirty;
+        state.opts = {...DEFAULT_OPTS, ...(s.opts||{})};
+      }
+    }catch(e){}
+  }
+  let saveTimer = null;
+  function saveNow(){ try{ localStorage.setItem(LS_KEY, JSON.stringify(state)); }catch(e){} }
+  function save(){
+    clearTimeout(saveTimer);
+    saveTimer = setTimeout(saveNow, 150);
+  }
+  window.addEventListener('pagehide', saveNow);
+  document.addEventListener('visibilitychange', () => { if(document.visibilityState === 'hidden') saveNow(); });
+
+  /* ---------- formula parsing ---------- */
+  // Named: L3W2C4 / R3-W2-L4 / "line 3, word 2, character 4"
+  const NAMED = '\\b(?:line|row|l|r)\\s*#?\\s*(\\d+)[^\\d\\n]{0,16}?(?:word|w)\\s*#?\\s*(\\d+)[^\\d\\n]{0,16}?(?:character|char|letter|ltr|c|l)\\s*#?\\s*(\\d+)';
+  // Bare numeric triple with any short separators: (3, 1, 1)  {3,1,1}  3.1.1  3-1-1  3/1/1  3 1 1
+  const SEP = '[ \\t,.;:/|\\-\\u2010-\\u2015]+';
+  const NUM = '(\\d+)' + SEP + '(\\d+)' + SEP + '(\\d+)';
+  const MASTER = new RegExp(NAMED + '|' + NUM, 'gi');
+
+  // Returns [[ [a,b,c], ... ], ...] — groups of raw triples (in the order written)
+  function parseFormula(text, groupMode){
+    const groups = [];
+    let cur = [];
+    let last = -1;
+    MASTER.lastIndex = 0;
+    let m;
+    while((m = MASTER.exec(text)) !== null){
+      const trip = m[1] !== undefined ? [m[1],m[2],m[3]] : [m[4],m[5],m[6]];
+      const t = trip.map(n => parseInt(n,10));
+      if(last >= 0){
+        const gap = text.slice(last, m.index);
+        const blank = /\n[^\S\n]*\n/.test(gap);
+        const nl = /\n/.test(gap);
+        if(blank || (groupMode === 'newline' && nl)){
+          if(cur.length) groups.push(cur);
+          cur = [];
+        }
+      }
+      cur.push(t);
+      last = m.index + m[0].length;
+    }
+    if(cur.length) groups.push(cur);
+    return groups;
+  }
+
+  function normalize(groups){
+    return groups.map(g => g.map(t => '(' + t.join(',') + ')').join(' ')).join('\n');
+  }
+
+  /* ---------- sign tokenising ---------- */
+  const isLetter = ch => /\p{L}/u.test(ch);
+  const isDigit  = ch => /\p{N}/u.test(ch);
+  function charsOf(word, mode){
+    const cs = Array.from(word);
+    return cs.map((ch,i) => ({ch, i, counted: mode==='all' ? true : mode==='letters' ? isLetter(ch) : (isLetter(ch)||isDigit(ch))}));
+  }
+  function wordsOf(line, o){
+    let toks = line.trim().split(/\s+/).filter(Boolean);
+    if(o.hyphen === 'split') toks = toks.flatMap(t => t.split(/[-\u2010-\u2015]+/)).filter(Boolean);
+    return toks.map(text => {
+      const hasL = /\p{L}/u.test(text), hasD = /\p{N}/u.test(text);
+      let counted = true;
+      if(!hasL && !hasD) counted = (o.punct === 'word');
+      else if(!hasL && hasD) counted = (o.numbers === 'word');
+      const chars = charsOf(text, o.chars);
+      return { text, counted, chars, countedChars: chars.filter(c=>c.counted) };
+    });
+  }
+  function roles(t, order){
+    return { l: t[order.indexOf('L')], w: t[order.indexOf('W')], c: t[order.indexOf('C')] };
+  }
+
+  /* ---------- decode ---------- */
+  function decode(){
+    const o = state.opts;
+    const lines = state.lines.map(l => wordsOf(l, o));
+    const groups = parseFormula(state.interp, 'newline');
+    const base = o.base;
+    const out = groups.map(g => g.map(t => {
+      const {l,w,c} = roles(t, o.order);
+      const r = { t, l, w, c, ch:'?', bad:true, why:'', word:null };
+      const li = l - base;
+      if(!(li >= 0 && li < lines.length)){ r.why = 'the sign has ' + lines.length + ' line' + (lines.length===1?'':'s') + ' — no line ' + l; return r; }
+      const words = lines[li].filter(x => x.counted);
+      const wi = w - base;
+      if(!(wi >= 0 && wi < words.length)){ r.why = 'line ' + l + ' has ' + words.length + ' word' + (words.length===1?'':'s') + ' — no word ' + w; return r; }
+      const word = words[wi]; r.word = word;
+      const ci = c - base;
+      if(!(ci >= 0 && ci < word.countedChars.length)){ r.why = '\u201C' + word.text + '\u201D has ' + word.countedChars.length + ' counted character' + (word.countedChars.length===1?'':'s') + ' — no character ' + c; return r; }
+      r.ch = word.countedChars[ci].ch; r.bad = false;
+      return r;
+    }));
+    return { lines, groups: out };
+  }
+
+  /* ---------- rendering: rows ---------- */
+  const rowsEl = $('#rows');
+  const TRASH = '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" aria-hidden="true"><path d="M3 4.5h10M6.5 4.5V3h3v1.5M4.5 4.5l.7 8.5h5.6l.7-8.5M6.7 7v4M9.3 7v4"/></svg>';
+  function seam(i, label){
+    return '<div class="seam"><button type="button" data-seam="'+i+'" aria-label="Insert a line '+label+'">+</button><span class="label">'+label+'</span></div>';
+  }
+  function renderRows(focusIdx, caret){
+    const n = state.lines.length;
+    let html = '';
+    for(let i=0;i<n;i++){
+      html += seam(i, i===0 ? 'at the top' : 'between ' + i + ' and ' + (i+1));
+      html += '<div class="row">'
+        + '<label class="row-label" for="line-'+i+'">Line '+(i+1)+'</label>'
+        + '<input class="row-input" id="line-'+i+'" data-i="'+i+'" type="text" autocomplete="off" autocapitalize="characters" spellcheck="false" value="'+esc(state.lines[i])+'" placeholder="'+(i===0?'text of the first line':'')+'">'
+        + '<button type="button" class="del" data-del="'+i+'" title="Delete line '+(i+1)+'" aria-label="Delete line '+(i+1)+'"'+(n<=1?' disabled':'')+'>'+TRASH+'</button>'
+        + '</div>';
+    }
+    html += seam(n, 'at the bottom');
+    rowsEl.innerHTML = html;
+    if(typeof focusIdx === 'number'){
+      const el = document.getElementById('line-'+Math.max(0,Math.min(n-1,focusIdx)));
+      if(el){ el.focus(); if(typeof caret === 'number'){ try{ el.setSelectionRange(caret,caret);}catch(e){} } }
+    }
+    $('#sign-status').textContent = n + ' line' + (n===1?'':'s');
+  }
+  function esc(s){ return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+
+  rowsEl.addEventListener('click', e => {
+    const b = e.target.closest('button');
+    if(!b) return;
+    if(b.dataset.seam !== undefined){
+      const i = +b.dataset.seam;
+      state.lines.splice(i, 0, '');
+      renderRows(i, 0); update();
+    } else if(b.dataset.del !== undefined){
+      const i = +b.dataset.del;
+      if(state.lines.length <= 1) return;
+      state.lines.splice(i, 1);
+      renderRows(Math.min(i, state.lines.length-1)); update();
+    }
+  });
+  rowsEl.addEventListener('input', e => {
+    const inp = e.target.closest('input.row-input');
+    if(!inp) return;
+    state.lines[+inp.dataset.i] = inp.value;
+    update(false);
+  });
+  rowsEl.addEventListener('keydown', e => {
+    const inp = e.target.closest('input.row-input');
+    if(!inp) return;
+    const i = +inp.dataset.i;
+    if(e.key === 'Enter'){
+      e.preventDefault();
+      // split at caret: text after caret moves to the new line
+      const pos = inp.selectionStart ?? inp.value.length;
+      const before = inp.value.slice(0,pos), after = inp.value.slice(pos);
+      state.lines[i] = before;
+      state.lines.splice(i+1, 0, after);
+      renderRows(i+1, 0); update();
+    } else if(e.key === 'Backspace' && inp.value === '' && state.lines.length > 1){
+      e.preventDefault();
+      state.lines.splice(i,1);
+      const j = Math.max(0, i-1);
+      renderRows(j, state.lines[j].length); update();
+    } else if(e.key === 'ArrowUp' && i > 0){
+      e.preventDefault(); const el = document.getElementById('line-'+(i-1)); el && el.focus();
+    } else if(e.key === 'ArrowDown' && i < state.lines.length-1){
+      e.preventDefault(); const el = document.getElementById('line-'+(i+1)); el && el.focus();
+    }
+  });
+  // pasting several lines into one box spreads them over several lines
+  rowsEl.addEventListener('paste', e => {
+    const inp = e.target.closest('input.row-input');
+    if(!inp) return;
+    const text = (e.clipboardData || window.clipboardData).getData('text');
+    if(!/\r?\n/.test(text)) return;
+    e.preventDefault();
+    const parts = text.replace(/\r/g,'').split('\n').filter(p => p.trim() !== '');
+    const i = +inp.dataset.i;
+    if(inp.value.trim() === ''){
+      state.lines.splice(i, 1, ...parts);
+    } else {
+      state.lines.splice(i+1, 0, ...parts);
+    }
+    renderRows(i + parts.length - (inp.value.trim()===''?1:0)); update();
+  });
+
+  /* ---------- formula wiring ---------- */
+  const formulaEl = $('#formula'), interpEl = $('#interp');
+  function reinterpret(){
+    const groups = parseFormula(state.formula, state.opts.group);
+    state.interp = normalize(groups);
+    state.interpDirty = false;
+    interpEl.value = state.interp;
+  }
+  formulaEl.addEventListener('input', () => {
+    state.formula = formulaEl.value;
+    if(!state.interpDirty) reinterpret();
+    update();
+  });
+  interpEl.addEventListener('input', () => {
+    state.interp = interpEl.value;
+    state.interpDirty = interpEl.value.trim() !== normalize(parseFormula(state.formula, state.opts.group)).trim();
+    update();
+  });
+  $('#btn-reinterp').addEventListener('click', () => { reinterpret(); update(); toast('Re-read the pasted formula'); });
+
+  /* ---------- options wiring ---------- */
+  const optEls = { order:'#opt-order', base:'#opt-base', chars:'#opt-chars', hyphen:'#opt-hyphen', numbers:'#opt-numbers', punct:'#opt-punct', group:'#opt-group', caseMode:'#opt-case' };
+  Object.entries(optEls).forEach(([k,sel]) => {
+    $(sel).addEventListener('change', e => {
+      state.opts[k] = k==='base' ? +e.target.value : e.target.value;
+      if(k === 'group' && !state.interpDirty) reinterpret();
+      update();
+    });
+  });
+  $('#conv-a').addEventListener('change', e => { state.opts.convA = +e.target.value; update(); });
+  $('#conv-reduce').addEventListener('change', e => { state.opts.convReduce = e.target.checked; if(e.target.checked){ state.opts.convRoot=false; $('#conv-root').checked=false; } update(); });
+  $('#conv-root').addEventListener('change', e => { state.opts.convRoot = e.target.checked; if(e.target.checked){ state.opts.convReduce=false; $('#conv-reduce').checked=false; } update(); });
+  function syncControls(){
+    Object.entries(optEls).forEach(([k,sel]) => { $(sel).value = String(state.opts[k]); });
+    $('#conv-a').value = String(state.opts.convA);
+    $('#conv-reduce').checked = !!state.opts.convReduce;
+    $('#conv-root').checked = !!state.opts.convRoot;
+    formulaEl.value = state.formula;
+    interpEl.value = state.interp;
+  }
+
+  /* ---------- output rendering ---------- */
+  let lastText = '', lastCompact = '';
+  function showCase(s){ return state.opts.caseMode === 'upper' ? s.toUpperCase() : s; }
+
+  function update(){
+    save();
+    const res = decode();
+    const nTrip = res.groups.reduce((a,g)=>a+g.length,0);
+    const nBad = res.groups.reduce((a,g)=>a+g.filter(r=>r.bad).length,0);
+
+    // interp meta
+    const im = $('#interp-meta');
+    if(!state.interp.trim()){ im.textContent = ''; im.className='meta'; }
+    else { im.textContent = nTrip + ' triple' + (nTrip===1?'':'s') + ' in ' + res.groups.length + ' word' + (res.groups.length===1?'':'s') + (state.interpDirty ? ' · edited by hand' : ''); im.className = 'meta'; }
+
+    // decoded
+    const dec = $('#decoded');
+    if(!nTrip){
+      dec.innerHTML = '<span class="empty">' + (state.lines.some(l=>l.trim()) ? 'Paste the formula to see what the sign says.' : 'Type the sign, then paste the formula.') + '</span>';
+      lastText = ''; lastCompact = '';
+    } else {
+      dec.innerHTML = res.groups.map(g => '<span class="g">' + g.map(r => r.bad ? '<span class="bad" title="'+esc(r.why)+'">?</span>' : esc(showCase(r.ch))).join('') + '</span>').join('<span class="space"> </span>');
+      lastText = res.groups.map(g => g.map(r => r.bad ? '?' : showCase(r.ch)).join('')).join(' ');
+      lastCompact = lastText.replace(/\s+/g,'');
+    }
+    const rs = $('#result-status');
+    if(!nTrip){ rs.textContent=''; rs.className='status'; }
+    else if(nBad){ rs.textContent = nBad + ' of ' + nTrip + ' triple' + (nTrip===1?'':'s') + " couldn't be read — see the trace"; rs.className='status warn'; }
+    else { rs.textContent = 'all ' + nTrip + ' triple' + (nTrip===1?'':'s') + ' read'; rs.className='status good'; }
+    $('#btn-copy').disabled = !nTrip; $('#btn-copy-compact').disabled = !nTrip;
+
+    renderConvert(res);
+    renderTrace(res, nBad);
+    renderNumbering(res);
+  }
+
+  function letterVal(ch){
+    const u = ch.toUpperCase();
+    if(u >= 'A' && u <= 'Z') return u.charCodeAt(0) - 65 + state.opts.convA;
+    return null;
+  }
+  function digitalRoot(n){ n = Math.abs(n); while(n > 9) n = String(n).split('').reduce((a,d)=>a+ +d,0); return n; }
+  function reduceVal(v){
+    if(state.opts.convReduce) return v % 10;
+    if(state.opts.convRoot) return digitalRoot(v);
+    return v;
+  }
+  function renderConvert(res){
+    const tbl = $('#conv-table');
+    if(!res.groups.length){ tbl.innerHTML = '<tr><td class="gnum">Nothing decoded yet.</td></tr>'; return; }
+    let rows = '<tr><th>#</th><th>Word</th><th>Values</th><th>Sum</th><th>As digits</th></tr>';
+    let allDigits = '';
+    res.groups.forEach((g,gi) => {
+      const chars = g.map(r => r.bad ? '?' : r.ch);
+      const vals = chars.map(ch => {
+        if(ch === '?') return {txt:'?', v:null};
+        if(isDigit(ch)) return {txt:ch, v:+ch, digit:true};
+        const lv = letterVal(ch);
+        if(lv === null) return {txt:'·', v:null};
+        const rv = reduceVal(lv);
+        return {txt:String(rv), v:rv};
+      });
+      const nums = vals.filter(x => x.v !== null);
+      const sum = nums.reduce((a,x)=>a+x.v,0);
+      const digits = vals.map(x => x.v===null ? '' : String(x.v)).join('');
+      allDigits += digits;
+      rows += '<tr><td class="gnum">'+(gi+1)+'</td><td class="mono">'+esc(showCase(chars.join('')))+'</td><td class="vals">'+vals.map(x=>x.v===null?'<span class="dot">'+esc(x.txt)+'</span>':esc(x.txt)).join(' ')+'</td><td class="tot">'+(nums.length?sum:'')+'</td><td class="mono">'+esc(digits)+'</td></tr>';
+    });
+    if(res.groups.length > 1){
+      const total = res.groups.reduce((a,g)=>a+g.reduce((b,r)=>{ if(r.bad) return b; if(isDigit(r.ch)) return b + +r.ch; const lv=letterVal(r.ch); return lv===null?b:b+reduceVal(lv); },0),0);
+      rows += '<tr class="gsep"><td></td><td class="gnum">all words</td><td></td><td class="tot">'+total+'</td><td class="mono">'+esc(allDigits)+'</td></tr>';
+    }
+    tbl.innerHTML = rows;
+  }
+
+  function renderTrace(res, nBad){
+    const tbl = $('#trace-table');
+    $('#trace-meta').textContent = nBad ? (nBad + ' problem' + (nBad===1?'':'s')) : 'each triple, what it hit';
+    if(!res.groups.length){ tbl.innerHTML = '<tr><td class="gnum">Nothing to trace yet.</td></tr>'; return; }
+    let rows = '<tr><th>Word</th><th class="mono">Triple</th><th>Line</th><th>Word hit</th><th>Char</th></tr>';
+    res.groups.forEach((g,gi) => {
+      g.forEach((r,ri) => {
+        const trip = '(' + r.t.join(',') + ')';
+        if(r.bad){
+          rows += '<tr class="bad"><td class="gnum">'+(ri===0?gi+1:'')+'</td><td class="mono">'+trip+'</td><td colspan="2"><span class="why">'+esc(r.why)+'</span></td><td><span class="ch">?</span></td></tr>';
+        } else {
+          rows += '<tr><td class="gnum">'+(ri===0?gi+1:'')+'</td><td class="mono">'+trip+'</td><td>'+r.l+'</td><td class="mono">'+esc(r.word.text)+'</td><td><span class="ch">'+esc(showCase(r.ch))+'</span></td></tr>';
+        }
+      });
+    });
+    tbl.innerHTML = rows;
+  }
+
+  function renderNumbering(res){
+    const el = $('#numlines');
+    const base = state.opts.base;
+    el.innerHTML = res.lines.map((words, li) => {
+      let n = 0;
+      const chips = words.map(w => {
+        const idx = w.counted ? (n++ + base) : '–';
+        let k = 0;
+        const cs = w.chars.map(c => c.counted
+          ? '<span class="c" data-i="'+(k++ + base)+'">'+esc(c.ch)+'</span>'
+          : '<span class="c skip">'+esc(c.ch)+'</span>').join('');
+        return '<span class="chip'+(w.counted?'':' skipword')+'"><span class="wi">'+idx+'</span><span class="wt">'+cs+'</span></span>';
+      }).join('');
+      return '<div class="numline"><span class="nl">Line '+(li+base)+'</span><span class="chips">'+(chips || '<span class="none">(empty)</span>')+'</span></div>';
+    }).join('');
+  }
+
+  /* ---------- copy / toast ---------- */
+  function copy(text, msg){
+    const done = () => toast(msg);
+    if(navigator.clipboard && navigator.clipboard.writeText){ navigator.clipboard.writeText(text).then(done, () => fallback()); }
+    else fallback();
+    function fallback(){
+      const ta = document.createElement('textarea'); ta.value = text; ta.style.position='fixed'; ta.style.opacity='0';
+      document.body.appendChild(ta); ta.select(); try{ document.execCommand('copy'); done(); }catch(e){ toast('Copy failed — select the text and copy it yourself'); } document.body.removeChild(ta);
+    }
+  }
+  $('#btn-copy').addEventListener('click', () => copy(lastText, 'Copied'));
+  $('#btn-copy-compact').addEventListener('click', () => copy(lastCompact, 'Copied without spaces'));
+  let toastTimer;
+  function toast(msg){ const t = $('#toast'); t.textContent = msg; t.classList.add('show'); clearTimeout(toastTimer); toastTimer = setTimeout(()=>t.classList.remove('show'), 1600); }
+
+  /* ---------- clear / example ---------- */
+  $('#btn-clear').addEventListener('click', () => {
+    if(!confirm('Clear the sign, the formula and all settings?')) return;
+    state = { lines:['',''], formula:'', interp:'', interpDirty:false, opts:{...DEFAULT_OPTS} };
+    syncControls(); renderRows(0); update(); toast('Cleared');
+  });
+  $('#btn-example').addEventListener('click', () => {
+    state.lines = ['PLEASE KEEP OFF', 'THE GRASS', 'VIOLATORS WILL BE FINED $50', 'THANK YOU — PARKS DEPT.'];
+    state.formula = 'You will need the following, in the format (Line, Word, Character):\n\n(1, 1, 5) (2, 1, 2) (1, 3, 1) (4, 3, 1)\n\n(3, 4, 1) (3, 2, 2) (1, 3, 2) (2, 1, 1) (4, 2, 1)\n\n(3, 5, 1) (3, 5, 2)';
+    state.interpDirty = false;
+    reinterpret();
+    syncControls(); renderRows(); update(); toast('Example loaded');
+  });
+
+  /* ---------- boot ---------- */
+  load();
+  syncControls();
+  renderRows();
+  update();
+})();
+</script>
+</body>
+</html>

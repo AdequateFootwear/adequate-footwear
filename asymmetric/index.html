@@ -142,8 +142,35 @@ footer{margin-top:36px;color:var(--muted);font-size:13px}
     <p>Most trouble comes from copying. Every worksheet shows how many digits each number has, so you can check it against the puzzle.</p>
   </div>
 
-  <h2 class="section-label">The worksheets</h2>
+  <h2 class="section-label">The worksheets <span style="font-weight:500;letter-spacing:.04em;text-transform:none;color:var(--muted)">(alphabetical)</span></h2>
   <ul class="tools">
+    <li>
+      <a href="diffie-hellman/">
+        <span>
+          <span class="tool-name">Diffie–Hellman</span>
+          <span class="tool-desc">A key exchange. Recovers one side’s secret with a discrete logarithm, rebuilds the shared secret, and explains what to do with it.</span>
+        </span>
+        <span class="go" aria-hidden="true"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 10h11M11 5l5 5-5 5"/></svg></span>
+      </a>
+    </li>
+    <li>
+      <a href="elgamal/">
+        <span>
+          <span class="tool-name">ElGamal</span>
+          <span class="tool-desc">Finds either secret with a discrete logarithm (Pohlig–Hellman), rebuilds the shared secret, divides it out, and helps you read the message.</span>
+        </span>
+        <span class="go" aria-hidden="true"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 10h11M11 5l5 5-5 5"/></svg></span>
+      </a>
+    </li>
+    <li>
+      <a href="rabin/">
+        <span>
+          <span class="tool-name">Rabin</span>
+          <span class="tool-desc">Factors the public key, takes a square root modulo each prime, combines them with the CRT into four candidates, and helps you read them.</span>
+        </span>
+        <span class="go" aria-hidden="true"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 10h11M11 5l5 5-5 5"/></svg></span>
+      </a>
+    </li>
     <li>
       <a href="rsa/">
         <span>

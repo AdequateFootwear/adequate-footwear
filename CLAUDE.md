@@ -38,6 +38,15 @@ Make puzzles *slightly* more accessible: take the tedium out, never hand solvers
   (`--brass`) is for small labels. Keep text at 4.5:1 contrast or better, and input borders at 3:1.
 - Every tool links back to the index (`../`), and every tool is listed in `index.html` and in
   `README.md`.
+- **Folders** group related tools: a folder holds its own `index.html` listing its tools, plus one
+  subfolder per tool. The main index lists the folder as a card, not each tool inside it. A tool in
+  a folder links to the folder (`../`) and to the main index (`../../`).
+- **Asymmetric Cryptosystems** (`asymmetric/`): one guided worksheet per cryptosystem, named for
+  the cryptosystem, never for the cache, because working out which system a puzzle uses is part of
+  the puzzle. When numbers don't fit, a worksheet explains why and what that system needs, but
+  never names another system. The worksheets do the hard computation (factoring, discrete logs)
+  and explain each step. They share a number-theory engine, the `ntModule` function inlined in
+  each page: copy it from `asymmetric/rsa/index.html` and keep the copies identical.
 - **Never rename or move a published tool's folder.** Cache pages link to these addresses, and
   GitHub doesn't redirect Pages URLs.
 
@@ -57,6 +66,9 @@ Plain text:
 ```
 Optional helper: TOOL NAME, https://adequatefootwear.github.io/adequate-footwear/TOOL/ (not needed to solve; everything required is on this page and in the field).
 ```
+
+For the Asymmetric series, link the folder, not a worksheet, so the link doesn't name the
+cryptosystem: TOOL NAME = "Asymmetric Cryptosystems worksheets", TOOL = `asymmetric`.
 
 Reviewer note when submitting: "The linked TOOL NAME page is an optional, generic helper I host
 on GitHub Pages. It contains no solution information and isn't needed to solve."

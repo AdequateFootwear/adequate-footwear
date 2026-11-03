@@ -354,6 +354,18 @@ table.ftab td:last-child{text-align:left}
 #dd-wheel .wc{font:600 16px "Barlow Condensed",sans-serif;fill:var(--ink)}
 #dd-wheel .wc2{font:600 13px "IBM Plex Mono",monospace;fill:var(--muted)}
 .dd-right{min-width:0}
+.defbox{border:1px solid var(--line);border-left:4px solid var(--accent);border-radius:10px;background:var(--surface-2);padding:6px 12px 4px;margin:8px 0}
+.defs{display:grid;grid-template-columns:auto minmax(0,1fr);gap:6px 18px;align-items:baseline;padding:8px 0}
+.defs .dl{font-family:"IBM Plex Mono",monospace;font-size:15px;color:var(--ink);overflow-wrap:anywhere}
+.defs .dl .ind{display:inline-block;width:3.6em;text-align:right;padding-right:.5em;color:var(--accent);font-weight:600}
+.defs .dn{font-size:14px;color:var(--muted)}
+@media (max-width:620px){.defs{grid-template-columns:minmax(0,1fr);gap:0}.defs .dn{margin:0 0 8px 3.6em}.defs .dl .ind{width:auto;padding-right:.4em}}
+.defbox .math{background:transparent;padding:6px 0;margin:4px 0}
+.leapbox{border:1px solid var(--line);border-left:4px solid var(--t-month);border-radius:10px;background:var(--surface-2);padding:12px 14px;margin:14px 0}
+.leapbox p{margin:8px 0}
+.leapbox table.ftab th[scope=row]{text-align:left;white-space:nowrap}
+.leapbox table.ftab td{text-align:left}
+
 @media (prefers-reduced-motion:no-preference){#clock-svg .hand{transition:none}}
 </style>
 </head>
@@ -545,13 +557,13 @@ table.ftab td:last-child{text-align:left}
       <p>The calendar is modular arithmetic too, and the mathematician John Conway turned that into a party trick you can do in your head: the <b>Doomsday rule</b>. Each year, a set of easy-to-remember dates all fall on the same day of the week, called that year's <b>doomsday</b>. Find it, then count from the nearest one.</p>
       <div class="fbox" role="group" aria-label="The whole rule as one formula">
         <span class="step">The whole rule in one line</span>
-        <div class="fline">weekday = ( <span class="t-a">A(c)</span> + <span class="t-y">y + ⌊y/4⌋</span> + <span class="t-d">d − D(m)</span> ) mod 7</div>
+        <div class="fline">weekday = ( <span class="t-a">A(c)</span> + <span class="t-y">S(y)</span> + <span class="t-d">d − D(m)</span> ) mod 7</div>
         <ul class="legend">
           <li><span class="t-a">A(c)</span> the century's <b>anchor day</b>, from the first two digits of the year, <var>c</var> (Step 1)</li>
-          <li><span class="t-y">y + ⌊y/4⌋</span> how far the doomsday has moved since the century began, from the last two digits, <var>y</var> (Step 2)</li>
+          <li><span class="t-y">S(y)</span> the year's <b>shift</b>: how far the doomsday has moved since the century began, from the last two digits, <var>y</var> (Step 2)</li>
           <li><span class="t-d">d − D(m)</span> how far your day <var>d</var> is from <var>D(m)</var>, that month's doomsday date (Steps 3 and 4)</li>
         </ul>
-        <p class="help">⌊ ⌋ means “round down”: ⌊26/4⌋ = 6. Every piece is just a count of days, and “mod 7” turns a count of days into a day of the week, exactly like the 7-position clock in section 1.</p>
+        <p class="help">Every piece is just a count of days, and “mod 7” turns a count of days into a day of the week, exactly like the 7-position clock in section 1.</p>
       </div>
 
       <h3>Number the days</h3>
@@ -572,25 +584,32 @@ table.ftab td:last-child{text-align:left}
       <p><b>Why it works.</b> A century normally has 76 ordinary years and 24 leap years: 76 × 365 + 24 × 366 = 36,524 days, which is 5,217 weeks and <b>5 days</b>. So each new century's doomsday lands 5 days later in the week, and on a 7-day clock, 5 forward is the same as 2 back. That's why the anchors step Tuesday → Sunday → Friday → Wednesday. The step into a year divisible by 400 (like 2000) also picks up that year's extra leap day, so it moves 6 instead of 5, and 5 + 5 + 5 + 6 = 21 days is exactly 3 weeks. The pattern therefore repeats every 400 years. In the formula, the “+ 2” is the starting point (2000 is a Tuesday, day 2), and the “5 ×” is that 5-day step per century.</p>
       <p>To remember the two you'll use most: 1900 is a <b>We</b>dnesday (“<b>We</b> were born in the 1900s”), and 2000 is a <b>Twos</b>day (“Y<b>2</b>K”).</p>
 
-      <h3>Step 2: the year's shift, <span class="t-y">y + ⌊y/4⌋</span></h3>
-      <div class="math">doomsday of the year = (A(c) + y + ⌊y/4⌋) mod 7
-(y = the last two digits of the year)</div>
-      <p><b>Why it works.</b> An ordinary year is 365 days, which is 52 weeks and <b>1 day</b>, so each year's doomsday falls 1 day later in the week than the last. A leap year has 366 days, so the doomsday jumps 2. From the start of the century to year <var>y</var>, that's <var>y</var> one-day steps, plus one extra for each leap year along the way, and there are <var>⌊y/4⌋</var> of those:</p>
+      <h3>Step 2: the year's shift, <span class="t-y">S(y)</span></h3>
+      <div class="defbox">
+        <div class="defs">
+          <div class="dl">S(y) = y + ⌊y/4⌋</div><div class="dn">the definition</div>
+          <div class="dl"><span class="ind">≡</span> ⌊y/12⌋ + (y mod 12) + ⌊(y mod 12)/4⌋</div><div class="dn">Conway's twelves</div>
+          <div class="dl"><span class="ind">≡</span> (7 − (T₂ mod 7)) mod 7</div><div class="dn">“odd + 11” (T₂ is explained below)</div>
+        </div>
+        <p class="help"><var>y</var> is the last two digits of the year, and ⌊ ⌋ means “round down”: ⌊26/4⌋ = 6. The three lines give different numbers (32, 4 and 4 for 2026), but the same remainder after dividing by 7, which is all that matters on a 7-day clock. That's what ≡ (mod 7) means. Use whichever you find easiest.</p>
+      </div>
+      <div class="math">doomsday of the year = (A(c) + S(y)) mod 7</div>
+      <p><b>Why it works.</b> An ordinary year is 365 days, which is 52 weeks and <b>1 day</b>, so each year's doomsday falls 1 day later in the week than the last. A leap year has 366 days, so the doomsday jumps 2. From the start of the century to year <var>y</var>, that's <var>y</var> one-day steps, plus one extra for each leap year along the way, and there are <var>⌊y/4⌋</var> of those. (A leap year's own extra day counts here, because its February 29 comes before that year's doomsday dates from March onward; Step 3 deals with January and February.)</p>
       <div class="scroll"><div class="ystrip" id="ystrip"></div></div>
-      <p>For 2026: <var>26 + ⌊26/4⌋ = 26 + 6 = 32</var>, and <var>32 mod 7 = 4</var>. Tuesday (2) + 4 = day 6, <b>Saturday</b>, the doomsday for 2026.</p>
-      <p>Two shortcuts give the same number with smaller arithmetic. Both are just <var>y + ⌊y/4⌋</var> rearranged:</p>
+      <p>For 2026: <var class="t-y">S(26) = 26 + ⌊26/4⌋ = 26 + 6 = 32</var>, and <var>32 mod 7 = 4</var>. Tuesday (2) + 4 = day 6, <b>Saturday</b>, the doomsday for 2026.</p>
+      <p><b>Where the shortcuts come from.</b> Both are <var>y + ⌊y/4⌋</var> rearranged to keep the numbers small:</p>
       <ul class="facts">
         <li><b>Conway's twelves.</b> Write <var>y = 12a + r</var> (<var>a</var> twelves, remainder <var>r</var>). Then <var>y + ⌊y/4⌋ = 12a + r + 3a + ⌊r/4⌋ = 15a + r + ⌊r/4⌋</var>. Since 15 = 14 + 1 and 14 is two whole weeks, <var>15a</var> counts the same as <var>a</var>:
-          <div class="math">shift = ⌊y/12⌋ + (y mod 12) + ⌊(y mod 12)/4⌋
-2026:   2 + 2 + 0 = 4</div></li>
+          <div class="math">S(y) ≡ a + r + ⌊r/4⌋
+2026:  a = 2, r = 2, ⌊2/4⌋ = 0   →   2 + 2 + 0 = 4</div></li>
         <li><b>“Odd + 11”.</b> The same total, rearranged so you only ever halve and add 11:
           <div class="math">T₁ = y, plus 11 if y is odd
 T₂ = T₁ / 2, plus 11 if that's odd
-shift = (7 − (T₂ mod 7)) mod 7
+S(y) ≡ (7 − (T₂ mod 7)) mod 7
 
 2026:  T₁ = 26 (even, so no +11)
        T₂ = 26 / 2 = 13, odd, so 13 + 11 = 24
-       shift = 7 − (24 mod 7) = 7 − 3 = 4</div></li>
+       S ≡ 7 − (24 mod 7) = 7 − 3 = 4</div></li>
       </ul>
 
       <h3>Step 3: the doomsday dates, <span class="t-d">D(m)</span></h3>
@@ -598,11 +617,26 @@ shift = (7 − (T₂ mod 7)) mod 7
         <thead><tr><th>Month</th><th>Jan</th><th>Feb</th><th>Mar</th><th>Apr</th><th>May</th><th>Jun</th><th>Jul</th><th>Aug</th><th>Sep</th><th>Oct</th><th>Nov</th><th>Dec</th></tr></thead>
         <tbody><tr><th scope="row">D(m)</th><td>3 / 4*</td><td>28 / 29*</td><td>14</td><td>4</td><td>9</td><td>6</td><td>11</td><td>8</td><td>5</td><td>10</td><td>7</td><td>12</td></tr></tbody>
       </table></div>
-      <p class="help">* The second number is for leap years.</p>
+      <p class="help">* The second number is for leap years. Only January and February change; see the box below.</p>
       <p><b>Why they all share a weekday.</b> The gap between each doomsday date and the next is a whole number of weeks, so they all land on the same day of the week:</p>
       <div class="chain">
         <span class="dt">2/28</span><span class="gap">14 days<br>2 wk</span><span class="dt">3/14</span><span class="gap">21 days<br>3 wk</span><span class="dt">4/4</span><span class="gap">35 days<br>5 wk</span><span class="dt">5/9</span><span class="gap">28 days<br>4 wk</span><span class="dt">6/6</span><span class="gap">35 days<br>5 wk</span><span class="dt">7/11</span><span class="gap">28 days<br>4 wk</span><span class="dt">8/8</span><span class="gap">28 days<br>4 wk</span><span class="dt">9/5</span><span class="gap">35 days<br>5 wk</span><span class="dt">10/10</span><span class="gap">28 days<br>4 wk</span><span class="dt">11/7</span><span class="gap">35 days<br>5 wk</span><span class="dt">12/12</span>
       </div>
+      <div class="leapbox" role="group" aria-labelledby="leap-h">
+        <span class="step" id="leap-h">January and February in a leap year</span>
+        <p>The year's doomsday, <var>A(c) + S(y)</var>, already includes that year's February 29. That's right for March to December, which come after the leap day. January and February come <i>before</i> it, so in a leap year their doomsday dates move one day later:</p>
+        <div class="scroll"><table class="ftab">
+          <thead><tr><th></th><th>January doomsdays</th><th>February doomsdays</th></tr></thead>
+          <tbody>
+            <tr><th scope="row">Common year</th><td><b>3</b>, 10, 17, 24, 31</td><td>7, 14, 21, <b>28</b></td></tr>
+            <tr><th scope="row">Leap year</th><td><b>4</b>, 11, 18, 25</td><td>1, 8, 15, 22, <b>29</b></td></tr>
+          </tbody>
+        </table></div>
+        <p><b>Why.</b> The last day of February is always a doomsday, because March 14 is exactly 2 weeks later (it's “March 0”). In a leap year the last day is the 29th, not the 28th, so every January and February doomsday date shifts with it. Count back 8 weeks (56 days) from the last day of February and you land on January 3 in a common year, or January 4 in a leap year.</p>
+        <p><b>Example: January 1, 2024.</b> 2024 is a leap year. <var>A = 2</var>, <var>S(24) = 24 + 6 = 30</var>, so the doomsday is <var>(2 + 30) mod 7 = 4</var>, Thursday. With the leap-year date <var class="t-d">D(1) = 4</var>: <var>(4 + 1 − 4) mod 7 = 1</var>, <b>Monday</b>, which is correct. Using 3 by mistake gives Tuesday, one day off. That's the most common slip with this rule.</p>
+        <p class="help"><b>Is it a leap year?</b> If the year is divisible by 4, yes, except century years, which are leap years only when divisible by 400. So 2024 and 2000 were leap years; 1900 and 2100 aren't.</p>
+      </div>
+
       <p>How to remember them:</p>
       <div class="dd-dates">
         <div><b>4/4, 6/6, 8/8, 10/10, 12/12</b><span>Even months: the day matches the month.</span></div>
@@ -616,8 +650,8 @@ shift = (7 − (T₂ mod 7)) mod 7
       <h3>Step 4: count to your date, <span class="t-d">d − D(m)</span></h3>
       <div class="math">weekday = (doomsday of the year + d − D(m)) mod 7</div>
       <p>Christmas 2026: the year's doomsday is Saturday (6), and December's doomsday date is the 12th, so <var>(6 + 25 − 12) mod 7 = 19 mod 7 = 5</var>, a <b>Friday</b>. Going backwards works the same way: December 1 gives <var>(6 + 1 − 12) mod 7 = −5 mod 7 = 2</var>, a <b>Tuesday</b>. (−5 mod 7 is 2, just as going back 5 hours on a 7-position clock lands on 2.)</p>
-      <p>All in one line, for Christmas 2026: <var><span class="t-a">2</span> + <span class="t-y">26 + 6</span> + <span class="t-d">25 − 12</span> = 47</var>, and <var>47 mod 7 = 5</var>, Friday.</p>
-      <p class="help">Leap years: every year divisible by 4, except century years, unless they're divisible by 400 (so 2000 was a leap year, and 1900 wasn't). The rule uses the Gregorian calendar, which most of Europe adopted in 1582 and Britain and its colonies in 1752. Earlier dates in those places were recorded in the Julian calendar, so a historical date may not match.</p>
+      <p>All in one line, for Christmas 2026: <var><span class="t-a">2</span> + <span class="t-y">32</span> + <span class="t-d">25 − 12</span> = 47</var>, and <var>47 mod 7 = 5</var>, Friday.</p>
+      <p class="help">The rule uses the Gregorian calendar, which most of Europe adopted in 1582 and Britain and its colonies in 1752. Earlier dates in those places were recorded in the Julian calendar, so a historical date may not match.</p>
     </div>
 
     <div class="calc">
@@ -868,12 +902,12 @@ shift = (7 − (T₂ mod 7)) mod 7
     const odd = (() => { let t = r.T; const s = [String(t)]; if (t % 2) { t += 11; s.push(`odd, +11 → ${t}`); } t /= 2; s.push(`halve → ${t}`); if (t % 2) { t += 11; s.push(`odd, +11 → ${t}`); } const m7 = t % 7; s.push(`mod 7 → ${m7}`); s.push(`7 − ${m7} → ${(7 - m7) % 7}`); return s.join(', '); })();
     const diff = d - r.dd;
     const ys = r.T + Math.floor(r.T / 4), total = r.anchor + ys + diff;
-    $('#dd-fline').innerHTML = `weekday = (<span class="t-a">${r.anchor}</span> + <span class="t-y">${r.T} + ${Math.floor(r.T / 4)}</span> + <span class="t-d">${d} − ${r.dd}</span>) mod 7 = ${String(total).replace('-', '−')} mod 7 = <b>${r.w}</b>, ${DAYS[r.w]}`;
+    $('#dd-fline').innerHTML = `weekday = (<span class="t-a">${r.anchor}</span> + <span class="t-y">${ys}</span> + <span class="t-d">${d} − ${r.dd}</span>) mod 7 = ${String(total).replace('-', '−')} mod 7 = <b>${r.w}</b>, ${DAYS[r.w]}`;
     $('#dd-steps').innerHTML = [
       `<b>Anchor:</b> <var>c = ${c}</var>, so <var class="t-a">A = (5 × (${c} mod 4) + 2) mod 7 = (5 × ${c % 4} + 2) mod 7 = ${r.anchor}</var>, ${DAYS[r.anchor]} (“${NICK[r.anchor]}”).`,
-      `<b>Year shift:</b> <var>y = ${r.T}</var>, so <var class="t-y">${r.T} + ⌊${r.T}/4⌋ = ${r.T} + ${Math.floor(r.T / 4)} = ${ys}</var>, and ${ys} mod 7 = ${ys % 7}.<br><span class="help">Twelves: ${r.a} + ${r.b} + ${r.c} = ${r.a + r.b + r.c}. Odd + 11: ${odd}.</span>`,
+      `<b>Year shift:</b> <var>y = ${r.T}</var>, so <var class="t-y">S(${r.T}) = ${r.T} + ⌊${r.T}/4⌋ = ${r.T} + ${Math.floor(r.T / 4)} = ${ys}</var>, and ${ys} mod 7 = ${ys % 7}.<br><span class="help">Twelves: ${r.a} + ${r.b} + ${r.c} = ${r.a + r.b + r.c}. Odd + 11: ${odd}.</span>`,
       `<b>Doomsday for ${y}:</b> (${r.anchor} + ${ys % 7}) mod 7 = ${r.yd}, a <b>${DAYS[r.yd]}</b>.${leap(y) ? ` (${y} is a leap year.)` : ''}`,
-      `<b>Month:</b> <var class="t-d">D(${m}) = ${r.dd}</var> (${DOOM_WHY[m - 1]}), so <var class="t-d">d − D(m) = ${d} − ${r.dd} = ${String(diff).replace('-', '−')}</var>.`,
+      `<b>Month:</b> <var class="t-d">D(${m}) = ${r.dd}</var> (${m === 1 ? (leap(y) ? `the 4th, because ${y} is a leap year` : `the 3rd, because ${y} isn’t a leap year`) : m === 2 ? (leap(y) ? `the 29th, the last day of February in a leap year` : `the 28th, the last day of February`) : DOOM_WHY[m - 1]}), so <var class="t-d">d − D(m) = ${d} − ${r.dd} = ${String(diff).replace('-', '−')}</var>.`,
       `<b>Answer:</b> (${r.yd} + ${String(diff).replace('-', '−')}) mod 7 = ${r.w}: <b>${DAYS[r.w]}</b>.`
     ].map((x) => `<li>${x}</li>`).join('');
     drawWheel(r);

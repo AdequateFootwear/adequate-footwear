@@ -293,7 +293,7 @@ details.more > summary var{font-family:"IBM Plex Mono",monospace;font-style:norm
         <li>Encrypt: <var>c = m<sup>2</sup> mod n</var>. ("mod n" means "the remainder after dividing by <var>n</var>".)</li>
         <li>Decrypt by working modulo each prime separately. Modulo <var>p</var>, a square root of <var>c</var> is <var>c<sup>(p+1)/4</sup> mod p</var>. That shortcut comes from Euler's criterion: since <var>c</var> is a square, <var>c<sup>(p−1)/2</sup></var> is 1, so <var>(c<sup>(p+1)/4</sup>)<sup>2</sup> = c × c<sup>(p−1)/2</sup> = c</var>. Do the same modulo <var>q</var>.</li>
         <li>Each prime gives two roots, a value and its negative. The Chinese Remainder Theorem (CRT) glues one root from each prime into a number modulo <var>n</var>, so there are <b>four</b> possible messages.</li>
-        <li>Only one is the real message. Senders usually make it recognisable, for example with an agreed start. In a puzzle, it's normally the only one that reads as anything.</li>
+        <li>Only one is the real message. Senders usually make it recognizable, for example with an agreed start. In a puzzle, it's normally the only one that reads as anything.</li>
       </ol>
       <h3>Why it's safe, and why a puzzle isn't</h3>
       <p>Taking square roots modulo <var>n</var> is exactly as hard as factoring <var>n</var>. For real key sizes nobody can do it. For a 40- or 50-digit <var>n</var>, this page factors it in about a second.</p>

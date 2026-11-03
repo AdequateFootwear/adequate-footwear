@@ -253,7 +253,9 @@ footer a{color:inherit}
 #clock-svg .face{fill:var(--surface-2);stroke:var(--line-strong);stroke-width:1.5}
 #clock-svg .tick{stroke:var(--line-strong);stroke-width:2}
 #clock-svg .lbl{font:600 13px "IBM Plex Mono",monospace;fill:var(--ink-2)}
+#clock-svg .lbl.sm{font-size:11px}
 #clock-svg .lbl.on{fill:var(--accent);font-size:15px}
+#clock-svg .lbl.sm.on{font-size:12.5px}
 #clock-svg .hand{stroke:var(--accent);stroke-width:4;stroke-linecap:round}
 #clock-svg .hand.from{stroke:var(--line-strong);stroke-width:2;stroke-dasharray:3 3}
 #clock-svg .hub{fill:var(--accent)}
@@ -353,8 +355,9 @@ ol.ddsteps li{margin:6px 0}
   <section class="panel" id="clock" aria-labelledby="h-clock">
     <div class="panel-head"><span class="step">1</span><h2 id="h-clock">Arithmetic on a clock</h2></div>
     <div class="explain">
-      <p>It's 9 o'clock. What time will it be in 5 hours? Nobody says 14. You go round the clock and land on 2. That's <b>modular arithmetic</b>: counting on a loop instead of a line. The number of positions on the loop is the <b>modulus</b>; on a clock it's 12.</p>
-      <p>Mathematicians start their clocks at 0 rather than 12, so a 12-hour clock has the positions 0 to 11. Try different clocks below. With a modulus of 7, the positions are the days of the week; with 2, every number is just “even” (0) or “odd” (1).</p>
+      <p>It's 9 o'clock. What time will it be in 5 hours? In the States, nobody says 14. You go round the clock and land on 2. That's <b>modular arithmetic</b>: counting on a loop instead of a line. The number of positions on the loop is the <b>modulus</b>; on a 12-hour clock it's 12.</p>
+      <p>On a <b>24-hour clock</b>, used in much of the world and by the military, 9:00 plus 5 hours really is 14:00. That clock is a loop too, just a longer one, so the wrap-around comes later: 14:00 plus 15 hours is 29, which lands on 5:00, because 29 mod 24 = 5. Same idea, different modulus.</p>
+      <p>Mathematicians start their clocks at 0, so a 12-hour clock has the positions 0 to 11 (the 24-hour clock already starts at 00:00). Try different clocks below. With a modulus of 7, the positions are the days of the week; with 2, every number is just “even” (0) or “odd” (1).</p>
     </div>
     <div class="play">
       <div class="clock-wrap"><svg id="clock-svg" viewBox="0 0 240 240" role="img" aria-labelledby="clock-say"></svg></div>
@@ -362,6 +365,7 @@ ol.ddsteps li{margin:6px 0}
         <label>Positions on the clock (the modulus) <input type="number" id="ck-n" min="2" max="24" value="12" inputmode="numeric"></label>
         <label>Start at <input type="number" id="ck-a" value="9" inputmode="numeric"></label>
         <label>Move forward by <input type="number" id="ck-b" value="5" inputmode="numeric"></label>
+        <div class="btnrow"><button class="btn small" type="button" id="ck-12">12-hour clock: 9 + 5</button><button class="btn small" type="button" id="ck-24">24-hour clock: 14 + 15</button></div>
         <div class="btnrow"><button class="btn small" type="button" id="ck-minus">−1</button><button class="btn small" type="button" id="ck-plus">+1</button><button class="btn small" type="button" id="ck-plus10">+10</button></div>
         <p class="say" id="clock-say" aria-live="polite"></p>
       </div>
@@ -580,9 +584,9 @@ ol.ddsteps li{margin:6px 0}
     const pt = (k, r) => [cx + r * Math.cos(ang(k)), cy + r * Math.sin(ang(k))];
     let svg = `<circle cx="${cx}" cy="${cy}" r="${R + 14}" class="face"/>`;
     for (let k = 0; k < n; k++) {
-      const [x1, y1] = pt(k, R - 6), [x2, y2] = pt(k, R + 6), [lx, ly] = pt(k, R - 22);
+      const [x1, y1] = pt(k, R - 6), [x2, y2] = pt(k, R + 6), [lx, ly] = pt(k, n > 12 ? R - 19 : R - 22);
       svg += `<line x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}" class="tick"/>`;
-      svg += `<text x="${lx}" y="${ly}" class="lbl${k === end ? ' on' : ''}" dominant-baseline="central" text-anchor="middle">${k}</text>`;
+      svg += `<text x="${lx}" y="${ly}" class="lbl${n > 12 ? ' sm' : ''}${k === end ? ' on' : ''}" dominant-baseline="central" text-anchor="middle">${k}</text>`;
     }
     // arc from start to end going forward (or backward), at most one lap drawn
     const steps = Math.min(Math.abs(b), n);
@@ -602,6 +606,8 @@ ol.ddsteps li{margin:6px 0}
   }
   for (const id of ['#ck-n', '#ck-a', '#ck-b']) $(id).addEventListener('input', drawClock);
   const bump = (d) => { $('#ck-b').value = int($('#ck-b'), -1e9, 1e9, 0) + d; drawClock(); };
+  const preset = (n, a, b) => { $('#ck-n').value = n; $('#ck-a').value = a; $('#ck-b').value = b; drawClock(); };
+  $('#ck-12').addEventListener('click', () => preset(12, 9, 5)); $('#ck-24').addEventListener('click', () => preset(24, 14, 15));
   $('#ck-minus').addEventListener('click', () => bump(-1)); $('#ck-plus').addEventListener('click', () => bump(1)); $('#ck-plus10').addEventListener('click', () => bump(10));
 
   /* ---------- 2. mod calculator ---------- */

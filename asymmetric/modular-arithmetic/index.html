@@ -1,0 +1,786 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light dark">
+<title>Modular Arithmetic Basics · Tools of the Trade</title>
+<meta name="description" content="Modular arithmetic from clocks and calendars to the ideas behind public-key cryptography, plus Conway's Doomsday rule for the day of the week of any date.">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%231D4D30'/%3E%3Cpath d='M16 4l4.5 12L16 28l-4.5-12z' fill='%23F4F2E8'/%3E%3Cpath d='M16 4l4.5 12h-9z' fill='%23E8BE66'/%3E%3C/svg%3E">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600;700&family=Barlow:ital,wght@0,400;0,500;0,600;1,400&family=IBM+Plex+Mono:wght@400;500;600&display=swap">
+<style>
+/* ---------- tokens (Tools of the Trade house palette: forest green + brass) ---------- */
+:root{
+  color-scheme:light dark;
+  --page:880px;
+  --ground:#F2F3EC; --surface:#FFFFFF; --surface-2:#EAEDE3; --surface-3:#DFE3D6;
+  --ink:#172019; --ink-2:#434C41; --muted:#646C60;
+  --line:#D0D6C8; --line-strong:#848E7D;
+  --accent:#1D6A3D; --accent-ink:#FFFFFF; --accent-soft:#E2F0E6;
+  --brass:#86590A;
+  --error:#B42318; --error-soft:#FCE9E7;
+  --warn:#8A5F0C; --warn-soft:#FBF0D3;
+  --good:#1D6A3D; --good-soft:#E2F0E6;
+  --focus:#1F5FBF;
+  --band:#1D4D30; --band-ink:#F4F2E8; --band-ink-2:#C9D8CA; --band-hl:#E8BE66; --band-line:rgba(232,190,102,.36);
+  --shadow:0 1px 2px rgba(23,32,25,.06), 0 6px 18px -8px rgba(23,32,25,.2);
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --ground:#111613; --surface:#192019; --surface-2:#212922; --surface-3:#2A332B;
+    --ink:#E7ECE3; --ink-2:#C0C8BB; --muted:#929C8C;
+    --line:#2C362E; --line-strong:#667361;
+    --accent:#6FC78E; --accent-ink:#0E1A12; --accent-soft:#1C3324;
+    --brass:#DDB05A;
+    --error:#FF8C82; --error-soft:#3D201D;
+    --warn:#E3B04B; --warn-soft:#3A3016;
+    --good:#6FC78E; --good-soft:#1C3324;
+    --focus:#7FB0FF;
+    --band:#16281D; --band-line:rgba(232,190,102,.26);
+    --shadow:0 1px 2px rgba(0,0,0,.4), 0 8px 24px -10px rgba(0,0,0,.6);
+  }
+}
+:root[data-theme="dark"]{
+  color-scheme:dark;
+  --ground:#111613; --surface:#192019; --surface-2:#212922; --surface-3:#2A332B;
+  --ink:#E7ECE3; --ink-2:#C0C8BB; --muted:#929C8C;
+  --line:#2C362E; --line-strong:#667361;
+  --accent:#6FC78E; --accent-ink:#0E1A12; --accent-soft:#1C3324;
+  --brass:#DDB05A;
+  --error:#FF8C82; --error-soft:#3D201D;
+  --warn:#E3B04B; --warn-soft:#3A3016;
+  --good:#6FC78E; --good-soft:#1C3324;
+  --focus:#7FB0FF;
+  --band:#16281D; --band-line:rgba(232,190,102,.26);
+  --shadow:0 1px 2px rgba(0,0,0,.4), 0 8px 24px -10px rgba(0,0,0,.6);
+}
+:root[data-theme="light"]{color-scheme:light}
+
+/* ---------- base ---------- */
+*,*::before,*::after{box-sizing:border-box}
+html,body{margin:0;padding:0}
+html{accent-color:var(--accent)}
+body{
+  background:var(--ground); color:var(--ink);
+  font-family:"Barlow",system-ui,-apple-system,"Segoe UI",Helvetica,Arial,sans-serif;
+  font-size:16px; line-height:1.5; -webkit-font-smoothing:antialiased;
+}
+button,input,textarea,select{font:inherit;color:inherit}
+:focus-visible{outline:2px solid var(--focus);outline-offset:2px}
+::selection{background:var(--accent-soft)}
+.mono,.num{font-family:"IBM Plex Mono","SFMono-Regular",Menlo,Consolas,monospace}
+.wrap{max-width:var(--page);margin:0 auto;padding:24px 16px 64px}
+.sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
+a{color:var(--accent)}
+
+/* ---------- masthead (shared by every tool) ---------- */
+.band{position:relative;overflow:hidden;isolation:isolate;background:var(--band);color:var(--band-ink);--focus:var(--band-hl)}
+.band .topo{position:absolute;inset:0;width:100%;height:100%;z-index:-1;fill:none;stroke:var(--band-line);stroke-width:1}
+.band .topo .ix{stroke-width:2}
+.band-in{max-width:var(--page);margin:0 auto;padding:14px 16px 30px}
+.suite{
+  display:flex;align-items:center;justify-content:space-between;gap:6px 14px;flex-wrap:wrap;margin-bottom:26px;
+  font-family:"Barlow Condensed","Barlow",sans-serif;font-weight:600;font-size:14px;letter-spacing:.12em;text-transform:uppercase;
+}
+.suite .crumbs{display:inline-flex;align-items:center;gap:9px;flex-wrap:wrap}
+.suite a{color:inherit;text-decoration:none;display:inline-flex;align-items:center;gap:9px}
+.suite a:hover span{text-decoration:underline;text-underline-offset:3px}
+.suite .sep{color:var(--band-hl)}
+.suite .by{color:var(--band-ink-2)}
+.mark{width:22px;height:22px;flex:none}
+.top{display:flex;align-items:flex-end;justify-content:space-between;gap:16px;flex-wrap:wrap}
+.brand h1{
+  font-family:"Barlow Condensed","Barlow",sans-serif;font-weight:700;font-size:48px;line-height:.95;
+  letter-spacing:.01em;text-transform:uppercase;margin:0;text-wrap:balance;
+}
+.brand h1 .hl{color:var(--band-hl)}
+.brand p{margin:10px 0 0;color:var(--band-ink-2);max-width:60ch}
+.top-actions{display:flex;gap:8px;flex-wrap:wrap}
+.band .btn.quiet{color:var(--band-ink);border-color:rgba(244,242,232,.35)}
+.band .btn.quiet:hover{background:rgba(244,242,232,.12);color:var(--band-ink)}
+
+/* ---------- buttons ---------- */
+.btn{
+  display:inline-flex;align-items:center;gap:6px;
+  border:1px solid var(--line-strong);background:var(--surface);color:var(--ink);
+  border-radius:6px;padding:7px 12px;cursor:pointer;line-height:1.1;
+  font-family:"Barlow Condensed","Barlow",sans-serif;font-weight:600;font-size:15px;letter-spacing:.04em;text-transform:uppercase;
+}
+.btn:hover{background:var(--surface-2)}
+.btn.primary{background:var(--accent);border-color:var(--accent);color:var(--accent-ink)}
+.btn.primary:hover{filter:brightness(1.06)}
+.btn.quiet{border-color:transparent;background:transparent;color:var(--ink-2)}
+.btn.quiet:hover{background:var(--surface-2);color:var(--ink)}
+.btn.small{padding:4px 8px;font-size:13px}
+.btn:disabled{opacity:.45;cursor:not-allowed}
+
+/* ---------- panels & steps ---------- */
+.panel{
+  background:var(--surface);border:1px solid var(--line);border-radius:10px;
+  box-shadow:var(--shadow);padding:18px 18px 20px;margin-top:18px;
+}
+.panel h2 var{font-family:"IBM Plex Mono",monospace;font-style:normal;text-transform:none;font-size:.82em;font-weight:600;letter-spacing:0}
+.panel-head{display:flex;align-items:baseline;gap:12px;margin-bottom:6px;flex-wrap:wrap}
+.step{
+  font-family:"Barlow Condensed","Barlow",sans-serif;font-weight:700;font-size:13px;letter-spacing:.12em;
+  color:var(--brass);text-transform:uppercase;
+}
+.panel h2{
+  font-family:"Barlow Condensed","Barlow",sans-serif;font-weight:600;font-size:26px;line-height:1.05;margin:0;
+  text-transform:uppercase;letter-spacing:.02em;
+}
+.lead{color:var(--ink-2);margin:0 0 14px;max-width:68ch}
+.lead var,.explain var,.math var{font-family:"IBM Plex Mono",monospace;font-style:normal;font-weight:600;color:var(--ink)}
+.panel.waiting .wait{display:block}
+.wait{display:none;color:var(--muted);font-size:15px;border:1px dashed var(--line-strong);border-radius:8px;padding:10px 12px;margin:4px 0 0}
+.panel.waiting .body{display:none}
+
+/* ---------- input fields ---------- */
+.field{border-top:1px solid var(--line);padding:14px 0 4px}
+.field:first-of-type{border-top:0;padding-top:4px}
+.field-head{display:flex;align-items:baseline;gap:10px;flex-wrap:wrap;margin-bottom:6px}
+.sym{font-family:"IBM Plex Mono",monospace;font-weight:600;font-size:20px;color:var(--accent);min-width:1.4em}
+.field-head label,.field-head .name{font-weight:600}
+.tag{
+  font-family:"Barlow Condensed","Barlow",sans-serif;font-weight:600;font-size:12px;letter-spacing:.1em;text-transform:uppercase;
+  border:1px solid var(--line-strong);border-radius:999px;padding:1px 8px;color:var(--ink-2)
+}
+.tag.private{border-color:var(--brass);color:var(--brass)}
+.digits{margin-left:auto;color:var(--muted);font-size:13px;font-variant-numeric:tabular-nums}
+textarea.numin{
+  width:100%;border:1px solid var(--line-strong);border-radius:6px;background:var(--surface);padding:9px 11px;
+  font-family:"IBM Plex Mono",monospace;font-size:15px;line-height:1.45;resize:vertical;min-height:44px;
+  word-break:break-all;
+}
+textarea.numin:hover{border-color:var(--accent)}
+.help{color:var(--muted);font-size:14px;margin:6px 0 0;max-width:72ch}
+ul.checks{list-style:none;margin:8px 0 6px;padding:0;display:flex;flex-direction:column;gap:6px}
+ul.checks:empty{display:none}
+ul.checks li{display:grid;grid-template-columns:22px minmax(0,1fr);gap:8px;align-items:start;font-size:15px;padding:7px 10px;border-radius:7px;background:var(--surface-2)}
+ul.checks li .ic{
+  width:20px;height:20px;border-radius:50%;display:inline-flex;align-items:center;justify-content:center;
+  font-size:12px;font-weight:700;line-height:1;margin-top:1px;font-family:"Barlow",sans-serif;
+}
+ul.checks li.ok .ic{background:var(--good);color:var(--accent-ink)}
+ul.checks li.info .ic{background:var(--surface-3);color:var(--ink-2)}
+ul.checks li.warn{background:var(--warn-soft)}
+ul.checks li.warn .ic{background:var(--warn);color:var(--surface)}
+ul.checks li.bad{background:var(--error-soft)}
+ul.checks li.bad .ic{background:var(--error);color:var(--surface)}
+ul.checks li b{font-weight:600}
+details.more{margin-top:10px}
+details.more > summary{cursor:pointer;color:var(--accent);font-weight:500;font-size:15px}
+details.more[open] > summary{margin-bottom:8px}
+
+/* ---------- computed values ---------- */
+.val{border:1px solid var(--line);border-left:4px solid var(--accent);border-radius:8px;background:var(--surface-2);padding:10px 12px;margin:10px 0}
+.val .vh{display:flex;align-items:baseline;gap:10px;flex-wrap:wrap;margin-bottom:4px}
+.val .vh .formula{color:var(--ink-2);font-size:15px}
+.val .vh .digits{margin-left:auto}
+.val output{display:block;font-family:"IBM Plex Mono",monospace;font-size:16px;word-break:break-all;line-height:1.45}
+.val .vfoot{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-top:6px}
+.val.big output{font-size:20px}
+.math{font-family:"IBM Plex Mono",monospace;font-size:14px;background:var(--surface-2);border-radius:6px;padding:8px 10px;overflow-x:auto;white-space:pre;margin:8px 0}
+.explain{color:var(--ink-2);font-size:15px;max-width:70ch}
+.explain p{margin:8px 0}
+.prog[hidden]{display:none}
+.prog{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin:10px 0}
+.prog progress{flex:1;min-width:160px;height:10px}
+.prog .status{font-size:14px;color:var(--ink-2);font-variant-numeric:tabular-nums}
+
+/* ---------- tables ---------- */
+.scroll{overflow-x:auto}
+table{border-collapse:collapse;width:100%;font-size:14px}
+th{text-align:left;font-family:"Barlow Condensed",sans-serif;font-weight:600;letter-spacing:.08em;text-transform:uppercase;font-size:13px;color:var(--muted);padding:6px 8px;border-bottom:1px solid var(--line);white-space:nowrap}
+td{padding:5px 8px;border-bottom:1px solid var(--line);vertical-align:top;font-variant-numeric:tabular-nums}
+td.num{font-family:"IBM Plex Mono",monospace;font-size:13px;word-break:break-all}
+tr:last-child td{border-bottom:0}
+
+/* ---------- message reader ---------- */
+.conv-opts{display:flex;gap:10px 16px;flex-wrap:wrap;align-items:end;margin:6px 0 10px}
+.conv-opts label{display:flex;flex-direction:column;gap:4px;font-size:13px;color:var(--muted)}
+.conv-opts label.inline{flex-direction:row;align-items:center;gap:8px;color:var(--ink);font-size:15px}
+.conv-opts select{border:1px solid var(--line-strong);border-radius:6px;background:var(--surface);padding:6px 8px;font-size:15px;color:var(--ink);max-width:100%}
+.conv-opts input[type=checkbox]{width:17px;height:17px}
+.chips{display:flex;flex-wrap:wrap;gap:6px;margin:8px 0}
+.chip{display:inline-flex;flex-direction:column;align-items:center;border:1px solid var(--line);border-radius:6px;overflow:hidden;min-width:38px;background:var(--surface)}
+.chip .d{font-family:"IBM Plex Mono",monospace;font-size:12.5px;color:var(--muted);padding:2px 6px;background:var(--surface-2);width:100%;text-align:center}
+.chip .t{font-family:"IBM Plex Mono",monospace;font-size:17px;font-weight:600;padding:2px 6px}
+.chip.odd{border-style:dashed}
+.chip.odd .t{color:var(--muted)}
+.chip.pad .d{color:var(--brass)}
+.reading{font-family:"IBM Plex Mono",monospace;font-size:22px;letter-spacing:.04em;word-break:break-all;border:1px solid var(--line);border-left:4px solid var(--accent);border-radius:8px;background:var(--surface-2);padding:12px 14px}
+
+/* ---------- explainer ---------- */
+details.howto{background:var(--surface);border:1px solid var(--line);border-radius:10px;box-shadow:var(--shadow);margin-top:18px}
+details.howto > summary{
+  cursor:pointer;list-style:none;padding:14px 18px;display:flex;align-items:center;gap:10px;
+  font-family:"Barlow Condensed","Barlow",sans-serif;font-weight:600;font-size:20px;letter-spacing:.04em;text-transform:uppercase;
+}
+details.howto > summary::-webkit-details-marker{display:none}
+details.howto > summary::before{content:"";border:6px solid transparent;border-left:8px solid var(--accent);transition:transform .15s}
+details.howto[open] > summary::before{transform:rotate(90deg) translateX(3px)}
+details.howto > summary .meta{margin-left:auto;font-family:"Barlow",sans-serif;font-weight:400;font-size:14px;color:var(--muted);text-transform:none;letter-spacing:0}
+.howto-body{padding:0 18px 18px;color:var(--ink-2)}
+.howto-body ol{padding-left:22px;margin:8px 0}
+.howto-body li{margin:6px 0}
+.howto-body h3{font-family:"Barlow Condensed",sans-serif;font-weight:600;font-size:18px;letter-spacing:.06em;text-transform:uppercase;color:var(--ink);margin:18px 0 6px}
+@media (prefers-reduced-motion:reduce){details.howto > summary::before{transition:none}}
+
+footer{margin-top:28px;color:var(--muted);font-size:13px;display:flex;gap:14px;flex-wrap:wrap;justify-content:space-between}
+footer a{color:inherit}
+.toast{
+  position:fixed;left:50%;bottom:22px;transform:translateX(-50%) translateY(20px);opacity:0;
+  background:var(--ink);color:var(--ground);padding:8px 14px;border-radius:6px;font-size:14px;pointer-events:none;
+  transition:opacity .15s,transform .15s;
+}
+.toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
+@media (max-width:520px){ .brand h1{font-size:42px} .panel{padding:16px 14px 18px} }
+
+/* ---------- modular arithmetic primer ---------- */
+.toc ol{margin:6px 0 0;padding-left:22px;columns:2;column-gap:28px}
+.toc li{margin:3px 0;break-inside:avoid}
+@media (max-width:560px){.toc ol{columns:1}}
+.panel h3{font-family:"Barlow Condensed",sans-serif;font-weight:600;font-size:19px;letter-spacing:.06em;text-transform:uppercase;margin:18px 0 6px}
+.explain ul.facts{padding-left:20px;margin:8px 0}
+.explain ul.facts li{margin:5px 0}
+.play{display:grid;grid-template-columns:minmax(0,260px) minmax(0,1fr);gap:18px;align-items:center;margin-top:10px}
+@media (max-width:620px){.play{grid-template-columns:minmax(0,1fr)}}
+.clock-wrap{max-width:260px;margin:0 auto;width:100%}
+#clock-svg{width:100%;height:auto;display:block}
+#clock-svg .face{fill:var(--surface-2);stroke:var(--line-strong);stroke-width:1.5}
+#clock-svg .tick{stroke:var(--line-strong);stroke-width:2}
+#clock-svg .lbl{font:600 13px "IBM Plex Mono",monospace;fill:var(--ink-2)}
+#clock-svg .lbl.on{fill:var(--accent);font-size:15px}
+#clock-svg .hand{stroke:var(--accent);stroke-width:4;stroke-linecap:round}
+#clock-svg .hand.from{stroke:var(--line-strong);stroke-width:2;stroke-dasharray:3 3}
+#clock-svg .hub{fill:var(--accent)}
+#clock-svg .arc{fill:none;stroke:var(--brass);stroke-width:3;stroke-linecap:round;opacity:.85}
+.play-controls{display:flex;flex-direction:column;gap:10px}
+.play-controls label,.calc label{display:flex;flex-direction:column;gap:4px;font-size:14px;color:var(--muted)}
+.calc{display:flex;gap:10px 16px;flex-wrap:wrap;align-items:flex-end;margin:12px 0 6px}
+.calc label{flex-direction:row;align-items:center;gap:8px;color:var(--ink);font-size:15px}
+.calc var,.play var{font-family:"IBM Plex Mono",monospace;font-style:normal;font-weight:600}
+input[type=number],input[type=text],select{border:1px solid var(--line-strong);border-radius:6px;background:var(--surface);padding:7px 9px;font-size:15px;color:var(--ink);max-width:100%}
+input[type=text]{font-family:"IBM Plex Mono",monospace;min-width:0;width:12em}
+input[type=number]{width:6.5em;font-family:"IBM Plex Mono",monospace}
+.play-controls input{width:7em}
+.btnrow{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+.say{color:var(--ink-2);margin:4px 0 0}
+.say var,.out var{font-family:"IBM Plex Mono",monospace;font-style:normal;font-weight:600}
+.out{color:var(--ink-2)}
+.out p{margin:8px 0}
+.out .num,.say .num{font-family:"IBM Plex Mono",monospace;word-break:break-all}
+.out .big,.q .big{font-family:"Barlow Condensed",sans-serif;font-size:26px;color:var(--ink)}
+.one-chip{display:inline-block;background:var(--accent);color:var(--accent-ink);border-radius:4px;padding:0 6px;font-family:"IBM Plex Mono",monospace;font-weight:600}
+table.tt{width:auto;border-collapse:collapse;font-family:"IBM Plex Mono",monospace;font-size:13px;margin:8px 0}
+table.tt th,table.tt td{text-align:center;padding:4px 7px;border:1px solid var(--line);min-width:28px}
+table.tt th{background:var(--surface-2);color:var(--ink-2);font-family:"IBM Plex Mono",monospace;letter-spacing:0;text-transform:none;font-size:13px}
+table.tt td.one{background:var(--accent);color:var(--accent-ink);font-weight:600}
+table.tt tr.noinv td,table.tt tr.noinv th{opacity:.45}
+.chip.one{border-color:var(--accent)}
+.chip.one .t{color:var(--accent)}
+table.tk{width:auto;border-collapse:collapse;font-family:"IBM Plex Mono",monospace;font-size:12.5px;margin:8px 0}
+table.tk th{text-align:right;padding:3px 8px;font-size:12px;letter-spacing:.06em;white-space:nowrap}
+table.tk td{text-align:center;padding:3px 5px;border:1px solid var(--line);min-width:26px;color:var(--muted)}
+table.tk td.m{color:var(--ink);font-weight:600;background:var(--surface-2)}
+table.tk td.hit{background:var(--accent);color:var(--accent-ink);font-weight:600}
+.anchors{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px;margin:8px 0}
+@media (max-width:520px){.anchors{grid-template-columns:repeat(2,minmax(0,1fr))}}
+.anc{border:1px solid var(--line);border-radius:8px;padding:8px 10px;background:var(--surface-2);display:flex;flex-direction:column}
+.anc b{font-family:"Barlow Condensed",sans-serif;font-size:17px;color:var(--brass);letter-spacing:.04em}
+.dd-dates{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;margin:8px 0}
+@media (max-width:560px){.dd-dates{grid-template-columns:minmax(0,1fr)}}
+.dd-dates div{border:1px solid var(--line);border-left:4px solid var(--brass);border-radius:8px;padding:8px 12px;background:var(--surface-2);display:flex;flex-direction:column;gap:2px}
+.dd-dates b{font-family:"IBM Plex Mono",monospace;color:var(--ink)}
+.dd-dates span{font-size:14px;color:var(--ink-2)}
+ol.ddsteps{padding-left:22px;color:var(--ink-2)}
+ol.ddsteps li{margin:6px 0}
+.math{white-space:pre-wrap;word-break:break-all}
+.practice{border:1px solid var(--line);border-radius:10px;padding:14px;background:var(--surface-2)}
+.practice .q{margin-bottom:10px}
+.dows{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:6px;margin-bottom:10px}
+@media (max-width:420px){.dows{grid-template-columns:repeat(4,minmax(0,1fr))}}
+.dows .btn{justify-content:center;padding:9px 4px}
+.dows .btn.right{background:var(--accent);border-color:var(--accent);color:var(--accent-ink);opacity:1}
+.dows .btn.wrong{background:var(--error-soft);border-color:var(--error);color:var(--error);opacity:1}
+.pr-say{min-height:1.5em;color:var(--ink-2);margin-bottom:8px}
+.streak{margin-left:auto;color:var(--muted);font-size:14px;font-variant-numeric:tabular-nums}
+@media (prefers-reduced-motion:no-preference){#clock-svg .hand{transition:none}}
+</style>
+</head>
+<body>
+<header class="band">
+  <svg class="topo" viewBox="0 0 1200 260" preserveAspectRatio="xMaxYMid slice" aria-hidden="true" focusable="false"><path d="M970 60C971 63 970 67 968 69C966 72 962 74 959 76C956 78 953 79 950 81C947 82 944 84 941 85C937 86 934 86 930 86C926 86 923 85 920 83C917 82 914 81 911 80C908 78 905 77 903 75C901 73 899 70 898 68C897 65 897 63 897 60C896 57 895 55 895 52C895 49 895 45 897 42C899 39 902 37 906 35C909 34 915 34 919 34C923 35 927 36 930 36C933 37 936 38 939 39C942 39 945 40 948 42C951 43 953 45 955 46C958 48 961 50 964 52C966 54 969 57 970 60ZM1011 60C1012 66 1010 73 1007 78C1003 84 995 88 989 92C983 96 977 98 970 101C964 104 958 108 952 109C945 111 937 112 930 112C923 111 916 109 910 106C903 104 897 102 892 99C886 96 880 93 876 89C871 85 868 80 866 75C864 71 864 65 863 60C862 55 860 49 860 43C860 37 860 30 863 24C867 19 874 13 882 11C889 8 900 9 908 9C916 9 923 12 930 13C937 14 943 15 949 17C955 19 960 21 966 24C971 26 975 29 981 33C986 36 993 39 998 44C1003 48 1009 54 1011 60ZM1052 60C1054 69 1052 80 1046 88C1040 96 1028 102 1019 108C1010 113 1000 117 990 122C981 126 972 131 962 134C952 136 940 137 930 137C920 136 909 132 900 129C890 126 881 123 873 118C864 114 854 110 848 104C841 98 836 91 833 83C830 76 830 68 829 60C828 52 825 44 825 35C825 26 824 14 830 6C835 -2 847 -10 858 -14C869 -17 885 -17 897 -16C909 -15 920 -12 930 -10C940 -8 949 -7 958 -4C967 -1 975 2 983 6C991 10 998 14 1006 19C1014 24 1024 29 1032 35C1040 42 1050 51 1052 60ZM1094 60C1097 72 1093 87 1086 97C1078 108 1061 116 1049 124C1036 131 1023 136 1011 142C998 148 986 155 973 158C959 161 944 162 930 161C916 160 903 155 890 151C877 147 865 143 854 138C842 133 828 127 819 120C810 112 804 101 800 91C796 81 797 71 795 60C793 49 789 38 789 26C790 14 789 -1 796 -12C804 -23 819 -33 834 -38C849 -43 870 -41 886 -41C902 -40 916 -36 930 -33C944 -31 956 -29 967 -25C979 -22 990 -17 1000 -12C1011 -6 1019 -1 1030 6C1041 12 1056 18 1066 27C1077 36 1091 48 1094 60ZM1181 60C1186 78 1178 101 1166 117C1154 133 1128 145 1108 156C1089 167 1070 175 1051 183C1032 191 1014 201 994 205C974 209 950 210 930 208C910 206 891 199 872 193C852 188 834 184 815 177C797 170 775 162 761 151C747 139 738 123 733 108C727 92 728 76 726 60C723 44 717 27 717 9C718 -9 717 -33 728 -49C740 -64 764 -79 787 -86C810 -93 841 -90 865 -89C889 -88 910 -82 930 -79C950 -75 969 -73 986 -68C1003 -62 1019 -54 1034 -46C1050 -39 1063 -30 1080 -20C1097 -11 1120 -3 1137 10C1154 24 1176 42 1181 60ZM1225 60C1231 81 1221 108 1207 127C1192 145 1161 159 1138 172C1115 185 1093 194 1071 203C1048 213 1027 224 1004 229C981 233 954 233 930 231C906 228 885 220 863 214C840 208 818 204 796 197C774 189 747 180 731 167C715 154 705 134 698 116C691 98 694 79 691 60C688 41 680 21 681 0C682 -21 681 -49 694 -67C708 -85 737 -102 764 -109C790 -117 827 -114 854 -112C882 -111 907 -106 930 -102C953 -98 975 -95 995 -89C1016 -83 1033 -73 1051 -64C1069 -54 1084 -45 1104 -34C1124 -23 1152 -14 1173 2C1193 17 1219 39 1225 60ZM1270 60C1277 84 1265 115 1248 137C1231 158 1194 174 1168 188C1142 203 1116 213 1090 224C1065 234 1041 247 1014 252C987 256 957 255 930 252C903 250 879 240 854 234C828 228 802 225 776 217C751 208 719 199 701 183C682 168 670 145 663 124C655 104 659 82 656 60C652 38 643 15 644 -9C645 -33 644 -64 661 -85C677 -106 710 -124 741 -133C772 -141 813 -137 844 -135C876 -134 903 -128 930 -124C957 -120 982 -117 1005 -110C1028 -103 1047 -91 1068 -81C1089 -70 1105 -59 1128 -47C1152 -35 1185 -25 1209 -7C1233 11 1264 36 1270 60ZM1316 60C1323 87 1309 122 1289 146C1269 170 1227 188 1198 204C1168 220 1139 232 1110 244C1081 255 1054 269 1024 274C994 279 960 277 930 274C900 270 874 260 845 254C816 247 786 246 757 237C727 228 691 218 669 200C648 183 635 156 627 133C619 109 623 85 620 60C616 35 606 9 607 -18C608 -45 608 -80 627 -103C645 -126 684 -146 719 -155C754 -164 799 -159 835 -158C870 -156 900 -151 930 -147C960 -142 988 -139 1014 -131C1040 -123 1062 -110 1085 -98C1108 -86 1126 -74 1153 -60C1180 -46 1219 -36 1246 -16C1273 4 1309 33 1316 60ZM1410 60C1418 93 1397 137 1372 166C1346 196 1294 216 1257 236C1220 255 1185 270 1150 284C1114 298 1080 313 1043 318C1007 323 966 318 930 314C894 309 864 298 828 292C793 286 754 287 716 278C679 268 632 256 605 235C578 214 564 180 554 150C545 121 551 91 547 60C543 29 530 -3 532 -36C534 -69 536 -112 560 -139C584 -167 633 -189 676 -199C719 -209 773 -202 816 -201C858 -200 894 -196 930 -191C966 -187 1001 -184 1033 -174C1064 -164 1090 -146 1118 -131C1146 -117 1168 -103 1202 -87C1236 -70 1288 -59 1322 -34C1357 -10 1401 27 1410 60ZM290 330C290 333 289 336 287 339C285 341 281 344 278 345C275 347 272 348 269 349C266 350 263 351 260 352C256 352 253 352 250 352C247 352 244 352 240 352C237 352 232 353 228 352C224 351 219 350 216 348C213 346 212 342 211 339C211 336 213 333 214 330C215 327 216 325 218 322C219 320 221 317 223 315C225 314 228 312 231 311C234 309 237 308 240 307C243 306 246 305 250 305C254 304 258 304 261 305C265 305 268 307 271 309C273 311 275 313 278 315C280 317 283 319 285 322C287 324 290 327 290 330ZM330 330C331 336 328 343 324 348C320 353 312 357 306 360C300 364 294 366 288 368C281 370 275 372 269 373C263 374 256 374 250 374C244 375 238 375 230 375C223 375 214 376 206 375C198 373 188 371 182 367C176 362 173 355 172 349C171 343 175 336 177 330C180 324 183 319 186 315C189 310 192 305 196 301C201 297 207 294 212 291C218 289 224 287 230 285C237 283 243 281 250 279C257 278 265 278 272 279C279 280 286 284 292 288C297 291 301 296 306 300C310 304 316 308 320 313C324 318 329 324 330 330ZM370 330C371 339 366 349 360 357C354 364 343 370 334 375C325 380 315 384 306 387C297 391 288 394 279 395C269 397 260 396 250 396C240 397 232 397 221 397C210 397 196 399 184 397C172 395 156 392 147 385C139 379 134 367 133 358C132 349 138 339 141 330C145 321 149 314 154 307C159 300 163 293 170 287C177 281 186 277 194 273C202 269 211 266 221 263C230 260 239 256 250 254C261 252 273 251 284 253C294 255 304 261 313 266C321 271 327 278 334 285C341 291 350 297 356 305C362 312 369 321 370 330ZM410 330C411 342 404 355 396 365C388 375 372 383 361 390C349 396 337 402 325 406C313 411 301 415 288 417C276 419 263 418 250 418C237 419 226 419 211 419C196 419 178 423 162 420C145 418 124 413 112 404C101 395 95 380 94 368C92 355 100 341 105 330C110 319 116 309 122 299C129 290 135 280 144 273C153 266 165 260 176 255C188 250 199 246 211 242C224 237 236 231 250 228C264 226 282 223 296 226C310 229 323 237 334 244C345 251 353 261 362 270C372 278 384 286 391 296C399 306 409 318 410 330ZM489 330C489 347 478 367 465 382C452 396 430 407 413 418C396 428 380 437 362 444C344 451 326 458 307 461C289 464 269 462 250 462C231 463 214 463 191 464C169 465 141 471 116 467C90 464 58 456 41 443C24 429 16 405 14 387C13 368 25 347 33 330C40 313 49 298 59 284C69 270 79 256 93 246C107 235 126 228 142 220C159 213 175 207 193 200C211 193 229 181 250 176C271 171 298 167 320 171C341 175 362 188 378 199C395 210 406 225 420 238C434 252 452 263 464 279C475 294 489 313 489 330Z"/><path class="ix" d="M1137 60C1141 75 1136 94 1126 107C1116 120 1094 131 1078 140C1063 149 1046 156 1031 163C1015 170 1000 178 983 182C967 185 947 186 930 185C913 183 897 177 881 172C865 168 850 164 835 157C819 151 802 145 791 135C779 125 772 112 767 99C762 87 763 74 761 60C758 46 753 33 754 18C754 2 753 -17 762 -30C772 -44 791 -56 810 -62C829 -68 855 -66 875 -65C895 -64 913 -59 930 -56C947 -53 962 -51 977 -47C991 -42 1004 -36 1017 -29C1031 -23 1041 -15 1055 -7C1069 1 1088 8 1101 19C1115 30 1133 45 1137 60ZM1363 60C1370 90 1353 130 1330 156C1308 183 1261 202 1227 220C1194 238 1162 251 1130 264C1098 277 1067 291 1034 296C1000 301 963 298 930 294C897 290 869 279 837 273C804 267 770 266 737 257C704 248 662 237 637 217C613 198 600 168 591 142C582 115 587 88 584 60C580 32 568 3 569 -27C571 -57 572 -96 593 -121C614 -146 659 -168 697 -177C736 -187 786 -181 825 -180C864 -178 897 -173 930 -169C963 -164 995 -162 1023 -153C1052 -143 1076 -128 1101 -115C1127 -101 1147 -88 1178 -73C1208 -58 1253 -47 1284 -25C1315 -3 1355 30 1363 60ZM450 330C450 344 441 361 431 374C420 386 402 395 387 404C372 412 358 419 343 425C328 431 313 436 298 439C282 441 266 440 250 440C234 441 220 441 201 441C183 442 159 446 139 443C118 440 91 434 77 423C63 412 55 393 54 377C53 362 63 344 69 330C75 316 82 303 90 292C99 280 107 268 118 259C130 250 145 244 159 237C173 231 187 227 202 221C217 215 232 206 250 202C268 199 290 196 308 199C325 202 342 213 356 222C370 231 379 243 391 254C403 265 418 275 427 287C437 300 449 316 450 330Z"/></svg>
+  <div class="band-in">
+    <nav class="suite" aria-label="Tools of the Trade">
+      <span class="crumbs">
+        <a href="../../"><svg class="mark" viewBox="0 0 32 32" aria-hidden="true" focusable="false"><circle cx="16" cy="16" r="14.5" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M16 4.5l4.2 11.5L16 27.5 11.8 16z" fill="currentColor" opacity=".55"/><path d="M16 4.5l4.2 11.5h-8.4z" fill="var(--band-hl)"/></svg><span>Tools of the Trade</span></a>
+        <span class="sep" aria-hidden="true">/</span>
+        <a href="../"><span>Asymmetric</span></a>
+      </span>
+      <span class="by">AdequateFootwear</span>
+    </nav>
+    <div class="top">
+      <div class="brand">
+        <h1>Modular <span class="hl">Arithmetic</span> Basics</h1>
+        <p>The math behind every asymmetric cryptosystem, starting from something you already use every day: the clock. Everything here is interactive, so change the numbers and see what happens.</p>
+      </div>
+      <div class="top-actions"><a class="btn quiet" href="#doomsday">Skip to the calendar trick</a></div>
+    </div>
+  </div>
+</header>
+
+<main class="wrap">
+  <nav class="toc panel" aria-label="On this page">
+    <span class="step">On this page</span>
+    <ol>
+      <li><a href="#clock">Arithmetic on a clock</a></li>
+      <li><a href="#mod">What “mod” means</a></li>
+      <li><a href="#calendar">Clocks, calendars and odometers</a></li>
+      <li><a href="#times">Multiplying, and when you can divide</a></li>
+      <li><a href="#powers">Powers that go round in circles</a></li>
+      <li><a href="#tools">Two tools: fast powers and inverses</a></li>
+      <li><a href="#crt">Two clocks at once</a></li>
+      <li><a href="#crypto">How the worksheets use all this</a></li>
+      <li><a href="#doomsday">Bonus: the day of the week for any date</a></li>
+    </ol>
+  </nav>
+
+  <!-- 1 -->
+  <section class="panel" id="clock" aria-labelledby="h-clock">
+    <div class="panel-head"><span class="step">1</span><h2 id="h-clock">Arithmetic on a clock</h2></div>
+    <div class="explain">
+      <p>It's 9 o'clock. What time will it be in 5 hours? Nobody says 14. You go round the clock and land on 2. That's <b>modular arithmetic</b>: counting on a loop instead of a line. The number of positions on the loop is the <b>modulus</b>; on a clock it's 12.</p>
+      <p>Mathematicians start their clocks at 0 rather than 12, so a 12-hour clock has the positions 0 to 11. Try different clocks below. With a modulus of 7, the positions are the days of the week; with 2, every number is just “even” (0) or “odd” (1).</p>
+    </div>
+    <div class="play">
+      <div class="clock-wrap"><svg id="clock-svg" viewBox="0 0 240 240" role="img" aria-labelledby="clock-say"></svg></div>
+      <div class="play-controls">
+        <label>Positions on the clock (the modulus) <input type="number" id="ck-n" min="2" max="24" value="12" inputmode="numeric"></label>
+        <label>Start at <input type="number" id="ck-a" value="9" inputmode="numeric"></label>
+        <label>Move forward by <input type="number" id="ck-b" value="5" inputmode="numeric"></label>
+        <div class="btnrow"><button class="btn small" type="button" id="ck-minus">−1</button><button class="btn small" type="button" id="ck-plus">+1</button><button class="btn small" type="button" id="ck-plus10">+10</button></div>
+        <p class="say" id="clock-say" aria-live="polite"></p>
+      </div>
+    </div>
+  </section>
+
+  <!-- 2 -->
+  <section class="panel" id="mod" aria-labelledby="h-mod">
+    <div class="panel-head"><span class="step">2</span><h2 id="h-mod">What “mod” means</h2></div>
+    <div class="explain">
+      <p><var>a mod n</var> is the <b>remainder</b> when you divide <var>a</var> by <var>n</var>. 14 ÷ 12 is 1 with 2 left over, so <var>14 mod 12 = 2</var>. The “1” counts the full laps of the clock, and the remainder is where you end up.</p>
+      <p>Every whole number can be written as <var>a = q × n + r</var>, with <var>r</var> between 0 and <var>n − 1</var>. The remainder <var>r</var> is the answer. Negative numbers work too: going back 3 hours from 0 lands on 9, so <var>−3 mod 12 = 9</var>. (Some calculators and programming languages answer −3 instead; on a clock that's the same position.)</p>
+      <p>When two numbers land on the same position, we say they're <b>congruent</b> and write <var>14 ≡ 2 (mod 12)</var>, read “14 is congruent to 2, mod 12”. Every puzzle number in the worksheets is a remainder like this.</p>
+    </div>
+    <div class="calc">
+      <label><var>a</var> <input type="text" id="md-a" value="-3" inputmode="numeric" spellcheck="false"></label>
+      <label><var>n</var> <input type="text" id="md-n" value="12" inputmode="numeric" spellcheck="false"></label>
+    </div>
+    <div class="out" id="md-out" aria-live="polite"></div>
+  </section>
+
+  <!-- 3 -->
+  <section class="panel" id="calendar" aria-labelledby="h-cal">
+    <div class="panel-head"><span class="step">3</span><h2 id="h-cal">Clocks, calendars and odometers</h2></div>
+    <div class="explain">
+      <p>You already do modular arithmetic all the time:</p>
+      <ul class="facts">
+        <li><b>Hours</b> are mod 12 or mod 24: 22:00 plus 5 hours is 27 mod 24 = 3:00.</li>
+        <li><b>Days of the week</b> are mod 7. Number them Sunday = 0 to Saturday = 6, and “100 days after a Tuesday” is <var>(2 + 100) mod 7 = 4</var>, a Thursday.</li>
+        <li><b>Months</b> are mod 12: 5 months after November (month 11) is 16 mod 12 = 4, April.</li>
+        <li><b>Odometers</b> are mod 1,000,000: one more mile after 999,999 rolls over to 000,000.</li>
+        <li><b>Compass bearings</b> are mod 360: turning 90° right from 300° gives 390 mod 360 = 30°.</li>
+        <li><b>The last digit</b> of any number is that number mod 10, and even or odd is mod 2.</li>
+      </ul>
+    </div>
+    <div class="calc">
+      <label>Today is <select id="wd-day"></select></label>
+      <label>Days from now <input type="number" id="wd-n" value="100" inputmode="numeric"></label>
+    </div>
+    <div class="out" id="wd-out" aria-live="polite"></div>
+  </section>
+
+  <!-- 4 -->
+  <section class="panel" id="times" aria-labelledby="h-times">
+    <div class="panel-head"><span class="step">4</span><h2 id="h-times">Multiplying, and when you can divide</h2></div>
+    <div class="explain">
+      <p>Adding, subtracting and multiplying all work on a clock, and you can take the remainder whenever you like: before, during or after. <var>(17 × 23) mod 10</var> is the same as <var>(7 × 3) mod 10 = 1</var>, which is why a computer can multiply 45-digit numbers mod <var>n</var> without them ever getting bigger than <var>n<sup>2</sup></var>.</p>
+      <p><b>Division</b> is different. Dividing by <var>a</var> means multiplying by a number <var>x</var> with <var>a × x ≡ 1</var>, called the <b>inverse</b> of <var>a</var>. In the table below, a row with a <span class="one-chip">1</span> in it has an inverse. Look at mod 10: the rows for 2, 4, 5, 6 and 8 never reach 1, because those numbers share a factor with 10. Now switch to mod 7: every row (except 0) has a 1, because 7 is prime. That's why so many cryptosystems work mod a prime.</p>
+    </div>
+    <div class="calc"><label>Modulus <select id="tt-n"></select></label></div>
+    <div class="scroll"><table class="tt" id="tt"></table></div>
+    <p class="help" id="tt-say"></p>
+  </section>
+
+  <!-- 5 -->
+  <section class="panel" id="powers" aria-labelledby="h-pow">
+    <div class="panel-head"><span class="step">5</span><h2 id="h-pow">Powers that go round in circles</h2></div>
+    <div class="explain">
+      <p>Keep multiplying by the same number and the remainders eventually repeat. Powers of 3 mod 7 go 3, 2, 6, 4, 5, 1, and then start again. The length of the loop is the <b>order</b> of 3. Here, 3 visits every non-zero position before repeating, so it's called a <b>generator</b>.</p>
+      <p><b>Fermat's little theorem:</b> if <var>p</var> is prime and <var>a</var> isn't a multiple of it, then <var>a<sup>p−1</sup> ≡ 1 (mod p)</var>, so the loop length always divides <var>p − 1</var>. Euler extended this to any modulus with <var>φ(n)</var>, the count of numbers below <var>n</var> that share no factor with it. RSA decryption works because of exactly this.</p>
+      <p>Going forwards is easy: <var>3<sup>5</sup> mod 7 = 5</var>. Going backwards, from “5” to “which power?”, is the <b>discrete logarithm</b>. Here you can just read it off the list. With a 45-digit prime the list would be longer than the number of stars in the observable universe, which is what makes ElGamal, Diffie–Hellman and their cousins secure.</p>
+    </div>
+    <div class="calc">
+      <label>Base <var>g</var> <input type="number" id="pw-g" value="3" min="1" max="999" inputmode="numeric"></label>
+      <label>Modulus <var>n</var> <input type="number" id="pw-n" value="7" min="2" max="200" inputmode="numeric"></label>
+    </div>
+    <div class="chips" id="pw-chips"></div>
+    <p class="say" id="pw-say" aria-live="polite"></p>
+  </section>
+
+  <!-- 6 -->
+  <section class="panel" id="tools" aria-labelledby="h-tools">
+    <div class="panel-head"><span class="step">6</span><h2 id="h-tools">Two tools: fast powers and inverses</h2></div>
+    <h3>Square and multiply</h3>
+    <div class="explain">
+      <p>Working out <var>7<sup>560</sup> mod 561</var> by multiplying 7 by itself 559 times is slow, and a 45-digit exponent would take forever. Instead, square repeatedly (<var>7, 7<sup>2</sup>, 7<sup>4</sup>, 7<sup>8</sup>, …</var>, taking the remainder each time), and multiply together the squares matching the 1s in the exponent written in binary. A 45-digit exponent needs only about 150 squarings. Big numbers work in these boxes.</p>
+    </div>
+    <div class="calc">
+      <label><var>a</var> <input type="text" id="fp-a" value="7" inputmode="numeric" spellcheck="false"></label>
+      <label><var>e</var> <input type="text" id="fp-e" value="560" inputmode="numeric" spellcheck="false"></label>
+      <label><var>n</var> <input type="text" id="fp-n" value="561" inputmode="numeric" spellcheck="false"></label>
+    </div>
+    <div class="out" id="fp-out" aria-live="polite"></div>
+    <details class="more"><summary>Show every step</summary><div class="scroll"><table id="fp-table"></table></div></details>
+
+    <h3>The extended Euclidean algorithm</h3>
+    <div class="explain">
+      <p>To find an inverse, run Euclid's algorithm for the greatest common divisor: divide, keep the remainder, repeat. If it ends at 1, the inverse exists, and keeping track of the multipliers along the way gives it to you. This is how RSA's private exponent <var>d</var> is found from <var>e</var>.</p>
+    </div>
+    <div class="calc">
+      <label>Inverse of <var>a</var> <input type="text" id="iv-a" value="7" inputmode="numeric" spellcheck="false"></label>
+      <label>mod <var>n</var> <input type="text" id="iv-n" value="40" inputmode="numeric" spellcheck="false"></label>
+    </div>
+    <div class="out" id="iv-out" aria-live="polite"></div>
+    <div class="scroll"><table id="iv-table"></table></div>
+  </section>
+
+  <!-- 7 -->
+  <section class="panel" id="crt" aria-labelledby="h-crt">
+    <div class="panel-head"><span class="step">7</span><h2 id="h-crt">Two clocks at once</h2></div>
+    <div class="explain">
+      <p>Picture a 3-hour clock and a 5-hour clock ticking together. Which count shows 2 on the first and 3 on the second? Counting up: 8 (8 mod 3 = 2, 8 mod 5 = 3). Because 3 and 5 share no factor, the pair of positions repeats only every 3 × 5 = 15 ticks, so 8 is the only answer between 0 and 14.</p>
+      <p>That's the <b>Chinese Remainder Theorem</b> (CRT): knowing a number modulo several moduli that share no factors pins it down modulo their product. Cryptosystems use it to split one big calculation into smaller ones, mod <var>p</var> and mod <var>q</var>, and glue the answers back together.</p>
+    </div>
+    <div class="calc">
+      <label><var>x mod</var> <input type="number" id="cr-n1" value="3" min="2" max="9999" inputmode="numeric"> <var>=</var> <input type="number" id="cr-r1" value="2" inputmode="numeric"></label>
+      <label><var>x mod</var> <input type="number" id="cr-n2" value="5" min="2" max="9999" inputmode="numeric"> <var>=</var> <input type="number" id="cr-r2" value="3" inputmode="numeric"></label>
+    </div>
+    <div class="out" id="cr-out" aria-live="polite"></div>
+    <div class="scroll"><div class="ticks" id="cr-ticks"></div></div>
+  </section>
+
+  <!-- 8 -->
+  <section class="panel" id="crypto" aria-labelledby="h-crypto">
+    <div class="panel-head"><span class="step">8</span><h2 id="h-crypto">How the worksheets use all this</h2></div>
+    <div class="explain">
+      <ul class="facts">
+        <li><b>Remainders</b> (sections 1–3): every public number, ciphertext and message is a remainder mod something.</li>
+        <li><b>Inverses</b> (sections 4 and 6): private exponents and “dividing out” a shared secret.</li>
+        <li><b>Powers and their loops</b> (sections 5 and 6): encrypting and decrypting; Fermat's and Euler's theorems are why decryption undoes encryption.</li>
+        <li><b>Discrete logarithms</b> (section 5): the hard problem behind the systems built on powers of a base.</li>
+        <li><b>Factoring</b>: the hard problem behind the systems built on a product of secret primes. Knowing the primes unlocks φ and the CRT.</li>
+        <li><b>The CRT</b> (section 7): splitting work into mod <var>p</var> and mod <var>q</var>, then gluing it back together.</li>
+      </ul>
+      <p>Which system a puzzle uses, and which of these ideas it leans on, is for you to work out. <a href="../">Back to the worksheets.</a></p>
+    </div>
+  </section>
+
+  <!-- 9 -->
+  <section class="panel" id="doomsday" aria-labelledby="h-dd">
+    <div class="panel-head"><span class="step">Bonus</span><h2 id="h-dd">The day of the week for any date</h2></div>
+    <div class="explain">
+      <p>The calendar is modular arithmetic too, and the mathematician John Conway turned that into a party trick you can do in your head: the <b>Doomsday rule</b>. Each year, a set of easy-to-remember dates all fall on the same day of the week, called that year's <b>doomsday</b>. Find it, then count from the nearest one.</p>
+      <h3>Number the days</h3>
+      <p>Sunday = 0, Monday = 1, … Saturday = 6. Conway's memory aids: <b>Noneday</b>, <b>Oneday</b>, <b>Twosday</b>, <b>Treblesday</b>, <b>Foursday</b>, <b>Fiveday</b>, <b>Six-a-day</b>.</p>
+      <h3>Step 1: the century's anchor day</h3>
+      <div class="anchors" id="anchors"></div>
+      <p>The pattern <b>Tuesday, Sunday, Friday, Wednesday</b> repeats every 400 years, because 400 Gregorian years are exactly 20,871 weeks. As a formula, with <var>c</var> the first two digits of the year: <var>anchor = (5 × (c mod 4) + 2) mod 7</var>. To remember the two you'll use most: 1900 is a <b>We</b>dnesday (“<b>We</b> were born in the 1900s”), and 2000 is a <b>Twos</b>day (“Y<b>2</b>K”).</p>
+      <h3>Step 2: this year's doomsday</h3>
+      <p>Take the last two digits of the year, <var>y</var>. Two ways to turn them into a number of days to count forward from the anchor:</p>
+      <ul class="facts">
+        <li><b>Conway's twelves:</b> how many 12s fit in <var>y</var>, plus the remainder, plus how many 4s fit in that remainder. For 2026: <var>y = 26</var> → 2 twelves, remainder 2, no 4s → 2 + 2 + 0 = 4.</li>
+        <li><b>“Odd + 11”:</b> if <var>y</var> is odd, add 11. Halve it. If that's odd, add 11. Take it mod 7, and subtract from 7. For 26: even → 13, odd → 24, 24 mod 7 = 3, 7 − 3 = 4. Same answer.</li>
+      </ul>
+      <p>Count that many days forward from the anchor: 2000s anchor Tuesday + 4 = <b>Saturday</b>, the doomsday for 2026. Taking it mod 7 at the end keeps the count small.</p>
+      <h3>Step 3: the doomsday dates</h3>
+      <div class="dd-dates">
+        <div><b>4/4, 6/6, 8/8, 10/10, 12/12</b><span>Even months: the day matches the month.</span></div>
+        <div><b>9/5, 5/9, 7/11, 11/7</b><span>“I work <b>9 to 5</b> at the <b>7-Eleven</b>”: each pair works either way round.</span></div>
+        <div><b>March 14</b><span>Pi Day. Also “March 0”, the last day of February.</span></div>
+        <div><b>January 3, or 4 in a leap year</b><span>“The 3rd, three years in four; the 4th in the fourth.”</span></div>
+        <div><b>Last day of February</b><span>The 28th, or the 29th in a leap year.</span></div>
+        <div><b>Bonus anchors</b><span>July 4, Halloween (10/31) and Boxing Day (12/26) are doomsdays too.</span></div>
+      </div>
+      <h3>Step 4: count to your date</h3>
+      <p>Find the doomsday date nearest your date in the same month, and count the difference mod 7. Christmas: 12/12 is a doomsday, and 25 − 12 = 13 ≡ 6, so Christmas is 6 days after the doomsday, or 1 day before it.</p>
+      <p class="help">Leap years: every year divisible by 4, except century years, unless they're divisible by 400 (so 2000 was a leap year, and 1900 wasn't). The rule uses the Gregorian calendar, which most of Europe adopted in 1582 and Britain and its colonies in 1752. Earlier dates in those places were recorded in the Julian calendar, so a historical date may not match.</p>
+    </div>
+
+    <div class="calc">
+      <label>Year <input type="number" id="dd-y" value="2026" min="1" max="9999" inputmode="numeric"></label>
+      <label>Month <select id="dd-m"></select></label>
+      <label>Day <input type="number" id="dd-d" value="25" min="1" max="31" inputmode="numeric"></label>
+      <button class="btn small" type="button" id="dd-today">Today</button>
+    </div>
+    <div class="out" id="dd-out" aria-live="polite"></div>
+    <ol class="ddsteps" id="dd-steps"></ol>
+    <details class="more">
+      <summary>The same answer from one formula (Zeller's congruence)</summary>
+      <div class="explain"><p>Christian Zeller's 1882 formula does the whole thing in one line. Treat January and February as months 13 and 14 of the previous year. With <var>q</var> the day, <var>m</var> the month, <var>K</var> the year's last two digits and <var>J</var> its first two:</p></div>
+      <div class="math">h = (q + ⌊13(m + 1)/5⌋ + K + ⌊K/4⌋ + ⌊J/4⌋ + 5J) mod 7      (0 = Saturday, 1 = Sunday, …)</div>
+      <div class="math" id="zeller"></div>
+    </details>
+
+    <h3>Practice</h3>
+    <p class="explain">A random date appears. Work out its day in your head, then tap your answer.</p>
+    <div class="practice">
+      <div class="q" id="pr-q" aria-live="polite"></div>
+      <div class="dows" id="pr-btns" role="group" aria-label="Your answer"></div>
+      <div class="pr-say" id="pr-say" aria-live="polite"></div>
+      <div class="btnrow"><button class="btn small" type="button" id="pr-next">New date</button><select id="pr-range" aria-label="Date range"><option value="1">1900–2099</option><option value="2">1600–2399</option></select><span class="streak" id="pr-streak"></span></div>
+    </div>
+  </section>
+
+  <footer>
+    <span>Modular Arithmetic Basics · <a href="../">all asymmetric tools</a> · <a href="../../">all AdequateFootwear tools</a></span>
+    <span class="mono">a ≡ b (mod n)</span>
+  </footer>
+</main>
+
+<script>
+(function(){
+  'use strict';
+  const $ = (s) => document.querySelector(s);
+  const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;' }[c]));
+  const DAYS = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
+  const NICK = ['Noneday','Oneday','Twosday','Treblesday','Foursday','Fiveday','Six-a-day'];
+  const MONTHS = ['January','February','March','April','May','June','July','August','September','October','November','December'];
+  const modN = (a, n) => ((a % n) + n) % n;
+  const modB = (a, n) => { a %= n; return a < 0n ? a + n : a; };
+  const big = (s) => { const t = String(s).replace(/[\s,_]/g, ''); return /^-?\d+$/.test(t) ? BigInt(t) : null; };
+  const sg = (v) => String(v).replace(/^-/, '−');
+  const short = (v) => { const t = String(v); return t.length > 24 ? t.slice(0, 10) + '…' + t.slice(-6) : t; };
+  const gcdB = (a, b) => { a = a < 0n ? -a : a; b = b < 0n ? -b : b; while (b) [a, b] = [b, a % b]; return a; };
+  const gcdN = (a, b) => { while (b) [a, b] = [b, a % b]; return Math.abs(a); };
+  const int = (el, lo, hi, dflt) => { let v = parseInt(el.value, 10); if (!Number.isFinite(v)) v = dflt; return Math.max(lo, Math.min(hi, v)); };
+  const st = (() => { try { return JSON.parse(localStorage.getItem('asym-modular:v1') || '{}'); } catch (e) { return {}; } })();
+  const save = () => { try { localStorage.setItem('asym-modular:v1', JSON.stringify(st)); } catch (e) {} };
+
+  /* ---------- 1. clock ---------- */
+  function drawClock(){
+    const n = int($('#ck-n'), 2, 24, 12), a = int($('#ck-a'), -1e9, 1e9, 0), b = int($('#ck-b'), -1e9, 1e9, 0);
+    const start = modN(a, n), end = modN(a + b, n), laps = Math.floor((modN(a, n) + b) / n);
+    const cx = 120, cy = 120, R = 92;
+    const ang = (k) => (k / n) * 2 * Math.PI - Math.PI / 2;
+    const pt = (k, r) => [cx + r * Math.cos(ang(k)), cy + r * Math.sin(ang(k))];
+    let svg = `<circle cx="${cx}" cy="${cy}" r="${R + 14}" class="face"/>`;
+    for (let k = 0; k < n; k++) {
+      const [x1, y1] = pt(k, R - 6), [x2, y2] = pt(k, R + 6), [lx, ly] = pt(k, R - 22);
+      svg += `<line x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}" class="tick"/>`;
+      svg += `<text x="${lx}" y="${ly}" class="lbl${k === end ? ' on' : ''}" dominant-baseline="central" text-anchor="middle">${k}</text>`;
+    }
+    // arc from start to end going forward (or backward), at most one lap drawn
+    const steps = Math.min(Math.abs(b), n);
+    if (steps > 0) {
+      const dir = b > 0 ? 1 : -1, r = R + 14;
+      let d = '';
+      for (let i = 0; i <= steps * 8; i++) { const k = start + dir * (i / 8); const [x, y] = pt(k, r - 7); d += (i ? 'L' : 'M') + x.toFixed(1) + ' ' + y.toFixed(1); }
+      svg += `<path d="${d}" class="arc"/>`;
+    }
+    const [sx, sy] = pt(start, R - 40), [ex, ey] = pt(end, R - 36);
+    svg += `<line x1="${cx}" y1="${cy}" x2="${sx}" y2="${sy}" class="hand from"/><line x1="${cx}" y1="${cy}" x2="${ex}" y2="${ey}" class="hand"/><circle cx="${cx}" cy="${cy}" r="5" class="hub"/>`;
+    $('#clock-svg').innerHTML = svg;
+    const total = a + b;
+    $('#clock-say').innerHTML = `${sg(a)} ${b < 0 ? '−' : '+'} ${Math.abs(b)} = ${sg(total)}, and on a ${n}-position clock that's <b>${end}</b>, because <var>${sg(total)} mod ${n} = ${end}</var>.` +
+      (laps > 0 ? ` The hand went all the way round ${laps === 1 ? 'once' : laps + ' times'} on the way.` : laps < 0 ? ` The hand went backwards past 0 ${-laps === 1 ? 'once' : -laps + ' times'}.` : '');
+    st.ck = { n, a, b }; save();
+  }
+  for (const id of ['#ck-n', '#ck-a', '#ck-b']) $(id).addEventListener('input', drawClock);
+  const bump = (d) => { $('#ck-b').value = int($('#ck-b'), -1e9, 1e9, 0) + d; drawClock(); };
+  $('#ck-minus').addEventListener('click', () => bump(-1)); $('#ck-plus').addEventListener('click', () => bump(1)); $('#ck-plus10').addEventListener('click', () => bump(10));
+
+  /* ---------- 2. mod calculator ---------- */
+  function doMod(){
+    const a = big($('#md-a').value), n = big($('#md-n').value);
+    if (a === null || n === null) { $('#md-out').innerHTML = 'Type whole numbers in both boxes.'; return; }
+    if (n < 1n) { $('#md-out').innerHTML = 'The modulus has to be at least 1.'; return; }
+    const r = modB(a, n), q = (a - r) / n;
+    $('#md-out').innerHTML = `<div class="math">${sg(a)} = ${sg(q)} × ${n} + ${r}</div><p><var>${sg(short(a))} mod ${short(n)}</var> = <b class="num">${r}</b>. ${a < 0n ? `Going backwards ${-a} steps from 0 on a ${n}-position clock lands on ${r}.` : q > 0n ? `That's ${q} full lap${q === 1n ? '' : 's'} of the clock, with ${r} left over.` : `${a} is already smaller than ${n}, so it's its own remainder.`}</p>`;
+  }
+  $('#md-a').addEventListener('input', doMod); $('#md-n').addEventListener('input', doMod);
+
+  /* ---------- 3. weekday ---------- */
+  $('#wd-day').innerHTML = DAYS.map((d, i) => `<option value="${i}">${d}</option>`).join('');
+  $('#wd-day').value = '2';
+  function doWeekday(){
+    const d0 = +$('#wd-day').value, k = int($('#wd-n'), -1e9, 1e9, 0), r = modN(d0 + k, 7);
+    $('#wd-out').innerHTML = `<div class="math">(${d0} ${k < 0 ? '−' : '+'} ${Math.abs(k)}) mod 7 = ${sg(d0 + k)} mod 7 = ${r}</div><p>${Math.abs(k)} day${Math.abs(k) === 1 ? '' : 's'} ${k < 0 ? 'before' : 'after'} a ${DAYS[d0]} is a <b>${DAYS[r]}</b>.${Math.abs(k) >= 7 ? ` Whole weeks don't change the day, so only the remainder, ${modN(k, 7)}, matters.` : ''}</p>`;
+  }
+  $('#wd-day').addEventListener('change', doWeekday); $('#wd-n').addEventListener('input', doWeekday);
+
+  /* ---------- 4. times table ---------- */
+  $('#tt-n').innerHTML = Array.from({ length: 14 }, (_, i) => `<option value="${i + 2}">${i + 2}</option>`).join('');
+  $('#tt-n').value = String(st.tt || 10);
+  function doTable(){
+    const n = +$('#tt-n').value; st.tt = n; save();
+    let h = '<thead><tr><th scope="col">×</th>' + Array.from({ length: n }, (_, j) => `<th scope="col">${j}</th>`).join('') + '</tr></thead><tbody>';
+    const noInv = [];
+    for (let i = 0; i < n; i++) {
+      const has = gcdN(i, n) === 1;
+      if (!has && i) noInv.push(i);
+      h += `<tr class="${has ? '' : 'noinv'}"><th scope="row">${i}</th>`;
+      for (let j = 0; j < n; j++) { const v = (i * j) % n; h += `<td class="${v === 1 ? 'one' : ''}">${v}</td>`; }
+      h += '</tr>';
+    }
+    $('#tt').innerHTML = h + '</tbody>';
+    $('#tt-say').innerHTML = noInv.length
+      ? `Mod ${n}, the dimmed rows (${noInv.join(', ')}) have no 1, so those numbers can't be divided by: each shares a factor with ${n}. The other rows each have exactly one 1, in the column of their inverse.`
+      : `Mod ${n}, every row except 0 has exactly one 1, so every non-zero number has an inverse. That happens exactly when the modulus is prime.`;
+  }
+  $('#tt-n').addEventListener('change', doTable);
+
+  /* ---------- 5. powers ---------- */
+  function doPowers(){
+    const g = int($('#pw-g'), 0, 999, 3), n = int($('#pw-n'), 2, 200, 7);
+    const seen = new Map(), seq = []; let x = 1, k = 0;
+    while (true) { x = (x * g) % n; k++; if (seen.has(x) || k > 400) break; seen.set(x, k); seq.push(x); }
+    const cycleStart = seen.get(x), len = k - cycleStart;
+    $('#pw-chips').innerHTML = seq.map((v, i) => `<span class="chip${v === 1 ? ' one' : ''}"><span class="d">${g}<sup>${i + 1}</sup></span><span class="t">${v}</span></span>`).join('') + `<span class="chip odd"><span class="d">${g}<sup>${k}</sup></span><span class="t">${x}</span></span>`;
+    const isPrime = n > 1 && Array.from({ length: Math.floor(Math.sqrt(n)) - 1 }, (_, i) => i + 2).every((d) => n % d);
+    let say = `Powers of ${g} mod ${n} repeat after ${len} step${len === 1 ? '' : 's'}`;
+    if (gcdN(g, n) !== 1) say += `. ${g} shares a factor with ${n}, so its powers never reach 1.`;
+    else {
+      say += `: the <b>order</b> of ${g} is ${len}.`;
+      if (isPrime) say += len === n - 1 ? ` Every number from 1 to ${n - 1} appears, so ${g} is a <b>generator</b> mod ${n}.` : ` ${len} divides ${n} − 1 = ${n - 1}, as Fermat's little theorem says it must, but ${g} isn't a generator.`;
+    }
+    $('#pw-say').innerHTML = say;
+  }
+  $('#pw-g').addEventListener('input', doPowers); $('#pw-n').addEventListener('input', doPowers);
+
+  /* ---------- 6. fast power and inverse ---------- */
+  function doFast(){
+    const a = big($('#fp-a').value), e = big($('#fp-e').value), n = big($('#fp-n').value);
+    if (a === null || e === null || n === null || e < 0n || n < 2n) { $('#fp-out').innerHTML = 'Type whole numbers: <var>e</var> at least 0 and <var>n</var> at least 2.'; $('#fp-table').innerHTML = ''; return; }
+    let r = 1n, sq = modB(a, n), i = 0; const rows = []; const bits = e.toString(2);
+    for (let E = e; E > 0n; E >>= 1n, i++) {
+      const bit = E & 1n;
+      if (bit) r = r * sq % n;
+      if (rows.length < 80) rows.push(`<tr><td>2<sup>${i}</sup></td><td>${bit}</td><td class="num">${sq}</td><td class="num">${bit ? r : '—'}</td></tr>`);
+      sq = sq * sq % n;
+    }
+    let note = '';
+    if (r === 1n && e === n - 1n) {
+      let comp = false; for (let d = 2n; d * d <= n && d < 100000n; d++) if (n % d === 0n) { comp = true; break; }
+      if (comp) note = ` That looks like Fermat's little theorem, but ${n} isn't prime! Numbers like this, which fool Fermat's test for every base sharing no factor with them, are called <b>Carmichael numbers</b>, and 561 = 3 × 11 × 17 is the smallest.`;
+      else note = ' That’s Fermat’s little theorem in action.';
+    }
+    $('#fp-out').innerHTML = `<p><var>a<sup>e</sup> mod n</var> = <b class="num">${r}</b>, using ${bits.length} squarings and ${bits.split('').filter((b) => b === '1').length} multiplications (the exponent in binary is ${bits.length > 64 ? bits.slice(0, 64) + '…' : bits}).${note}</p>`;
+    $('#fp-table').innerHTML = '<thead><tr><th>Power of 2</th><th>Bit of e</th><th>a to that power, mod n</th><th>Running result</th></tr></thead><tbody>' + rows.join('') + (rows.length >= 80 ? '<tr><td colspan="4">…</td></tr>' : '') + '</tbody>';
+  }
+  for (const id of ['#fp-a', '#fp-e', '#fp-n']) $(id).addEventListener('input', doFast);
+  function doInv(){
+    const a = big($('#iv-a').value), n = big($('#iv-n').value);
+    if (a === null || n === null || n < 2n) { $('#iv-out').innerHTML = 'Type whole numbers, with <var>n</var> at least 2.'; $('#iv-table').innerHTML = ''; return; }
+    let r0 = modB(a, n), r1 = n, s0 = 1n, s1 = 0n; const rows = [];
+    let A = n, B = modB(a, n), t0 = 0n, t1 = 1n;
+    while (B) { const q = A / B; rows.push(`<tr><td class="num">${A}</td><td class="num">${B}</td><td class="num">${q}</td><td class="num">${A - q * B}</td><td class="num">${t0 - q * t1}</td></tr>`); [A, B] = [B, A - q * B]; [t0, t1] = [t1, t0 - q * t1]; }
+    const g = A;
+    $('#iv-table').innerHTML = '<thead><tr><th>Divide</th><th>by</th><th>Goes in</th><th>Remainder</th><th>Running multiplier</th></tr></thead><tbody>' + rows.slice(0, 200).join('') + '</tbody>';
+    if (g !== 1n) $('#iv-out').innerHTML = `<p>No inverse: ${a} and ${n} share the factor <b>${g}</b> (the last non-zero remainder), so no multiple of ${a} is ever 1 more than a multiple of ${n}.</p>`;
+    else { const x = modB(t0, n); $('#iv-out').innerHTML = `<p>The last non-zero remainder is 1, so the inverse exists: <var>${a}<sup>−1</sup> mod ${n}</var> = <b class="num">${x}</b>. Check: ${a} × ${x} = ${a * x} = ${(a * x - 1n) / n} × ${n} + 1.</p>`; }
+  }
+  $('#iv-a').addEventListener('input', doInv); $('#iv-n').addEventListener('input', doInv);
+
+  /* ---------- 7. CRT ---------- */
+  function doCRT(){
+    const n1 = int($('#cr-n1'), 2, 9999, 3), n2 = int($('#cr-n2'), 2, 9999, 5), r1 = modN(int($('#cr-r1'), -1e9, 1e9, 0), n1), r2 = modN(int($('#cr-r2'), -1e9, 1e9, 0), n2);
+    const g = gcdN(n1, n2), N = n1 * n2;
+    if (g !== 1) { $('#cr-out').innerHTML = `<p>${n1} and ${n2} share the factor ${g}, so the two clocks fall into step every ${N / g} ticks, not ${N}. The CRT needs moduli that share no factor.</p>`; $('#cr-ticks').innerHTML = ''; return; }
+    let x = r1; while (x % n2 !== r2) x += n1;
+    $('#cr-out').innerHTML = `<p>The only <var>x</var> from 0 to ${N - 1} with <var>x mod ${n1} = ${r1}</var> and <var>x mod ${n2} = ${r2}</var> is <b class="num">${x}</b>. Every other answer is ${x} plus a multiple of ${N}.</p>`;
+    if (N <= 120) {
+      let h = '<table class="tk"><tr><th scope="row">count</th>' + Array.from({ length: N }, (_, i) => `<td class="${i === x ? 'hit' : ''}">${i}</td>`).join('') + '</tr>';
+      h += `<tr><th scope="row">mod ${n1}</th>` + Array.from({ length: N }, (_, i) => `<td class="${i % n1 === r1 ? 'm' : ''}${i === x ? ' hit' : ''}">${i % n1}</td>`).join('') + '</tr>';
+      h += `<tr><th scope="row">mod ${n2}</th>` + Array.from({ length: N }, (_, i) => `<td class="${i % n2 === r2 ? 'm' : ''}${i === x ? ' hit' : ''}">${i % n2}</td>`).join('') + '</tr></table>';
+      $('#cr-ticks').innerHTML = h;
+    } else $('#cr-ticks').innerHTML = '<p class="help">(The tick-by-tick view only shows for products up to 120.)</p>';
+  }
+  for (const id of ['#cr-n1', '#cr-r1', '#cr-n2', '#cr-r2']) $(id).addEventListener('input', doCRT);
+
+  /* ---------- 9. Doomsday ---------- */
+  const leap = (y) => y % 4 === 0 && (y % 100 !== 0 || y % 400 === 0);
+  const anchorOf = (y) => (5 * (Math.floor(y / 100) % 4) + 2) % 7;
+  const DOOM = (m, y) => [leap(y) ? 4 : 3, leap(y) ? 29 : 28, 14, 4, 9, 6, 11, 8, 5, 10, 7, 12][m - 1];
+  const DOOM_WHY = ['3rd (4th in a leap year)', 'last day of February', 'Pi Day', '4/4', '“9 to 5”: 5/9', '6/6', '“7-Eleven”: 7/11', '8/8', '“9 to 5”: 9/5', '10/10', '“7-Eleven”: 11/7', '12/12'];
+  const dim = (m, y) => [31, leap(y) ? 29 : 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31][m - 1];
+  function doomsday(y, m, d){
+    const anchor = anchorOf(y), T = y % 100;
+    const a = Math.floor(T / 12), b = T % 12, c = Math.floor(b / 4);
+    const yd = (anchor + a + b + c) % 7;
+    const dd = DOOM(m, y), w = modN(yd + d - dd, 7);
+    return { anchor, T, a, b, c, yd, dd, w };
+  }
+  $('#anchors').innerHTML = [1600, 1700, 1800, 1900, 2000, 2100, 2200, 2300].map((c) => `<span class="anc"><b>${c}s</b>${DAYS[anchorOf(c)]}</span>`).join('');
+  $('#dd-m').innerHTML = MONTHS.map((n, i) => `<option value="${i + 1}">${n}</option>`).join('');
+  $('#dd-m').value = '12';
+  function doDoom(){
+    const y = int($('#dd-y'), 1, 9999, 2026), m = +$('#dd-m').value, d = int($('#dd-d'), 1, 31, 1);
+    if (d > dim(m, y)) { $('#dd-out').innerHTML = `<p>${MONTHS[m - 1]} ${y} has only ${dim(m, y)} days.</p>`; $('#dd-steps').innerHTML = ''; $('#zeller').textContent = ''; return; }
+    const r = doomsday(y, m, d), c = Math.floor(y / 100);
+    $('#dd-out').innerHTML = `<p class="big">${MONTHS[m - 1]} ${d}, ${y} is a <b>${DAYS[r.w]}</b>.</p>`;
+    const odd = (() => { let t = r.T; const s = [String(t)]; if (t % 2) { t += 11; s.push(`odd, +11 → ${t}`); } t /= 2; s.push(`halve → ${t}`); if (t % 2) { t += 11; s.push(`odd, +11 → ${t}`); } const m7 = t % 7; s.push(`mod 7 → ${m7}`); s.push(`7 − ${m7} → ${(7 - m7) % 7}`); return s.join(', '); })();
+    const diff = d - r.dd;
+    $('#dd-steps').innerHTML = [
+      `<b>Anchor day for the ${c * 100}s:</b> (5 × (${c} mod 4) + 2) mod 7 = ${r.anchor}, a <b>${DAYS[r.anchor]}</b> (“${NICK[r.anchor]}”).`,
+      `<b>Last two digits:</b> ${r.T}. Twelves: ${r.a}, remainder ${r.b}, fours in the remainder: ${r.c}. Total ${r.a} + ${r.b} + ${r.c} = ${r.a + r.b + r.c}.<br><span class="help">Or “odd + 11”: ${odd}.</span>`,
+      `<b>Doomsday for ${y}:</b> ${DAYS[r.anchor]} + ${r.a + r.b + r.c} = (${r.anchor} + ${r.a + r.b + r.c}) mod 7 = ${r.yd}, a <b>${DAYS[r.yd]}</b>.${leap(y) ? ` (${y} is a leap year.)` : ''}`,
+      `<b>Nearest doomsday date in ${MONTHS[m - 1]}:</b> the ${r.dd}${['th','st','nd','rd'][(r.dd % 10 > 3 || [11,12,13].includes(r.dd)) ? 0 : r.dd % 10]} (${DOOM_WHY[m - 1]}), a ${DAYS[r.yd]}.`,
+      `<b>Count:</b> ${d} − ${r.dd} = ${diff}${diff < 0 || diff >= 7 ? `, and ${diff} mod 7 = ${modN(diff, 7)}` : ''}, so ${modN(diff, 7) === 0 ? 'it’s the same day' : `${modN(diff, 7)} day${modN(diff, 7) === 1 ? '' : 's'} after ${DAYS[r.yd]}`}: <b>${DAYS[r.w]}</b>.`
+    ].map((x) => `<li>${x}</li>`).join('');
+    // Zeller
+    let Y = y, M = m; if (M < 3) { M += 12; Y -= 1; }
+    const K = Y % 100, J = Math.floor(Y / 100), t1 = Math.floor(13 * (M + 1) / 5), sum = d + t1 + K + Math.floor(K / 4) + Math.floor(J / 4) + 5 * J, h = sum % 7;
+    $('#zeller').textContent = `q = ${d}, m = ${M}${M > 12 ? ' (counted in the previous year)' : ''}, K = ${K}, J = ${J}\nh = (${d} + ${t1} + ${K} + ${Math.floor(K / 4)} + ${Math.floor(J / 4)} + ${5 * J}) mod 7 = ${sum} mod 7 = ${h}  →  ${['Saturday','Sunday','Monday','Tuesday','Wednesday','Thursday','Friday'][h]}`;
+    st.dd = { y, m, d }; save();
+  }
+  for (const id of ['#dd-y', '#dd-d']) $(id).addEventListener('input', doDoom);
+  $('#dd-m').addEventListener('change', doDoom);
+  $('#dd-today').addEventListener('click', () => { const t = new Date(); $('#dd-y').value = t.getFullYear(); $('#dd-m').value = t.getMonth() + 1; $('#dd-d').value = t.getDate(); doDoom(); });
+
+  /* practice */
+  let cur = null;
+  st.streak = st.streak || 0; st.best = st.best || 0;
+  $('#pr-btns').innerHTML = DAYS.map((d, i) => `<button class="btn" type="button" data-dow="${i}">${d.slice(0, 3)}</button>`).join('');
+  const showStreak = () => { $('#pr-streak').textContent = `Streak ${st.streak} · best ${st.best}`; };
+  function newDate(){
+    const wide = $('#pr-range').value === '2', lo = wide ? 1600 : 1900, hi = wide ? 2399 : 2099;
+    const y = lo + Math.floor(Math.random() * (hi - lo + 1)), m = 1 + Math.floor(Math.random() * 12), d = 1 + Math.floor(Math.random() * dim(m, y));
+    cur = { y, m, d, done: false };
+    $('#pr-q').innerHTML = `<span class="big">${MONTHS[m - 1]} ${d}, ${y}</span>`;
+    $('#pr-say').innerHTML = '';
+    for (const b of document.querySelectorAll('#pr-btns button')) { b.disabled = false; b.classList.remove('right', 'wrong'); }
+  }
+  $('#pr-btns').addEventListener('click', (ev) => {
+    const b = ev.target.closest('[data-dow]'); if (!b || !cur || cur.done) return;
+    const r = doomsday(cur.y, cur.m, cur.d), guess = +b.getAttribute('data-dow');
+    cur.done = true;
+    for (const x of document.querySelectorAll('#pr-btns button')) { x.disabled = true; if (+x.getAttribute('data-dow') === r.w) x.classList.add('right'); }
+    if (guess === r.w) { st.streak++; st.best = Math.max(st.best, st.streak); $('#pr-say').innerHTML = `<b>Right!</b> It's a ${DAYS[r.w]}.`; }
+    else { b.classList.add('wrong'); st.streak = 0; $('#pr-say').innerHTML = `Not quite: it's a <b>${DAYS[r.w]}</b>. Anchor ${DAYS[r.anchor]}, doomsday ${DAYS[r.yd]} for ${cur.y}, nearest doomsday date ${MONTHS[cur.m - 1]} ${r.dd}.`; }
+    save(); showStreak();
+  });
+  $('#pr-next').addEventListener('click', newDate); $('#pr-range').addEventListener('change', newDate);
+
+  /* restore & first draw */
+  if (st.ck) { $('#ck-n').value = st.ck.n; $('#ck-a').value = st.ck.a; $('#ck-b').value = st.ck.b; }
+  if (st.dd) { $('#dd-y').value = st.dd.y; $('#dd-m').value = st.dd.m; $('#dd-d').value = st.dd.d; }
+  drawClock(); doMod(); doWeekday(); doTable(); doPowers(); doFast(); doInv(); doCRT(); doDoom(); newDate(); showStreak();
+})();
+</script>
+</body>
+</html>

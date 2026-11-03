@@ -30,6 +30,12 @@ Make puzzles *slightly* more accessible: take the tedium out, never hand solvers
 - Phone-first: most solvers open these in the field. Check at ~375 px wide, in light and dark
   mode, and with the keyboard.
 - Include a built-in example made from **fictional** content, never from a real cache.
+- **House look** (copy it from `read-the-sign/index.html`, since tools can't share a stylesheet):
+  the forest-green-and-brass tokens on `:root` (light, dark, and `[data-theme]` blocks, plus
+  `color-scheme`), the compass-needle favicon, and the green `.band` masthead with the brass
+  topo-contour SVG and the "Tools of the Trade" bar linking back to `../`. Green (`--accent`) is
+  for actions and highlights; red (`--error`) is only for things that went wrong; brass
+  (`--brass`) is for small labels. Keep text at 4.5:1 contrast or better, and input borders at 3:1.
 - Every tool links back to the index (`../`), and every tool is listed in `index.html` and in
   `README.md`.
 - **Never rename or move a published tool's folder.** Cache pages link to these addresses, and

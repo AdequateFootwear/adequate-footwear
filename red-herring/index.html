@@ -594,12 +594,13 @@ table.nums td:last-child{overflow-wrap:anywhere;white-space:normal}
     </div>
     <p class="muted" id="ey-state"></p>
     <div class="btnrow">
-      <button type="button" class="btn quiet" id="ey-match">Turn with the herring</button>
+      <button type="button" class="btn quiet" id="ey-match">Put the herring’s heading at the top</button>
       <button type="button" class="btn quiet" id="ey-fliph" aria-pressed="false">Flip left–right</button>
       <button type="button" class="btn quiet" id="ey-flipv" aria-pressed="false">Flip upside down</button>
       <button type="button" class="btn quiet" id="ey-reset">Straighten it out</button>
       <button type="button" class="btn quiet" id="ey-save">Save picture</button>
     </div>
+    <p class="help">“Put the herring’s heading at the top” turns the picture so the direction the herring is pointing faces up, the way you’d hold a photo of a map while walking that way. “Straighten it out” undoes turning and flipping; the lens stays as you set it.</p>
   </section>
 
   <section class="panel" id="about" aria-labelledby="h-about">
@@ -755,6 +756,11 @@ const POINTS = ['N', 'NNE', 'NE', 'ENE', 'E', 'ESE', 'SE', 'SSE', 'S', 'SSW', 'S
 const compass = (b) => POINTS[Math.round(norm360(b) / 22.5) % 16];
 let angle = 0; // degrees the herring has turned from north, kept continuous so it takes the short way round
 let spinning = false;
+function syncMatch() { // the picture button that uses the herring's heading
+  const b = $('ey-match'); if (!b) return;
+  b.disabled = spinning;
+  b.textContent = spinning ? 'Put the herring’s heading at the top' : `Put the herring’s heading (${fmtBrg(angle)}) at the top`;
+}
 function setSpin(on) {
   if (on && reduced()) { $('rh-says').textContent = 'The herring would spin, but you prefer less motion, so it holds still.'; return; }
   spinning = on;
@@ -762,6 +768,7 @@ function setSpin(on) {
   turn.classList.toggle('spin', on);
   if (on) { turn.style.transform = ''; $('rh-bearing').textContent = ''; }
   else { turn.style.transform = `rotate(${angle}deg)`; $('rh-bearing').textContent = `Pointing ${fmtBrg(angle)} (${compass(angle)}).`; }
+  syncMatch();
 }
 function pointAt(brg, what) {
   if (spinning) setSpin(false);
@@ -770,6 +777,7 @@ function pointAt(brg, what) {
   angle += d;
   turn.style.transform = `rotate(${angle}deg)`;
   $('rh-bearing').textContent = `Pointing ${fmtBrg(target)} (${compass(target)})${what ? ': ' + what : ''}.`;
+  syncMatch();
 }
 const fmtBrg = (b) => `${(Math.round(norm360(b) * 10) / 10).toFixed(1)}°`;
 $('rh-spin').addEventListener('click', () => setSpin(!spinning));
@@ -965,12 +973,16 @@ ecv.addEventListener('keydown', (e) => {
 ['ey-k', 'ey-r', 'ey-rot'].forEach((id) => $(id).addEventListener('input', renderEye));
 $('ey-lx').addEventListener('input', () => { lens.x = +$('ey-lx').value / 100; renderEye(); });
 $('ey-ly').addEventListener('input', () => { lens.y = +$('ey-ly').value / 100; renderEye(); });
-$('ey-match').addEventListener('click', () => { $('ey-rot').value = spinning ? 0 : Math.round(norm180(angle)); renderEye(); });
+// Turn the picture so the way the herring points is at the top (like holding a map photo "heading up").
+$('ey-match').addEventListener('click', () => {
+  if (spinning) return;
+  $('ey-rot').value = Math.round(norm180(-norm360(angle))); renderEye();
+});
 $('ey-fliph').addEventListener('click', () => { flipH = !flipH; $('ey-fliph').setAttribute('aria-pressed', String(flipH)); renderEye(); });
 $('ey-flipv').addEventListener('click', () => { flipV = !flipV; $('ey-flipv').setAttribute('aria-pressed', String(flipV)); renderEye(); });
 $('ey-reset').addEventListener('click', () => {
   flipH = flipV = false; $('ey-fliph').setAttribute('aria-pressed', 'false'); $('ey-flipv').setAttribute('aria-pressed', 'false');
-  $('ey-rot').value = 0; $('ey-k').value = 0; lens = { x: 0.5, y: 0.5 }; renderEye();
+  $('ey-rot').value = 0; renderEye(); // undoes the turn and flips only; the lens stays as it is
 });
 $('ey-save').addEventListener('click', () => {
   if (!src) return;
@@ -997,6 +1009,7 @@ $('btn-example').addEventListener('click', () => {
 });
 
 /* ---------- start ---------- */
+syncMatch();
 load();
 { const c0 = sampleCanvas(); setSource(c0, c0.width, c0.height); }
 if ($('pj-from').value || $('ms-from').value) { measure(); project(); }

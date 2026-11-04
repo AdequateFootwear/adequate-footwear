@@ -379,6 +379,61 @@ table.ftab tr.none td{color:var(--muted)}
 .leapbox table.ftab td{text-align:left}
 
 @media (prefers-reduced-motion:no-preference){#clock-svg .hand{transition:none}}
+
+/* ---------- tools: Coordinate Formulas, Eldritch Index ---------- */
+textarea.txt{font-family:"Barlow",system-ui,sans-serif;font-size:15.5px;word-break:normal}
+label.inline{display:inline-flex;align-items:center;gap:8px;font-size:15px;color:var(--ink);margin-top:8px}
+label.inline.small{font-size:14px;color:var(--ink-2)}
+label.inline input[type=checkbox]{width:17px;height:17px}
+.lbl{font-weight:600;display:block;margin-bottom:6px}
+input.coordin{width:100%;max-width:26em;border:1px solid var(--line-strong);border-radius:6px;background:var(--surface);padding:8px 10px;font-family:"IBM Plex Mono",monospace;font-size:15px;color:var(--ink)}
+input.coordin.short{width:10em}
+ol.readas{margin:6px 0 0;padding-left:24px;font-family:"IBM Plex Mono",monospace;font-size:14px;color:var(--ink)}
+ol.readas li{margin:3px 0}
+ol.readas li.bad{color:var(--error)}
+.why{font-family:"Barlow",sans-serif;font-size:13px;color:var(--error)}
+.nm{display:inline-block;background:var(--accent-soft);color:var(--ink);border-radius:5px;padding:0 5px;font-family:"Barlow",sans-serif;font-weight:600}
+.vars{display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:10px}
+.var{display:flex;flex-direction:column;gap:5px;border:1px solid var(--line);border-radius:8px;padding:8px 10px;background:var(--surface-2)}
+.var input{border:1px solid var(--line-strong);border-radius:6px;background:var(--surface);padding:7px 9px;font-family:"IBM Plex Mono",monospace;font-size:15px;color:var(--ink);width:100%}
+.fxrows{display:flex;flex-direction:column;gap:8px;margin:6px 0 12px}
+.fxrow{display:grid;grid-template-columns:2em minmax(0,1fr) auto auto;gap:6px 12px;align-items:center;border:1px solid var(--line);border-radius:8px;padding:8px 10px;background:var(--surface)}
+.fxrow .ln{color:var(--muted);font-variant-numeric:tabular-nums}
+.fxrow .fx{font-family:"IBM Plex Mono",monospace;font-size:14px;overflow-wrap:anywhere;line-height:1.7}
+.fxrow .res{font-family:"IBM Plex Mono",monospace;font-size:15px;white-space:nowrap}
+.fxrow select{border:1px solid var(--line-strong);border-radius:6px;background:var(--surface);padding:4px 6px;font-size:14px;color:var(--ink);max-width:100%}
+@media (max-width:620px){.fxrow{grid-template-columns:2em minmax(0,1fr)}.fxrow .res,.fxrow .slot{grid-column:2}}
+.muted{color:var(--muted);font-size:13px}
+.reading.coord span{white-space:nowrap}
+.ftab select{border:1px solid var(--line-strong);border-radius:6px;background:var(--surface);padding:4px 6px;font-size:14px;color:var(--ink)}
+.omen{max-width:var(--page);margin:0 0 4px;padding:10px 14px;border-left:3px solid var(--brass);font-style:italic;color:var(--ink-2);font-size:15px}
+.sanity{margin-left:auto;font-family:"IBM Plex Mono",monospace;font-size:12.5px;color:var(--brass);border:1px solid var(--brass);border-radius:999px;padding:1px 9px}
+.page{border-top:1px solid var(--line);padding:12px 0 4px}
+.page:first-child{border-top:0;padding-top:4px}
+.page .pname{flex:1;min-width:8em;border:1px solid var(--line);border-radius:6px;background:var(--surface);padding:5px 8px;font-size:15px;color:var(--ink);font-family:"Barlow",system-ui,sans-serif}
+.nw{font-size:12.5px;color:var(--muted)}
+.pgsmall{font-size:12.5px;color:var(--muted)}
+table.nums{table-layout:fixed}
+table.nums th:first-child,table.nums td:first-child{width:6.5em}
+.page textarea{margin-top:6px}
+.stir{border:1px solid var(--line);border-left:4px solid var(--line-strong);border-radius:8px;padding:10px 12px;margin:10px 0;background:var(--surface)}
+.stir.s2{border-left-color:var(--brass)}
+.stir.s3{border-left-color:var(--brass);background:var(--surface-2);box-shadow:0 0 0 1px var(--brass) inset}
+.stir p{margin:6px 0 0;color:var(--ink);line-height:1.55;overflow-wrap:anywhere}
+.stir-head{display:flex;flex-wrap:wrap;gap:6px 10px;align-items:baseline;font-size:13.5px}
+.stir-head .pg{font-weight:600;color:var(--ink)}
+.stir-head .verdict{font-style:italic;color:var(--brass)}
+.stir-head .found{display:flex;gap:4px;flex-wrap:wrap;margin-left:auto}
+.tchip{font-size:12px;border:1px solid var(--line-strong);border-radius:999px;padding:0 7px;color:var(--ink-2)}
+mark.hit{background:var(--accent-soft);color:var(--ink);border-radius:3px;padding:0 2px;font-weight:600}
+mark.glimmer{box-shadow:0 0 0 1px var(--brass),0 0 10px var(--brass);animation:glimmer 2.4s ease-in-out infinite}
+@keyframes glimmer{50%{box-shadow:0 0 0 1px var(--brass),0 0 2px var(--brass)}}
+@media (prefers-reduced-motion:reduce){mark.glimmer{animation:none}}
+mark.num{background:transparent;color:var(--ink);border-bottom:2px solid var(--brass);font-weight:600}
+mark.num.w{border-bottom-style:dashed}
+.wait-msg{color:var(--muted);font-style:italic}
+table.nums td{vertical-align:top}
+table.nums td:last-child{overflow-wrap:anywhere;white-space:normal}
 </style>
 </head>
 <body>
@@ -418,6 +473,7 @@ table.ftab tr.none td{color:var(--muted)}
   <section class="panel" id="rule" aria-labelledby="h-rule">
     <div class="panel-head"><span class="step">The idea</span><h2 id="h-rule">The rule in one line</h2></div>
     <div class="explain">
+      <p class="help">This page uses arithmetic “mod 7”: counting on a 7-day loop and keeping only the remainder. If that's new, <a href="../asymmetric/modular-arithmetic/">Modular Arithmetic Basics</a> explains it from the start, beginning with clocks.</p>
       <p>The calendar is modular arithmetic too, and the mathematician John Conway turned that into a party trick you can do in your head: the <b>Doomsday rule</b>. Each year, a set of easy-to-remember dates all fall on the same day of the week, called that year's <b>doomsday</b>. Find it, then count from the nearest one.</p>
       <div class="fbox" role="group" aria-label="The whole rule as one formula">
         <span class="step">The whole rule in one line</span>

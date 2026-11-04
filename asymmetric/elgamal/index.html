@@ -68,6 +68,7 @@ body{
   font-size:16px; line-height:1.5; -webkit-font-smoothing:antialiased;
 }
 button,input,textarea,select{font:inherit;color:inherit}
+::placeholder{color:var(--muted);opacity:1} /* browsers default to a pale grey that fails 4.5:1 */
 :focus-visible{outline:2px solid var(--focus);outline-offset:2px}
 ::selection{background:var(--accent-soft)}
 .mono,.num{font-family:"IBM Plex Mono","SFMono-Regular",Menlo,Consolas,monospace}
@@ -200,7 +201,7 @@ tr:last-child td{border-bottom:0}
 
 /* ---------- message reader ---------- */
 .conv-opts{display:flex;gap:10px 16px;flex-wrap:wrap;align-items:end;margin:6px 0 10px}
-.conv-opts label{display:flex;flex-direction:column;gap:4px;font-size:13px;color:var(--muted)}
+.conv-opts label{display:flex;flex-direction:column;gap:4px;font-size:13px;color:var(--muted);min-width:0;max-width:100%} /* lets a long select shrink to the card */
 .conv-opts label.inline{flex-direction:row;align-items:center;gap:8px;color:var(--ink);font-size:15px}
 .conv-opts select{border:1px solid var(--line-strong);border-radius:6px;background:var(--surface);padding:6px 8px;font-size:15px;color:var(--ink);max-width:100%}
 .conv-opts input[type=checkbox]{width:17px;height:17px}
@@ -357,7 +358,7 @@ unlock:  s = c1^x = 10^6 mod 23 = 6   (same s)
       <details class="more" id="ph-more">
         <summary>Show the Pohlig–Hellman pieces</summary>
         <div class="explain">
-          <p>For each prime power dividing the order of <var>g</var>, the page raises both sides to a power that leaves a much smaller problem. Small pieces are solved by <b>baby-step giant-step</b>, a lookup table of powers. Big pieces are solved by <b>Pollard's rho</b>, which takes random-looking walks on every processor core until two walks land on the same number. The Chinese Remainder Theorem then glues the pieces into one exponent.</p>
+          <p>For each prime power dividing the order of the base, the page raises both sides to a power that leaves a much smaller problem. Small pieces are solved by <b>baby-step giant-step</b>, a lookup table of powers. Big pieces are solved by <b>Pollard's rho</b>, which takes random-looking walks on every processor core until two walks land on the same number. The Chinese Remainder Theorem then glues the pieces into one exponent.</p>
         </div>
         <div class="scroll"><table id="ph-table"></table></div>
       </details>
@@ -455,7 +456,29 @@ function ntModule(){
       for (let r = 1; r < s; r++) { x = x * x % n; if (x === n - 1n) { comp = false; break; } }
       if (comp) return false;
     }
-    return true; // deterministic below 3.3e24; beyond that the chance of error is far below 4^-25
+    // These 25 bases are a proof of primality below 3.3e24. Above that, a number can be built to pass every one of them,
+    // so also run a strong Lucas test: with the base-2 test above, that is the Baillie-PSW test, with no known exceptions.
+    return n < 3317044064679887385961981n || strongLucas(n);
+  }
+  /* Strong Lucas probable-prime test with Selfridge's parameters (D = 5, -7, 9, ... with (D/n) = -1, P = 1, Q = (1 - D)/4).
+     Called only for odd n with no prime factor up to 281 that has already passed the base-2 test. */
+  function strongLucas(n){
+    const r = isqrt(n); if (r * r === n) return false; // no suitable D exists for a square
+    let D = 5n;
+    for (;;) { const j = jacobi(D, n); if (j === -1) break; if (j === 0 && abs(D) !== n) return false; D = D > 0n ? -D - 2n : -D + 2n; }
+    const Q = mod((1n - D) / 4n, n), Dm = mod(D, n);
+    const half = (x) => ((x & 1n) ? x + n : x) >> 1n;
+    let d = n + 1n, s = 0; while (!(d & 1n)) { d >>= 1n; s++; }
+    // U_k, V_k, Q^k for k running through the bits of d, starting at k = 1 (P = 1)
+    let U = 1n, V = 1n, Qk = Q;
+    const bits = d.toString(2);
+    for (let i = 1; i < bits.length; i++) {
+      U = U * V % n; V = mod(V * V - 2n * Qk, n); Qk = Qk * Qk % n; // k -> 2k
+      if (bits[i] === '1') { const U1 = half(U + V), V1 = half(mod(Dm * U + V, n)); U = U1 % n; V = V1 % n; Qk = Qk * Q % n; } // 2k -> 2k + 1
+    }
+    if (U === 0n || V === 0n) return true;
+    for (let k = 1; k < s; k++) { V = mod(V * V - 2n * Qk, n); if (V === 0n) return true; Qk = Qk * Qk % n; }
+    return false;
   }
   function smallestFactorBelow(n, lim){ // trial division, returns {p} or null
     for (const p of SMALL) { if (p > lim) break; const P = BigInt(p); if (P * P > n) return null; if (n % P === 0n) return P; }
@@ -569,6 +592,7 @@ function ntModule(){
     const pickRange = () => {
       const ideal = Math.exp(logTarget / s);
       lo = fbP.findIndex((p) => p > ideal / 2); hi = fbP.findIndex((p) => p > ideal * 2);
+      if (lo > F - s - 13) lo = F - s - 13; // ideal near the top of the factor base: leave room to choose from (else the A search never ends)
       if (lo < smallCut + 2) lo = smallCut + 2; if (hi < 0) hi = F - 1; if (hi - lo < s + 6) hi = Math.min(F - 1, lo + s + 12);
     };
     while (true) { pickRange(); if (hi - lo >= s + 2 || s <= 2) break; s--; }
@@ -893,6 +917,7 @@ function ntModule(){
   }
 
   /* ---------- full factorisation ---------- */
+  const SIQS_MAX_DIGITS = 100; // beyond this the sieve would run for weeks (and past ~620 digits its setup overflows)
   function factor(n, onProgress){
     const t0 = Date.now(), out = [], notes = [];
     if (n < 2n) return { factors: [], notes, ms: 0 };
@@ -911,6 +936,12 @@ function ntModule(){
       if (!d) { d = fermat(c, 2000); if (d) notes.push('Fermat (the two factors are close together)'); }
       if (!d) { d = rho(c, 6e4); if (d) notes.push('Pollard rho'); }
       if (!d && c < 10n ** 20n) { d = rho(c, 2e7, 3n); if (d) notes.push('Pollard rho'); }
+      const digits = c.toString().length;
+      // The sieve slows down steeply with size, while rho's time depends mostly on the size of the factor it finds,
+      // so give rho a longer run first on anything big: it finds factors of up to about 12 digits (10 digits once c has
+      // 600 or more), and gives up within about 10 seconds at any size.
+      if (!d && digits > 50) { d = rho(c, digits > 70 ? Math.round(Math.min(4e6, 1e11 / (digits * digits))) : 2e6, 3n); if (d) notes.push('Pollard rho'); }
+      if (!d && digits > SIQS_MAX_DIGITS) throw new Error(`a part with ${digits} digits is left that has no small factors, and the quadratic sieve on this page can’t split a number that size in any reasonable time (from about 70 digits it takes hours). If the puzzle also gives you one of the secret values, enter it and this step isn’t needed.`);
       if (!d) {
         for (let attempt = 0; attempt < 3 && !d; attempt++) d = siqs(c, onProgress);
         if (d) notes.push('quadratic sieve');
@@ -1072,11 +1103,13 @@ onmessage=function(ev){const m=ev.data;try{
     return { promise, cancel(){ cancelled = true; stopAll(); rejectOuter(new Error('cancelled')); } };
   }
   /* rough time for the hardest prime part, so a page can warn before starting something hopeless */
-  function dlogEstimate(order, pm1){
+  function dlogEstimate(order, pm1, p){
     let worst = 1n;
     for (const [q] of NT.countFactors(pm1)) if (order % q === 0n && q > worst) worst = q;
     const steps = Math.sqrt(Math.PI * Number(worst) / 2);
-    const rate = (NT.hasFastWalk() ? 2e7 : 4e6) * cores() * 0.5; // assume a phone-ish half speed
+    if (p === undefined) p = pm1.reduce((a, b) => a * b, 1n) + 1n;
+    const fast = NT.hasFastWalk() && Math.ceil(NT.bitLength(p) / 32) <= 8; // the WebAssembly walk only takes p up to 256 bits (as in rhoWalker)
+    const rate = (fast ? 2e7 : 4e6) * cores() * 0.5; // assume a phone-ish half speed
     return { worst, steps, seconds: worst <= 10000000000n ? 0.1 : steps / rate };
   }
   function fmtTime(s){
@@ -1168,7 +1201,7 @@ onmessage=function(ev){const m=ev.data;try{
             order = NT.orderOf(g, p, pm1);
             if (order === p - 1n) c3.push(['ok', `<var>${G}</var> is a <b>generator</b>: its powers run through every number from 1 to <var>p − 1</var> before repeating, so every value has a discrete log.`]);
             else c3.push(['info', `<var>${G}</var> isn’t a generator: its powers repeat after ${order} steps (its <b>order</b>), so only some numbers are powers of <var>${G}</var>. That’s allowed, but the answer is only fixed up to multiples of the order.`]);
-            const est = dlogEstimate(order, pm1);
+            const est = dlogEstimate(order, pm1, p);
             if (est.worst > 10000000000n) c3.push([est.seconds > 600 ? 'warn' : 'info', `The hardest piece is a search through a group whose size has ${plural(D(est.worst), 'digit')}: about ${fmtCount(est.steps)} steps, so expect ${fmtTime(est.seconds)} on a phone (less on a computer). This page uses ${plural(cores(), 'processor core')}.`]);
           }
         }
@@ -1177,18 +1210,22 @@ onmessage=function(ev){const m=ev.data;try{
       setChecks('#ck-pm1', c3);
       /* Step 4 */
       const c4 = []; let x = null;
-      if (!pm1 || !o.gOk || !o.hOk) {
+      if (!o.pOk || !o.gOk || !o.hOk) {
         ds.clear(); $('#dl-out').innerHTML = ''; $('#ph-table').innerHTML = ''; $('#ph-more').hidden = true;
-        waiting('#s4', !o.pOk ? o.pWhy : !pm1 ? 'Needs the factors of p − 1 from Step 3.' : !o.gOk ? o.gWhy : o.hWhy);
-      } else if (o.known !== undefined) {
+        waiting('#s4', !o.pOk ? o.pWhy : !o.gOk ? o.gWhy : o.hWhy);
+      } else if (o.known !== undefined) { // checking a known exponent needs one power, not the factors of p − 1
         ready('#s4'); ds.clear(); $('#ph-more').hidden = true; $('#ph-table').innerHTML = '';
         $('#dl-out').innerHTML = valBox(sym, o.knownLabel, o.known);
         if (NT.modPow(g, o.known, p) === h) { c4.push(['ok', `Check: <var>${G}<sup>${sym}</sup> mod p</var> gives back <var>${hSym}</var>, so the <var>${sym}</var> you entered fits.`]); x = o.known; }
         else c4.push(['bad', `The <var>${sym}</var> you entered doesn’t fit: <var>${G}<sup>${sym}</sup> mod p</var> isn’t <var>${hSym}</var>. Check its digits, or clear it and let the page search.`]);
+        if (order === null) order = p - 1n; // until p − 1 is factored, use p − 1 itself: the order divides it, so inverses mod p − 1 still undo a power
+      } else if (!pm1) {
+        ds.clear(); $('#dl-out').innerHTML = ''; $('#ph-table').innerHTML = ''; $('#ph-more').hidden = true;
+        waiting('#s4', 'Needs the factors of p − 1 from Step 3.');
       } else {
         ready('#s4');
         const key = [p, g, h].join(':');
-        const est = dlogEstimate(order, pm1);
+        const est = dlogEstimate(order, pm1, p);
         if (est.seconds > 600 && forced !== key && ds.state.key !== key) {
           ds.clear(); $('#dl-out').innerHTML = ''; $('#ph-more').hidden = true;
           c4.push(['warn', `<b>This search would take ${fmtTime(est.seconds)}.</b> <var>p − 1</var> has a big prime factor, so Pohlig–Hellman can’t break it into small enough pieces. Puzzles are built to avoid this, so first check <var>p</var> and <var>${G}</var> for a wrong digit. <button class="btn small" type="button" id="force-dl" data-key="${esc(key)}">Run it anyway</button>`]);
@@ -1200,7 +1237,7 @@ onmessage=function(ev){const m=ev.data;try{
             c4.push(['bad', `<b>No answer exists:</b> <var>${hSym}</var> is not a power of <var>${G}</var> modulo <var>p</var>, so no <var>${sym}</var> gives it. One of <var>p</var>, <var>${G}</var>, or <var>${hSym}</var> has a wrong digit, or two numbers are in each other’s boxes.`]);
           } else if (s.status === 'done') {
             const r = s.result; x = r.x;
-            $('#dl-out').innerHTML = valBox(sym, `= log<sub>g</sub> ${hSym} (mod ${r.order === p - 1n ? 'p − 1' : 'the order of g'})`, r.x, { big: true }) +
+            $('#dl-out').innerHTML = valBox(sym, `= log<sub>${G}</sub> ${hSym} (mod ${r.order === p - 1n ? 'p − 1' : 'the order of ' + G})`, r.x, { big: true }) +
               `<p class="explain">Found in ${(s.ms / 1000).toFixed(2)} s.</p>`;
             c4.push(['ok', `Check: <var>${G}<sup>${sym}</sup> mod p</var> gives back <var>${hSym}</var> exactly.`]);
             if (r.order !== p - 1n) c4.push(['info', `Because <var>${G}</var>’s order is smaller than <var>p − 1</var>, adding any multiple of ${r.order} to <var>${sym}</var> also works. Every one of them works equally well.`]);
@@ -1253,18 +1290,21 @@ onmessage=function(ev){const m=ev.data;try{
       const mode = st.bm || 'b8'; q('mode').value = mode;
       const checks = [], chips = []; let text = '';
       if (mode === 'num') {
-        const v = bits.length ? BigInt('0b' + bits.join('')) : 0n;
+        const gaps = bits.filter((b) => b === null).length;
+        const v = bits.length ? BigInt('0b' + bits.map((b) => b ?? 0).join('')) : 0n;
         text = v.toString();
+        if (gaps) checks.push(['warn', `${plural(gaps, 'bit')} couldn’t be read, so ${gaps === 1 ? 'it was' : 'they were'} counted as 0 here. Fix ${gaps === 1 ? 'that entry' : 'those entries'} first, or this number will be wrong.`]);
         checks.push(['info', `${plural(bits.length, 'bit')}, read as one binary number. That number may itself need a reading (for example in blocks of 3 digits as ASCII).`]);
       } else {
         const size = +mode.slice(1);
         if (bits.length % size) checks.push(['warn', `${plural(bits.length, 'bit')} isn’t a multiple of ${size}, so the last group is short. Check that every ciphertext number was copied, or try a different group size.`]);
         for (let i = 0; i < bits.length; i += size) {
-          const grp = bits.slice(i, i + size).join(''); const v = parseInt(grp, 2); let t, odd = false;
+          const grp = bits.slice(i, i + size).map((b) => (b === null ? '?' : b)).join(''); const v = parseInt(grp, 2); let t, odd = false;
           if (grp.length < size) { t = '…'; odd = true; }
+          else if (grp.includes('?')) { t = '?'; odd = true; }
           else if (size === 5) { if (v >= 1 && v <= 26) t = String.fromCharCode(64 + v); else if (v === 0) { t = '␣'; odd = true; } else { t = '·'; odd = true; } }
           else if (v >= 32 && v < 127) t = String.fromCharCode(v); else { t = '·'; odd = true; }
-          chips.push({ d: grp, t, odd }); text += odd ? (t === '␣' ? ' ' : '·') : t;
+          chips.push({ d: grp, t, odd }); text += odd ? (t === '␣' ? ' ' : t === '?' ? '?' : '·') : t;
         }
         const oddCount = chips.filter((c) => c.odd).length;
         if (oddCount > chips.length / 3) checks.push(['warn', `${oddCount} of ${chips.length} groups don’t turn into a ${size === 5 ? 'letter' : 'printable character'}. Try another group size.`]);
@@ -1396,8 +1436,19 @@ onmessage=function(ev){const m=ev.data;try{
         for (let i = 0; i < body.length; i += 3) chips.push({ d: body.slice(i, i + 3), t: '' });
       } else if (mode === 'hex') {
         let h = m.toString(16); if (h.length % 2) h = '0' + h;
-        for (let i = 0; i < h.length; i += 2) { const b = parseInt(h.slice(i, i + 2), 16), pr = b >= 32 && b < 127; chips.push({ d: h.slice(i, i + 2), t: pr ? String.fromCharCode(b) : '·', odd: !pr }); text += pr ? String.fromCharCode(b) : '·'; }
+        const bytes = new Uint8Array(h.length / 2);
+        for (let i = 0; i < bytes.length; i++) bytes[i] = parseInt(h.slice(2 * i, 2 * i + 2), 16);
+        // bytes 128 and up: UTF-8 if they form valid UTF-8 (° is c2 b0), otherwise Latin-1 (° is b0)
+        let utf8 = null;
+        if (bytes.some((b) => b >= 128) && typeof TextDecoder !== 'undefined') { try { utf8 = new TextDecoder('utf-8', { fatal: true }).decode(bytes); } catch (e) { utf8 = null; } }
+        const add = (d, cp) => { const pr = printable(cp, 4), t = pr ? String.fromCodePoint(cp) : '·'; chips.push({ d, t, odd: !pr }); text += t; };
+        if (utf8 !== null) {
+          let i = 0;
+          for (const ch of utf8) { const cp = ch.codePointAt(0), len = cp < 0x80 ? 1 : cp < 0x800 ? 2 : cp < 0x10000 ? 3 : 4; add(h.slice(2 * i, 2 * (i + len)), cp); i += len; }
+        } else for (let i = 0; i < bytes.length; i++) add(h.slice(2 * i, 2 * i + 2), bytes[i]);
         checks.push(['info', 'This is how real systems store text: the number is written in base 16 and each pair of hex digits is one byte.']);
+        if (utf8 !== null) checks.push(['info', 'Some characters here take more than one byte, so their bytes share a box. That’s <b>UTF-8</b>, the usual way text is stored today: ° is <b>c2 b0</b> and ß is <b>c3 9f</b>.']);
+        else if (bytes.some((b) => b >= 128)) checks.push(['info', 'The bytes from 80 up don’t make valid UTF-8 (the usual way text is stored today), so they’re read as <b>Latin-1</b>, one byte per character: ° is <b>b0</b> and ß is <b>df</b>.']);
       } else {
         const size = mode === 'ascii3' ? 3 : mode === 'ascii4' ? 4 : 2;
         let s = body; const rem = s.length % size; let padded = 0;
@@ -1485,7 +1536,7 @@ onmessage=function(ev){const m=ev.data;try{
     const gC = []; let gOk = g !== undefined && pOk && inRange('g', gC);
     if (g !== undefined && pOk && gOk) {
       if (g === 1n || g === p - 1n) { gC.push(['bad', `<var>g = ${g === 1n ? '1' : 'p − 1'}</var> can’t be the base: its powers only ever give ${g === 1n ? '1' : '1 and p − 1'}.`]); gOk = false; }
-      else if (D(g) >= D(p) - 2) gC.push(['info', 'That’s a long base. It’s allowed, but the base is usually short, so make sure this isn’t <var>y</var> or <var>c<sub>1</sub></var> in the wrong box.']);
+      else if (D(p) >= 6 && D(g) >= D(p) - 2) gC.push(['info', 'That’s a long base. It’s allowed, but the base is usually short, so make sure this isn’t <var>y</var> or <var>c<sub>1</sub></var> in the wrong box.']);
     } else if (g === undefined && !P.g.error) gC.push(['info', 'Waiting for the base <var>g</var>.']);
     K.setChecks('#ck-g', K.common(P.g, gC));
 

@@ -68,6 +68,7 @@ body{
   font-size:16px; line-height:1.5; -webkit-font-smoothing:antialiased;
 }
 button,input,textarea,select{font:inherit;color:inherit}
+::placeholder{color:var(--muted);opacity:1} /* browsers default to a pale grey that fails 4.5:1 */
 :focus-visible{outline:2px solid var(--focus);outline-offset:2px}
 ::selection{background:var(--accent-soft)}
 .mono,.num{font-family:"IBM Plex Mono","SFMono-Regular",Menlo,Consolas,monospace}
@@ -200,7 +201,7 @@ tr:last-child td{border-bottom:0}
 
 /* ---------- message reader ---------- */
 .conv-opts{display:flex;gap:10px 16px;flex-wrap:wrap;align-items:end;margin:6px 0 10px}
-.conv-opts label{display:flex;flex-direction:column;gap:4px;font-size:13px;color:var(--muted)}
+.conv-opts label{display:flex;flex-direction:column;gap:4px;font-size:13px;color:var(--muted);min-width:0;max-width:100%} /* lets a long select shrink to the card */
 .conv-opts label.inline{flex-direction:row;align-items:center;gap:8px;color:var(--ink);font-size:15px}
 .conv-opts select{border:1px solid var(--line-strong);border-radius:6px;background:var(--surface);padding:6px 8px;font-size:15px;color:var(--ink);max-width:100%}
 .conv-opts input[type=checkbox]{width:17px;height:17px}
@@ -264,6 +265,7 @@ footer a{color:inherit}
 .play-controls label,.calc label{display:flex;flex-direction:column;gap:4px;font-size:14px;color:var(--muted)}
 .calc{display:flex;gap:10px 16px;flex-wrap:wrap;align-items:flex-end;margin:12px 0 6px}
 .calc label{flex-direction:row;align-items:center;gap:8px;color:var(--ink);font-size:15px}
+.calc label{max-width:100%;min-width:0}.calc select{min-width:0;max-width:100%} /* lets a long select shrink to the card on a narrow phone */
 .calc var,.play var{font-family:"IBM Plex Mono",monospace;font-style:normal;font-weight:600}
 input[type=number],input[type=text],select{border:1px solid var(--line-strong);border-radius:6px;background:var(--surface);padding:7px 9px;font-size:15px;color:var(--ink);max-width:100%}
 input[type=text]{font-family:"IBM Plex Mono",monospace;min-width:0;width:12em}
@@ -274,6 +276,7 @@ input[type=number]{width:6.5em;font-family:"IBM Plex Mono",monospace}
 .say var,.out var{font-family:"IBM Plex Mono",monospace;font-style:normal;font-weight:600}
 .out{color:var(--ink-2)}
 .out p{margin:8px 0}
+.out p,.out var{overflow-wrap:anywhere} /* long numbers wrap instead of widening the page */
 .out .num,.say .num{font-family:"IBM Plex Mono",monospace;word-break:break-all}
 .out .big,.q .big{font-family:"Barlow Condensed",sans-serif;font-size:26px;color:var(--ink)}
 .one-chip{display:inline-block;background:var(--accent);color:var(--accent-ink);border-radius:4px;padding:0 6px;font-family:"IBM Plex Mono",monospace;font-weight:600}
@@ -410,7 +413,7 @@ ol.readas li.bad{color:var(--error)}
 .sanity{margin-left:auto;font-family:"IBM Plex Mono",monospace;font-size:12.5px;color:var(--brass);border:1px solid var(--brass);border-radius:999px;padding:1px 9px}
 .page{border-top:1px solid var(--line);padding:12px 0 4px}
 .page:first-child{border-top:0;padding-top:4px}
-.page .pname{flex:1;min-width:8em;border:1px solid var(--line);border-radius:6px;background:var(--surface);padding:5px 8px;font-size:15px;color:var(--ink);font-family:"Barlow",system-ui,sans-serif}
+.page .pname{flex:1;min-width:8em;border:1px solid var(--line-strong);border-radius:6px;background:var(--surface);padding:5px 8px;font-size:15px;color:var(--ink);font-family:"Barlow",system-ui,sans-serif}
 .nw{font-size:12.5px;color:var(--muted)}
 .pgsmall{font-size:12.5px;color:var(--muted)}
 table.nums{table-layout:fixed}
@@ -650,8 +653,8 @@ example: φ(15) = 8, and 2^8 = 256 = 17 × 15 + 1</div>
       <p>That's the <b>Chinese Remainder Theorem</b> (CRT): knowing a number modulo several moduli that share no factors pins it down modulo their product. Cryptosystems use it to split one big calculation into smaller ones, mod <var>p</var> and mod <var>q</var>, and glue the answers back together.</p>
     </div>
     <div class="calc">
-      <label><var>x mod</var> <input type="number" id="cr-n1" value="3" min="2" max="9999" inputmode="numeric"> <var>=</var> <input type="number" id="cr-r1" value="2" inputmode="numeric"></label>
-      <label><var>x mod</var> <input type="number" id="cr-n2" value="5" min="2" max="9999" inputmode="numeric"> <var>=</var> <input type="number" id="cr-r2" value="3" inputmode="numeric"></label>
+      <label><var>x mod</var> <input type="number" id="cr-n1" aria-label="first modulus" value="3" min="2" max="9999" inputmode="numeric"> <var>=</var> <input type="number" id="cr-r1" aria-label="remainder for the first modulus" value="2" inputmode="numeric"></label>
+      <label><var>x mod</var> <input type="number" id="cr-n2" aria-label="second modulus" value="5" min="2" max="9999" inputmode="numeric"> <var>=</var> <input type="number" id="cr-r2" aria-label="remainder for the second modulus" value="3" inputmode="numeric"></label>
     </div>
     <div class="out" id="cr-out" aria-live="polite"></div>
     <div class="scroll"><div class="ticks" id="cr-ticks"></div></div>
@@ -868,6 +871,63 @@ mod 7:  2^3 = 8 ≡ 1        so 2 is a square
   $('#pw-g').addEventListener('input', doPowers); $('#pw-n').addEventListener('input', doPowers);
 
   /* ---------- 6. fast power and inverse ---------- */
+  /* primality, factoring and Fermat witnesses for the fast-power note (BigInt) */
+  const powB = (b, e, m) => { let r = 1n; b = modB(b, m); while (e > 0n) { if (e & 1n) r = r * b % m; b = b * b % m; e >>= 1n; } return r; };
+  const SMALLP = [2n, 3n, 5n, 7n, 11n, 13n, 17n, 19n, 23n, 29n, 31n, 37n, 41n];
+  const isPrimeB = (n) => {  // Miller–Rabin: these 13 bases decide every n below 3.3 × 10^24; above that, extra random bases make a mistake vanishingly unlikely
+    if (n < 2n) return false;
+    for (const p of SMALLP) { if (n === p) return true; if (n % p === 0n) return false; }
+    let d = n - 1n, s = 0; while (!(d & 1n)) { d >>= 1n; s++; }
+    const bases = SMALLP.slice();
+    if (n >= 3317044064679887385961981n) for (let i = 0; i < 16; i++) bases.push(2n + BigInt(Math.floor(Math.random() * 1e15)) % (n - 3n));
+    next: for (const b of bases) {
+      let x = powB(b, d, n); if (x === 1n || x === n - 1n) continue;
+      for (let i = 1; i < s; i++) { x = x * x % n; if (x === n - 1n) continue next; }
+      return false;
+    }
+    return true;
+  };
+  const rho = (n, budget) => {  // Pollard's rho (Brent's version): one factor of a composite n, or null when the budget runs out
+    for (let c = 1n; c < 20n && budget.left > 0; c++) {
+      let y = 2n, r = 1, q = 1n, g = 1n, x = 2n, ys = 2n; const f = (v) => (v * v + c) % n;
+      while (g === 1n && budget.left > 0) {
+        x = y; for (let i = 0; i < r; i++) y = f(y);
+        for (let k = 0; k < r && g === 1n; k += 64) { ys = y; for (let i = 0; i < Math.min(64, r - k); i++) { y = f(y); q = q * (x > y ? x - y : y - x) % n; } g = gcdB(q, n); budget.left -= 64; }
+        r *= 2;
+      }
+      if (g === n) { g = 1n; while (g === 1n) { ys = f(ys); g = gcdB(x > ys ? x - ys : ys - x, n); } }
+      if (g !== 1n && g !== n) return g;
+    }
+    return null;
+  };
+  const factorB = (n) => {  // the prime factors of n, smallest first, or null if they are too big to find quickly
+    const f = []; for (let d = 2n; d < 1000n && d * d <= n; d++) while (n % d === 0n) { f.push(d); n /= d; }
+    const todo = n > 1n ? [n] : [], budget = { left: 100000 };
+    while (todo.length) {
+      const m = todo.pop();
+      if (isPrimeB(m)) { f.push(m); continue; }
+      const g = rho(m, budget); if (g === null) return null;
+      todo.push(g, m / g);
+    }
+    return f.sort((x, y) => (x < y ? -1 : x > y ? 1 : 0));
+  };
+  const fermatWitness = (n) => {  // a small base sharing no factor with n for which b^(n−1) mod n isn’t 1, if there is one
+    for (let b = 2n, tried = 0; tried < 40 && b < n - 1n; b++) { if (gcdB(b, n) !== 1n) continue; tried++; if (powB(b, n - 1n, n) !== 1n) return b; }
+    return null;
+  };
+  const fermatNote = (a, n) => {  // called when a^(n−1) mod n = 1
+    const am = modB(a, n);
+    if (am === 1n || am === n - 1n) return ` Don’t read anything into that, though: 1 and −1 (that is, ${short(n - 1n)}) give 1 here whatever <var>n</var> is, so try another base.`;
+    if (isPrimeB(n)) return ' That’s Fermat’s little theorem in action.';
+    const w = fermatWitness(n);
+    if (w !== null) return ` That looks like Fermat's little theorem, but ${short(n)} isn't prime! It's a <b>Fermat pseudoprime</b> to base ${short(am)}: this base happens to fool Fermat's test, but others don't. Try <var>a</var> = ${w}.`;
+    const f = factorB(n);
+    if (f === null) return ` That looks like Fermat's little theorem, but ${short(n)} isn't prime (a stronger test shows it). Every base this box tried that shares no factor with it gives 1 too, so it’s probably a <b>Carmichael number</b>, but its factors are too big to find here and check.`;
+    const fs = f.map(String).join(' × ');
+    const sqfree = f.every((p, i) => i === 0 || p !== f[i - 1]), korselt = sqfree && f.length > 1 && f.every((p) => (n - 1n) % (p - 1n) === 0n);
+    if (korselt) return ` That looks like Fermat's little theorem, but ${short(n)} = ${fs} isn't prime! It's a <b>Carmichael number</b>: it fools Fermat's test for every base sharing no factor with it, because ${f.map((p) => `${p} − 1`).join(', ')} all divide ${short(n)} − 1.${n === 561n ? ' It’s the smallest one.' : ' The smallest is 561 = 3 × 11 × 17.'}`;
+    return ` That looks like Fermat's little theorem, but ${short(n)} = ${fs} isn't prime! It's a <b>Fermat pseudoprime</b> to base ${short(am)}: this base happens to fool Fermat's test.`;
+  };
   function doFast(){
     const a = big($('#fp-a').value), e = big($('#fp-e').value), n = big($('#fp-n').value);
     if (a === null || e === null || n === null || e < 0n || n < 2n) { $('#fp-out').innerHTML = 'Type whole numbers: <var>e</var> at least 0 and <var>n</var> at least 2.'; $('#fp-table').innerHTML = ''; return; }
@@ -879,11 +939,7 @@ mod 7:  2^3 = 8 ≡ 1        so 2 is a square
       sq = sq * sq % n;
     }
     let note = '';
-    if (r === 1n && e === n - 1n) {
-      let comp = false; for (let d = 2n; d * d <= n && d < 100000n; d++) if (n % d === 0n) { comp = true; break; }
-      if (comp) note = ` That looks like Fermat's little theorem, but ${n} isn't prime! Numbers like this, which fool Fermat's test for every base sharing no factor with them, are called <b>Carmichael numbers</b>, and 561 = 3 × 11 × 17 is the smallest.`;
-      else note = ' That’s Fermat’s little theorem in action.';
-    }
+    if (r === 1n && e === n - 1n) note = fermatNote(a, n);
     const nSq = e > 0n ? bits.length - 1 : 0, nMul = e > 0n ? bits.split('').filter((b) => b === '1').length - 1 : 0;
     $('#fp-out').innerHTML = `<p><var>a<sup>e</sup> mod n</var> = <b class="num">${r}</b>, using ${nSq} squaring${nSq === 1 ? '' : 's'} and ${nMul} multiplication${nMul === 1 ? '' : 's'} (the exponent in binary is ${bits.length > 64 ? bits.slice(0, 64) + '…' : bits}: one squaring per digit after the first, one multiplication per extra 1).${note}</p>`;
     $('#fp-table').innerHTML = '<thead><tr><th>Power of 2</th><th>Bit of e</th><th>a to that power, mod n</th><th>Running result</th></tr></thead><tbody>' + rows.join('') + (rows.length >= 80 ? '<tr><td colspan="4">…</td></tr>' : '') + '</tbody>';

@@ -73,6 +73,7 @@ body{
 button,input,textarea,select{font:inherit;color:inherit}
 :focus-visible{outline:2px solid var(--focus);outline-offset:2px}
 ::selection{background:var(--accent-soft)}
+::placeholder{color:var(--muted);opacity:1}
 .mono{font-family:"IBM Plex Mono","SFMono-Regular",Menlo,Consolas,monospace}
 .cond{font-family:"Barlow Condensed","Barlow",system-ui,sans-serif}
 
@@ -204,9 +205,9 @@ textarea.interp{background:var(--surface-2)}
 .field .meta{color:var(--muted);font-size:13px;font-variant-numeric:tabular-nums}
 .field .meta.warn{color:var(--warn)}
 .field .spacer{flex:1}
-.field-foot{display:flex;align-items:flex-start;gap:10px;margin-top:6px}
-.field-foot .hint{flex:1;margin:0}
-.field-foot .btn{flex:none;white-space:nowrap}
+.field-foot{display:flex;align-items:flex-start;gap:10px;margin-top:6px;flex-wrap:wrap}
+.field-foot .hint{flex:1 1 12em;margin:0}
+.field-foot .btn{flex:none;white-space:nowrap;max-width:100%}
 
 /* ---------- options ---------- */
 details.opts{border:1px solid var(--line);border-radius:8px;background:var(--surface);margin-top:2px}
@@ -233,7 +234,7 @@ details.opts[open] summary::before{transform:rotate(90deg)}
   font-family:"IBM Plex Mono",monospace;font-size:22px;line-height:1.6;letter-spacing:.06em;
   display:flex;flex-wrap:wrap;gap:6px 18px;
 }
-.decoded .g{white-space:nowrap}
+.decoded .g{white-space:normal;overflow-wrap:anywhere;min-width:0}
 .decoded .bad{color:var(--error);font-weight:600}
 .decoded .empty{color:var(--muted);font-size:16px;letter-spacing:0;font-family:"Barlow",sans-serif}
 .decoded .space{display:none}
@@ -288,9 +289,10 @@ td.gnum{color:var(--muted)}
   content:attr(data-i);position:absolute;top:-1px;left:0;right:0;text-align:center;font-size:8.5px;color:var(--muted);line-height:1;
   font-family:"Barlow",sans-serif;
 }
-.chip .c.skip{color:var(--muted);opacity:.55}
+.chip .c.skip{color:var(--muted);text-decoration:line-through;text-decoration-thickness:1px}
 .chip .c.skip::before{content:"·"}
-.chip.skipword{opacity:.5;border-style:dashed}
+.chip.skipword{border-style:dashed;border-color:var(--line-strong)}
+.chip.skipword .wt{color:var(--muted)}
 .numline .none{color:var(--muted);font-size:13px}
 
 /* convert */
@@ -378,7 +380,7 @@ footer .k{font-family:"IBM Plex Mono",monospace;font-size:12px}
         <summary>Counting rules</summary>
         <div class="opt-grid">
           <div class="opt">
-            <span class="k">Triple order</span>
+            <label class="k" for="opt-order">Triple order</label>
             <select id="opt-order">
               <option value="LWC">(line, word, character)</option>
               <option value="LCW">(line, character, word)</option>
@@ -389,14 +391,14 @@ footer .k{font-family:"IBM Plex Mono",monospace;font-size:12px}
             </select>
           </div>
           <div class="opt">
-            <span class="k">Counting starts at</span>
+            <label class="k" for="opt-base">Counting starts at</label>
             <select id="opt-base">
               <option value="1">1 — first line is line 1</option>
               <option value="0">0 — first line is line 0</option>
             </select>
           </div>
           <div class="opt">
-            <span class="k">What counts as a character</span>
+            <label class="k" for="opt-chars">What counts as a character</label>
             <select id="opt-chars">
               <option value="alnum">Letters and digits only (skip punctuation)</option>
               <option value="letters">Letters only</option>
@@ -404,35 +406,35 @@ footer .k{font-family:"IBM Plex Mono",monospace;font-size:12px}
             </select>
           </div>
           <div class="opt">
-            <span class="k">Hyphenated words</span>
+            <label class="k" for="opt-hyphen">Hyphenated words</label>
             <select id="opt-hyphen">
               <option value="one">One word (PARK-AND-RIDE = 1)</option>
               <option value="split">Split at hyphens (PARK-AND-RIDE = 3)</option>
             </select>
           </div>
           <div class="opt">
-            <span class="k">Numbers on the sign</span>
+            <label class="k" for="opt-numbers">Numbers on the sign</label>
             <select id="opt-numbers">
               <option value="word">Count as words</option>
               <option value="skip">Don't count as words</option>
             </select>
           </div>
           <div class="opt">
-            <span class="k">Stand-alone symbols (&amp;, —, •)</span>
+            <label class="k" for="opt-punct">Stand-alone symbols (&amp;, —, •)</label>
             <select id="opt-punct">
               <option value="skip">Don't count as words</option>
               <option value="word">Count as words</option>
             </select>
           </div>
           <div class="opt">
-            <span class="k">New word in the pasted formula starts at</span>
+            <label class="k" for="opt-group">New word in the pasted formula starts at</label>
             <select id="opt-group">
               <option value="blank">A blank line</option>
               <option value="newline">Every line break</option>
             </select>
           </div>
           <div class="opt">
-            <span class="k">Show decoded text</span>
+            <label class="k" for="opt-case">Show decoded text</label>
             <select id="opt-case">
               <option value="asis">As typed</option>
               <option value="upper">UPPERCASE</option>
@@ -486,7 +488,7 @@ footer .k{font-family:"IBM Plex Mono",monospace;font-size:12px}
     <details class="sub" id="sub-numbering" style="margin-top:20px">
       <summary>How the sign is being counted <span class="meta">word numbers and character numbers, under the current rules</span></summary>
       <div class="sub-body">
-        <p class="hint">Dimmed characters aren't counted. Dashed words aren't counted as words.</p>
+        <p class="hint">Struck-through characters aren't counted. Words in a dashed box aren't counted as words.</p>
         <div class="numlines" id="numlines"></div>
       </div>
     </details>
@@ -540,8 +542,33 @@ footer .k{font-family:"IBM Plex Mono",monospace;font-size:12px}
   const NUM = '(\\d+)' + SEP + '(\\d+)' + SEP + '(\\d+)';
   const MASTER = new RegExp(NAMED + '|' + NUM, 'gi');
 
+  // List labels such as "Letter 1:", "1.", "Step 2)", "3 -" or "#4" aren't part of a triple.
+  // A "#N" label (unless it follows a word like "line" or "char") is always one; a label at the
+  // start of a line is one only when the rest of that line still holds whole triples, so that
+  // "3. 1. 1" stays a triple. Labels are blanked with spaces, keeping every position in place.
+  const HASH_LABEL = /(?<![\d#]|\b(?:line|row|word|character|char|letter|ltr|[lrwc])\s*)#\s*\d+/gi;
+  const LINE_LABEL = /^([^\S\n]*(?:[A-Za-z]+\.?[^\S\n]*)?#?[^\S\n]*[(\[]?\d+[^\S\n]*(?:[:.)\]]|[^\S\n][-\u2010-\u2015]))(?=[^\S\n])(.*)$/gm;
+  const blankOut = m => m.replace(/[^\n]/g, ' ');
+  function stripLabels(text){
+    return text
+      .replace(HASH_LABEL, blankOut)
+      .replace(LINE_LABEL, (all, label, rest) => {
+        const n = (rest.match(/\d+/g) || []).length;
+        return (n && n % 3 === 0) ? blankOut(label) + rest : all;
+      });
+  }
+  // How many runs of joined-up numbers (like "1,1,5,2,1") don't split evenly into threes.
+  // Lone numbers in the prose are left alone; they can't be mistaken for part of a triple.
+  const NAMED_RE = new RegExp(NAMED, 'gi');
+  const RUN = new RegExp('\\d+(?:' + SEP + '\\d+)+', 'g');
+  function unevenRuns(text){
+    const t = stripLabels(text).replace(NAMED_RE, blankOut);
+    return (t.match(RUN) || []).filter(r => r.match(/\d+/g).length % 3 !== 0).length;
+  }
+
   // Returns [[ [a,b,c], ... ], ...] — groups of raw triples (in the order written)
   function parseFormula(text, groupMode){
+    text = stripLabels(text);
     const groups = [];
     let cur = [];
     let last = -1;
@@ -693,14 +720,22 @@ footer .k{font-family:"IBM Plex Mono",monospace;font-size:12px}
     const text = (e.clipboardData || window.clipboardData).getData('text');
     if(!/\r?\n/.test(text)) return;
     e.preventDefault();
-    const parts = text.replace(/\r/g,'').split('\n').filter(p => p.trim() !== '');
+    const parts = text.replace(/\r/g,'').split('\n');
     const i = +inp.dataset.i;
-    if(inp.value.trim() === ''){
-      state.lines.splice(i, 1, ...parts);
-    } else {
-      state.lines.splice(i+1, 0, ...parts);
-    }
-    renderRows(i + parts.length - (inp.value.trim()===''?1:0)); update();
+    const v = inp.value;
+    const s = inp.selectionStart ?? v.length, en = inp.selectionEnd ?? s;
+    // the pasted text replaces the selection: what was before it joins the first pasted line,
+    // what was after it joins the last; blank lines in between are dropped
+    const first = v.slice(0, s) + parts[0];
+    const lastPart = parts[parts.length-1];
+    const middle = parts.slice(1, -1).filter(p => p.trim() !== '');
+    const lines = [first, ...middle, lastPart + v.slice(en)];
+    let caretLine = lines.length - 1, caret = lastPart.length;
+    // don't leave an empty line at either end (a copied block often ends with a line break)
+    if(lines.length > 1 && lines[lines.length-1].trim() === ''){ lines.pop(); caretLine = lines.length - 1; caret = lines[caretLine].length; }
+    if(lines.length > 1 && lines[0].trim() === ''){ lines.shift(); caretLine--; }
+    state.lines.splice(i, 1, ...lines);
+    renderRows(i + caretLine, caret); update();
   });
 
   /* ---------- formula wiring ---------- */
@@ -758,6 +793,9 @@ footer .k{font-family:"IBM Plex Mono",monospace;font-size:12px}
     const im = $('#interp-meta');
     if(!state.interp.trim()){ im.textContent = ''; im.className='meta'; }
     else { im.textContent = nTrip + ' triple' + (nTrip===1?'':'s') + ' in ' + res.groups.length + ' word' + (res.groups.length===1?'':'s') + (state.interpDirty ? ' · edited by hand' : ''); im.className = 'meta'; }
+    // numbers that didn't fit into threes: the reading may have slipped, so say so
+    const uneven = unevenRuns(state.interpDirty ? state.interp : state.formula);
+    if(uneven && state.interp.trim()){ im.textContent += ' · some numbers didn\u2019t fit into threes, so check this reading'; im.className = 'meta warn'; }
 
     // decoded
     const dec = $('#decoded');
@@ -772,6 +810,7 @@ footer .k{font-family:"IBM Plex Mono",monospace;font-size:12px}
     const rs = $('#result-status');
     if(!nTrip){ rs.textContent=''; rs.className='status'; }
     else if(nBad){ rs.textContent = nBad + ' of ' + nTrip + ' triple' + (nTrip===1?'':'s') + " couldn't be read — see the trace"; rs.className='status warn'; }
+    else if(uneven){ rs.textContent = 'all ' + nTrip + ' triple' + (nTrip===1?'':'s') + ' read, but some numbers in the formula didn\u2019t fit into threes: check the interpreted formula'; rs.className='status warn'; }
     else { rs.textContent = 'all ' + nTrip + ' triple' + (nTrip===1?'':'s') + ' read'; rs.className='status good'; }
     $('#btn-copy').disabled = !nTrip; $('#btn-copy-compact').disabled = !nTrip;
 
@@ -800,7 +839,7 @@ footer .k{font-family:"IBM Plex Mono",monospace;font-size:12px}
       const chars = g.map(r => r.bad ? '?' : r.ch);
       const vals = chars.map(ch => {
         if(ch === '?') return {txt:'?', v:null};
-        if(isDigit(ch)) return {txt:ch, v:+ch, digit:true};
+        if(/^[0-9]$/.test(ch)) return {txt:ch, v:+ch, digit:true};
         const lv = letterVal(ch);
         if(lv === null) return {txt:'·', v:null};
         const rv = reduceVal(lv);
@@ -813,7 +852,7 @@ footer .k{font-family:"IBM Plex Mono",monospace;font-size:12px}
       rows += '<tr><td class="gnum">'+(gi+1)+'</td><td class="mono">'+esc(showCase(chars.join('')))+'</td><td class="vals">'+vals.map(x=>x.v===null?'<span class="dot">'+esc(x.txt)+'</span>':esc(x.txt)).join(' ')+'</td><td class="tot">'+(nums.length?sum:'')+'</td><td class="mono">'+esc(digits)+'</td></tr>';
     });
     if(res.groups.length > 1){
-      const total = res.groups.reduce((a,g)=>a+g.reduce((b,r)=>{ if(r.bad) return b; if(isDigit(r.ch)) return b + +r.ch; const lv=letterVal(r.ch); return lv===null?b:b+reduceVal(lv); },0),0);
+      const total = res.groups.reduce((a,g)=>a+g.reduce((b,r)=>{ if(r.bad) return b; if(/^[0-9]$/.test(r.ch)) return b + +r.ch; const lv=letterVal(r.ch); return lv===null?b:b+reduceVal(lv); },0),0);
       rows += '<tr class="gsep"><td></td><td class="gnum">all words</td><td></td><td class="tot">'+total+'</td><td class="mono">'+esc(allDigits)+'</td></tr>';
     }
     tbl.innerHTML = rows;
@@ -879,8 +918,9 @@ footer .k{font-family:"IBM Plex Mono",monospace;font-size:12px}
     state.lines = ['PLEASE KEEP OFF', 'THE GRASS', 'VIOLATORS WILL BE FINED $50', 'THANK YOU — PARKS DEPT.'];
     state.formula = 'You will need the following, in the format (Line, Word, Character):\n\n(1, 1, 5) (2, 1, 2) (1, 3, 1) (4, 3, 1)\n\n(3, 4, 1) (3, 2, 2) (1, 3, 2) (2, 1, 1) (4, 2, 1)\n\n(3, 5, 1) (3, 5, 2)';
     state.interpDirty = false;
+    state.opts = {...DEFAULT_OPTS};   // the example only reads correctly under the default counting rules
     reinterpret();
-    syncControls(); renderRows(); update(); toast('Example loaded');
+    syncControls(); renderRows(); update(); toast('Example loaded, with the counting rules reset');
   });
 
   /* ---------- boot ---------- */

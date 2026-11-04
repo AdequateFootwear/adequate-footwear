@@ -68,6 +68,7 @@ body{
   font-size:16px; line-height:1.5; -webkit-font-smoothing:antialiased;
 }
 button,input,textarea,select{font:inherit;color:inherit}
+::placeholder{color:var(--muted);opacity:1} /* browsers default to a pale grey that fails 4.5:1 */
 :focus-visible{outline:2px solid var(--focus);outline-offset:2px}
 ::selection{background:var(--accent-soft)}
 .mono,.num{font-family:"IBM Plex Mono","SFMono-Regular",Menlo,Consolas,monospace}
@@ -200,7 +201,7 @@ tr:last-child td{border-bottom:0}
 
 /* ---------- message reader ---------- */
 .conv-opts{display:flex;gap:10px 16px;flex-wrap:wrap;align-items:end;margin:6px 0 10px}
-.conv-opts label{display:flex;flex-direction:column;gap:4px;font-size:13px;color:var(--muted)}
+.conv-opts label{display:flex;flex-direction:column;gap:4px;font-size:13px;color:var(--muted);min-width:0;max-width:100%} /* lets a long select shrink to the card */
 .conv-opts label.inline{flex-direction:row;align-items:center;gap:8px;color:var(--ink);font-size:15px}
 .conv-opts select{border:1px solid var(--line-strong);border-radius:6px;background:var(--surface);padding:6px 8px;font-size:15px;color:var(--ink);max-width:100%}
 .conv-opts input[type=checkbox]{width:17px;height:17px}
@@ -264,6 +265,7 @@ footer a{color:inherit}
 .play-controls label,.calc label{display:flex;flex-direction:column;gap:4px;font-size:14px;color:var(--muted)}
 .calc{display:flex;gap:10px 16px;flex-wrap:wrap;align-items:flex-end;margin:12px 0 6px}
 .calc label{flex-direction:row;align-items:center;gap:8px;color:var(--ink);font-size:15px}
+.calc label{max-width:100%;min-width:0}.calc select{min-width:0;max-width:100%} /* lets a long select shrink to the card on a narrow phone */
 .calc var,.play var{font-family:"IBM Plex Mono",monospace;font-style:normal;font-weight:600}
 input[type=number],input[type=text],select{border:1px solid var(--line-strong);border-radius:6px;background:var(--surface);padding:7px 9px;font-size:15px;color:var(--ink);max-width:100%}
 input[type=text]{font-family:"IBM Plex Mono",monospace;min-width:0;width:12em}
@@ -274,6 +276,7 @@ input[type=number]{width:6.5em;font-family:"IBM Plex Mono",monospace}
 .say var,.out var{font-family:"IBM Plex Mono",monospace;font-style:normal;font-weight:600}
 .out{color:var(--ink-2)}
 .out p{margin:8px 0}
+.out p,.out var{overflow-wrap:anywhere} /* long numbers wrap instead of widening the page */
 .out .num,.say .num{font-family:"IBM Plex Mono",monospace;word-break:break-all}
 .out .big,.q .big{font-family:"Barlow Condensed",sans-serif;font-size:26px;color:var(--ink)}
 .one-chip{display:inline-block;background:var(--accent);color:var(--accent-ink);border-radius:4px;padding:0 6px;font-family:"IBM Plex Mono",monospace;font-weight:600}
@@ -410,7 +413,7 @@ ol.readas li.bad{color:var(--error)}
 .sanity{margin-left:auto;font-family:"IBM Plex Mono",monospace;font-size:12.5px;color:var(--brass);border:1px solid var(--brass);border-radius:999px;padding:1px 9px}
 .page{border-top:1px solid var(--line);padding:12px 0 4px}
 .page:first-child{border-top:0;padding-top:4px}
-.page .pname{flex:1;min-width:8em;border:1px solid var(--line);border-radius:6px;background:var(--surface);padding:5px 8px;font-size:15px;color:var(--ink);font-family:"Barlow",system-ui,sans-serif}
+.page .pname{flex:1;min-width:8em;border:1px solid var(--line-strong);border-radius:6px;background:var(--surface);padding:5px 8px;font-size:15px;color:var(--ink);font-family:"Barlow",system-ui,sans-serif}
 .nw{font-size:12.5px;color:var(--muted)}
 .pgsmall{font-size:12.5px;color:var(--muted)}
 table.nums{table-layout:fixed}
@@ -461,8 +464,8 @@ table.nums td:last-child{overflow-wrap:anywhere;white-space:normal}
     <div class="panel-head"><span class="step">Step 1</span><h2 id="h1-s">The formulas</h2></div>
     <p class="lead">Paste the cache's formulas, one per line, in the order the puzzle gives them. Names can be single words, several words, or hyphenated; a hyphen with spaces around it is a minus sign.</p>
     <div class="field">
-      <textarea class="numin txt" id="fx-in" rows="7" spellcheck="false" autocomplete="off" aria-describedby="fx-help"></textarea>
-      <p class="help" id="fx-help">Use + − × ÷ (or x, *, /), ^ for powers, and brackets. “6 x Name” and “6(Name)” both multiply. Labels like “A =” at the start of a line are ignored.</p>
+      <textarea class="numin txt" id="fx-in" rows="7" spellcheck="false" autocomplete="off" aria-labelledby="h1-s" aria-describedby="fx-help"></textarea>
+      <p class="help" id="fx-help">Use + − × ÷ (or x, *, /), ^ for powers, and brackets. “6 x Name”, “6 Name” and “6(Name)” all multiply; an x between two values means times, otherwise it’s a name. Powers go first, then × and ÷, then + and −, and a multiplication with no sign, like 3A or 2(B), goes before a ÷ next to it. The read-back shows the order in brackets. Labels like “A =” at the start of a line are ignored.</p>
       <label class="inline small"><input type="checkbox" id="fx-hyph"> Treat every hyphen as a minus sign (for formulas like A-B)</label>
     </div>
     <div id="fx-read"></div>
@@ -522,28 +525,41 @@ table.nums td:last-child{overflow-wrap:anywhere;white-space:normal}
 
   /* ---------- reading a formula ---------- */
   const L = 'A-Za-z\\u00C0-\\u024F';
+  const SPACES = /[\t\u00A0\u1680\u2000-\u200A\u202F\u205F\u3000]/g;
+  const isLetter = (c) => new RegExp(`^[${L}]$`).test(c || '');
   function tokenize(line, hyph){
-    let s = line.replace(/^\s*[A-Za-z]\s*[=:]\s*/, '').replace(/[×✕]/g, '*').replace(/[÷]/g, '/').replace(/[−–—]/g, ' - ');
-    const toks = []; let i = 0;
-    const nameRe = hyph ? new RegExp(`^[${L}][${L}'’]*(?: +[${L}][${L}'’]*)*`) : new RegExp(`^[${L}][${L}'’]*(?:(?:-| +)[${L}][${L}'’]*)*`);
+    let s = line.replace(SPACES, ' ').replace(/^\s*[A-Za-z]\s*[=:]\s*/, '').replace(/[×✕]/g, '*').replace(/[÷]/g, '/').replace(/[−–—]/g, ' - ');
+    // A word is letters, then letters, digits or apostrophes (so Q1 and Q2 are names); without the
+    // hyphen option a hyphen between letters joins words (Fen-Dallow). Words with spaces between them
+    // make one name (Ost Marrow).
+    const W = `[${L}][${L}0-9'’]*`, wordRe = new RegExp(hyph ? `^${W}` : `^${W}(?:-${W})*`);
+    const toks = []; let i = 0, joinable = false;
+    const operandEnd = (t) => t && (t.t === 'num' || t.t === 'name' || (t.t === 'op' && t.v === ')'));
     while (i < s.length) {
       const ch = s[i];
       if (/\s/.test(ch)) { i++; continue; }
       const num = s.slice(i).match(/^\d+(?:\.\d+)?/);
-      if (num) { toks.push({ t:'num', v: parseFloat(num[0]) }); i += num[0].length; continue; }
-      if ('+-*/^()'.includes(ch)) { toks.push({ t:'op', v: ch }); i++; continue; }
-      const nm = s.slice(i).match(nameRe);
+      if (num) { toks.push({ t:'num', v: parseFloat(num[0]) }); i += num[0].length; joinable = false; continue; }
+      if ('+-*/^()'.includes(ch)) { toks.push({ t:'op', v: ch }); i++; joinable = false; continue; }
+      // x on its own means "times", but only between two operands (6 x Name, A x2, A x(B));
+      // anywhere else (X + 5, 3X, x - 1) it is a name like any other.
+      if ((ch === 'x' || ch === 'X') && operandEnd(toks[toks.length - 1]) && !(isLetter(s[i + 1]) || /['’]/.test(s[i + 1] || '') || (!hyph && s[i + 1] === '-' && isLetter(s[i + 2])))) {
+        const m = s.slice(i + 1).match(/^( *)(.?)(.?)/), gap = m[1].length > 0, nx = m[2];
+        if (/[0-9(]/.test(nx) || (gap && isLetter(nx)) || (nx === '-' && /[0-9(A-Za-z\u00C0-\u024F]/.test(m[3]))) { toks.push({ t:'op', v:'*' }); i++; joinable = false; continue; }
+      }
+      const nm = s.slice(i).match(wordRe);
       if (nm) {
-        // a lone x between terms is multiplication
-        const words = nm[0].split(/ +/); let cur = [];
-        const flush = () => { if (cur.length) { toks.push({ t:'name', v: cur.join(' ') }); cur = []; } };
-        for (const w of words) { if (/^[xX]$/.test(w)) { flush(); toks.push({ t:'op', v:'*' }); } else cur.push(w); }
-        flush(); i += nm[0].length; continue;
+        const last = toks[toks.length - 1];
+        if (joinable && last && last.t === 'name') last.v += ' ' + nm[0]; else toks.push({ t:'name', v: nm[0] });
+        i += nm[0].length; joinable = true; continue;
       }
       throw new Error(`I can't read “${esc(ch)}” here.`);
     }
     return toks;
   }
+  /* Precedence, tightest first: brackets; powers (right to left, so 2^3^2 = 2^9); a minus sign in front;
+     multiplying with no sign (3A, 2(B)); × and ÷ left to right; + and − left to right.
+     So 3A^2 = 3 × A^2, 2^3(A) = 2^3 × A, and A / 2(B) = A ÷ (2 × B). */
   function parse(toks){
     let p = 0;
     const peek = () => toks[p], take = () => toks[p++];
@@ -554,22 +570,37 @@ table.nums td:last-child{overflow-wrap:anywhere;white-space:normal}
       if (t.t === 'num') return { k:'num', v:t.v };
       if (t.t === 'name') return { k:'name', v:t.v };
       if (t.t === 'op' && t.v === '(') { const e = expr(); if (!isOp(')')) throw new Error('A bracket is never closed.'); take(); return { k:'par', e }; }
-      if (t.t === 'op' && t.v === '-') return { k:'neg', e: power() };
       throw new Error(`Unexpected “${t.v}”.`);
     }
-    function implicit(){ // 6(Name) or 6 Name
-      let left = primary();
-      while (peek() && (peek().t === 'name' || peek().t === 'num' || (peek().t === 'op' && peek().v === '('))) left = { k:'bin', op:'*', a:left, b:primary() };
+    function power(){ const a = primary(); if (isOp('^')) { take(); return { k:'bin', op:'^', a, b: exponent() }; } return a; }
+    function exponent(){ if (isOp('-')) { take(); return { k:'neg', e: exponent() }; } return power(); }
+    function implicit(){ // 6(Name), 6 Name, 3A^2
+      let left = power();
+      while (peek() && (peek().t === 'name' || peek().t === 'num' || (peek().t === 'op' && peek().v === '('))) left = { k:'bin', op:'*', imp:true, a:left, b:power() };
       return left;
     }
-    function power(){ const a = implicit(); if (isOp('^')) { take(); return { k:'bin', op:'^', a, b: power() }; } return a; }
-    function term(){ let a = power(); while (isOp('*') || isOp('/')) { const op = take().v; a = { k:'bin', op, a, b: power() }; } return a; }
+    function unary(){ if (isOp('-')) { take(); return { k:'neg', e: unary() }; } return implicit(); }
+    function term(){ let a = unary(); while (isOp('*') || isOp('/')) { const op = take().v; a = { k:'bin', op, a, b: unary() }; } return a; }
     function expr(){ let a = term(); while (isOp('+') || isOp('-')) { const op = take().v; a = { k:'bin', op, a, b: term() }; } return a; }
     const e = expr(); if (p < toks.length) throw new Error(`Something extra after the formula: “${toks[p].v}”.`); return e;
   }
   const names = (e, out) => { if (!e) return out; if (e.k === 'name') out.add(e.v); else if (e.k === 'par' || e.k === 'neg') names(e.e, out); else if (e.k === 'bin') { names(e.a, out); names(e.b, out); } return out; };
   const OPS = { '+':'+', '-':'−', '*':'×', '/':'÷', '^':'^' };
-  const show = (e) => e.k === 'num' ? String(e.v) : e.k === 'name' ? `<span class="nm">${esc(e.v)}</span>` : e.k === 'par' ? `(${show(e.e)})` : e.k === 'neg' ? `−${show(e.e)}` : `${show(e.a)} ${OPS[e.op]} ${show(e.b)}`;
+  /* The read-back adds brackets wherever the order isn't plain left to right with the usual
+     precedence, so it always shows the grouping that was used. */
+  const LVL = { '+':1, '-':1, '*':2, '/':2, '^':4 };
+  function show(e){
+    if (e.k === 'num') return String(e.v);
+    if (e.k === 'name') return `<span class="nm">${esc(e.v)}</span>`;
+    if (e.k === 'par') return `(${show(e.e)})`;
+    const wrap = (c, need) => need ? `(${show(c)})` : show(c);
+    if (e.k === 'neg') return `−${wrap(e.e, e.e.k === 'bin' && e.e.op !== '^')}`;
+    if (e.op === '^') return `${wrap(e.a, e.a.k !== 'num' && e.a.k !== 'name' && e.a.k !== 'par')}^${wrap(e.b, e.b.k === 'bin')}`;
+    const lv = LVL[e.op], lvl = (c) => (c.k === 'bin' ? LVL[c.op] : 9);
+    const left = wrap(e.a, lvl(e.a) < lv);
+    const right = wrap(e.b, lvl(e.b) < lv || (lvl(e.b) === lv && (e.op === '-' || e.op === '/' || (e.b.imp && !e.imp))) || (e.b.k === 'neg'));
+    return `${left} ${OPS[e.op]} ${right}`;
+  }
   function evalE(e, vals){
     if (e.k === 'num') return e.v;
     if (e.k === 'name') { const v = vals[e.v]; if (v === undefined) throw new Error('missing'); return v; }
@@ -583,7 +614,7 @@ table.nums td:last-child{overflow-wrap:anywhere;white-space:normal}
 
   /* ---------- coordinates ---------- */
   function parseCoord(t){
-    t = t.trim().toUpperCase().replace(/[°'′"″,]/g, ' ');
+    t = t.toUpperCase().replace(/[°'′"″,]/g, ' ').trim();
     let m = t.match(/^([NS])\s*(\d{1,2})\s+(\d{1,2}(?:\.\d+)?)\s+([EW])\s*(\d{1,3})\s+(\d{1,2}(?:\.\d+)?)$/);
     if (m) return { lat: (m[1] === 'S' ? -1 : 1) * (+m[2] + +m[3] / 60), lon: (m[4] === 'W' ? -1 : 1) * (+m[5] + +m[6] / 60) };
     m = t.match(/^(-?\d+(?:\.\d+)?)\s+(-?\d+(?:\.\d+)?)$/);
@@ -611,12 +642,25 @@ table.nums td:last-child{overflow-wrap:anywhere;white-space:normal}
       }
     }
     // results
-    const vals = {}; for (const n of all) { const t = String(st.vals[n] || '').trim(); if (/^-?\d+(\.\d+)?$/.test(t)) vals[n] = parseFloat(t); }
-    if (!st.slots || st.slots.length !== lines.length) st.slots = lines.map((_, i) => (i < 6 ? SLOTS[i][0] : 'none'));
+    // a comma decimal (45,5) and any kind of minus sign are fine; anything else unreadable is flagged
+    const vals = {}, unread = [];
+    for (const n of all) {
+      const t = String(st.vals[n] || '').trim().replace(/^[−–—]/, '-'), u = /^-?\d+,\d+$/.test(t) ? t.replace(',', '.') : t;
+      if (/^-?\d+(\.\d+)?$/.test(u)) vals[n] = parseFloat(u); else if (t) unread.push(n);
+      const box = $('#fx-vars').querySelector(`input[data-name="${CSS.escape(n)}"]`);
+      if (box) { if (t && !(n in vals)) box.setAttribute('aria-invalid', 'true'); else box.removeAttribute('aria-invalid'); }
+    }
+    // keep each line's choice when lines are edited, added or removed, and give new lines the usual
+    // layout; formulas pasted over the old ones (no line in common) start again from the usual layout
+    if (!Array.isArray(st.slots) || (Array.isArray(st.slotLines) && st.slotLines.length && raw.length && !raw.some((l) => st.slotLines.includes(l)))) st.slots = [];
+    st.slots = lines.map((_, i) => st.slots[i] || (i < 6 ? SLOTS[i][0] : 'none'));
+    if (raw.length) st.slotLines = raw;
     const s3 = $('#s3');
     if (!lines.length) { s3.classList.add('waiting'); s3.querySelector('.wait').textContent = 'Needs formulas in Step 1.'; return renderDist(null); }
     s3.classList.remove('waiting');
-    const res = lines.map((x) => { if (!x.e) return { err:true }; try { return { v: evalE(x.e, vals) }; } catch (e) { return { missing:true }; } });
+    // snap rounding noise (4.35 × 100 = 434.99999999999994) to the whole number it stands for
+    const snap = (v) => { const r = Math.round(v); return Math.abs(v - r) < 1e-9 * Math.max(1, Math.abs(v)) ? r : v; };
+    const res = lines.map((x) => { if (!x.e) return { err:true }; try { return { v: snap(evalE(x.e, vals)) }; } catch (e) { return { missing:true }; } });
     $('#fx-table').innerHTML = lines.map((x, i) => {
       const r = res[i];
       const out = r.err ? '<span class="why">can’t read</span>' : r.missing ? '<span class="muted">needs values</span>' : `= <b>${fmt(r.v).replace('-', '−')}</b>`;
@@ -624,7 +668,7 @@ table.nums td:last-child{overflow-wrap:anywhere;white-space:normal}
       return `<div class="fxrow"><span class="ln">${i + 1}</span><span class="fx">${x.e ? show(x.e) : esc(x.l)}</span><span class="res">${out}</span><span class="slot">${sel}</span></div>`;
     }).join('');
     // assemble
-    const got = {}; const checks = [];
+    const got = {}; const checks = unread.map((n) => ['warn', `I can’t read the value of <span class="nm">${esc(n)}</span>. Use a number like 45, 4.35 or −5.`]);
     st.slots.forEach((k, i) => { if (k !== 'none' && res[i] && res[i].v !== undefined) got[k] = { v: res[i].v, line: i + 1 }; });
     const rng = { latDeg:[0,90,2], latMin:[0,59,2], latThou:[0,999,3], lonDeg:[0,180,3], lonMin:[0,59,2], lonThou:[0,999,3] };
     let complete = true; const part = {};
@@ -650,7 +694,7 @@ table.nums td:last-child{overflow-wrap:anywhere;white-space:normal}
     else if (!c) out.push(['info', 'Finish the coordinates in Step 3 to see the distance.']);
     else {
       const d = miles(p, c);
-      out.push(d <= 2 ? ['ok', `${d.toFixed(2)} miles (${(d * 1.609).toFixed(2)} km) from the listed coordinates: inside the 2-mile limit.`] : ['bad', `${d.toFixed(1)} miles (${(d * 1.609).toFixed(1)} km) from the listed coordinates, beyond the 2-mile limit. At least one value is probably wrong. A check like this can’t tell you the answer is right, only that it can’t be.`]);
+      out.push(d <= 2 ? ['ok', `${d.toFixed(2)} miles (${(d * 1.609).toFixed(2)} km) from the listed coordinates: inside the 2-mile limit.`] : ['bad', `${d.toFixed(2)} miles (${(d * 1.609).toFixed(2)} km) from the listed coordinates, beyond the 2-mile limit. At least one value is probably wrong. A check like this can’t tell you the answer is right, only that it can’t be.`]);
       if (d <= 2) out.push(['info', 'Being within 2 miles doesn’t confirm the answer. Use the cache’s own checker for that.']);
     }
     $('#fx-dist').innerHTML = out.map(([l, h]) => li(l, h)).join('');
@@ -658,7 +702,7 @@ table.nums td:last-child{overflow-wrap:anywhere;white-space:normal}
 
   /* ---------- wiring ---------- */
   const fill = () => { $('#fx-in').value = st.text; $('#fx-posted').value = st.posted; $('#fx-ns').value = st.ns; $('#fx-ew').value = st.ew; $('#fx-hyph').checked = st.hyph; $('#fx-vars').innerHTML = ''; };
-  $('#fx-in').addEventListener('input', (e) => { st.text = e.target.value; st.slots = null; save(); render(); });
+  $('#fx-in').addEventListener('input', (e) => { st.text = e.target.value; save(); render(); });
   $('#fx-hyph').addEventListener('change', (e) => { st.hyph = e.target.checked; save(); render(); });
   $('#fx-vars').addEventListener('input', (e) => { const n = e.target.dataset.name; if (n !== undefined) { st.vals[n] = e.target.value; save(); render(); } });
   $('#fx-table').addEventListener('change', (e) => { const i = e.target.dataset.slot; if (i !== undefined) { st.slots[+i] = e.target.value; save(); render(); } });

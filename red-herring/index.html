@@ -475,8 +475,8 @@ table.nums td:last-child{overflow-wrap:anywhere;white-space:normal}
 .rh-file input{position:absolute;inset:0;opacity:0;width:100%;cursor:pointer}
 .rh-file:focus-within{outline:3px solid var(--focus);outline-offset:2px}
 #ey-why:empty{display:none}
-.rh-canvas{margin:10px 0;border:1px solid var(--line);border-radius:12px;background:var(--surface-2);overflow:hidden}
-.rh-canvas canvas{display:block;max-width:100%;height:auto;margin:0 auto;cursor:crosshair;touch-action:manipulation}
+.rh-canvas{margin:10px 0;border:1px solid var(--line);border-radius:12px;background:var(--surface-2);overflow:hidden;height:min(60vh,360px);display:flex;align-items:center;justify-content:center}
+.rh-canvas canvas{display:block;max-width:100%;max-height:100%;width:auto;height:auto;cursor:crosshair;touch-action:manipulation}
 .rh-canvas canvas:focus-visible{outline:3px solid var(--focus);outline-offset:-3px}
 .fgrid input[type=range]{accent-color:var(--accent)}
 </style>
@@ -543,8 +543,9 @@ table.nums td:last-child{overflow-wrap:anywhere;white-space:normal}
           <button type="button" class="btn quiet" id="rh-spin" aria-pressed="false">Spin</button>
           <button type="button" class="btn quiet" id="rh-fact">Another herring fact</button>
           <button type="button" class="btn quiet" id="rh-north">Point north</button>
+          <button type="button" class="btn quiet" id="rh-flap">Flap</button>
         </div>
-        <p class="help">Tap the herring to make it flap. When you project a waypoint or measure between two points below, it turns to face that way, with north at the top.</p>
+        <p class="help">Tap the herring (or Flap) to make it flap. When you project a waypoint or measure between two points below, it turns to face that way, with north at the top.</p>
       </div>
     </div>
   </section>
@@ -558,8 +559,9 @@ table.nums td:last-child{overflow-wrap:anywhere;white-space:normal}
       <label>Distance <input type="text" id="pj-dist" inputmode="decimal" autocomplete="off"></label>
       <label>Units <select id="pj-unit"><option value="m">metres</option><option value="km">kilometres</option><option value="ft">feet</option><option value="yd">yards</option><option value="mi">miles</option></select></label>
     </div>
-    <p class="muted" id="pj-read" aria-live="polite"></p>
-    <div class="rh-out" id="pj-out" aria-live="polite"></div>
+    <p class="muted" id="pj-read"></p>
+    <div class="rh-out" id="pj-out"></div>
+    <p class="sr" role="status" id="pj-status"></p>
   </section>
 
   <section class="panel" id="measure" aria-labelledby="h-measure">
@@ -569,25 +571,28 @@ table.nums td:last-child{overflow-wrap:anywhere;white-space:normal}
       <label class="wide2">From <input type="text" id="ms-from" class="coordin" placeholder="e.g. N 45° 12.345 W 093° 54.321" autocomplete="off" spellcheck="false"></label>
       <label class="wide2">To <input type="text" id="ms-to" class="coordin" placeholder="e.g. N 45° 12.000 W 093° 55.000" autocomplete="off" spellcheck="false"></label>
     </div>
-    <p class="muted" id="ms-read" aria-live="polite"></p>
-    <div class="rh-out" id="ms-out" aria-live="polite"></div>
+    <p class="muted" id="ms-read"></p>
+    <div class="rh-out" id="ms-out"></div>
+    <p class="sr" role="status" id="ms-status"></p>
   </section>
 
   <section class="panel" id="eye" aria-labelledby="h-eye">
     <div class="panel-head"><span class="step">4</span><h2 id="h-eye">Through the herring's eye</h2></div>
-    <p class="help">Look at a picture through a fish-eye lens, and turn or flip it. Your picture stays on this device; nothing is uploaded. Tap the picture to move the lens, or click it and use the arrow keys.</p>
+    <p class="help">Look at a picture through a fish-eye lens, and turn or flip it. Your picture stays on this device; nothing is uploaded. Tap the picture to move the lens, use the two lens sliders, or click the picture and use the arrow keys.</p>
     <div class="btnrow">
       <label class="btn quiet rh-file">Choose a picture<input type="file" id="ey-file" accept="image/*"></label>
       <button type="button" class="btn quiet" id="ey-sample">Use the sample picture</button>
     </div>
     <p class="why" id="ey-why" role="alert"></p>
-    <div class="rh-canvas"><canvas id="ey-cv" tabindex="0" role="img" aria-label="The picture, seen through the fish-eye lens. Click it and use the arrow keys to move the lens."></canvas></div>
+    <div class="rh-canvas"><canvas id="ey-cv" tabindex="0" role="img" aria-label="The picture, seen through the fish-eye lens. Click it and use the arrow keys, or use the lens sliders, to move the lens."></canvas></div>
     <div class="fgrid">
       <label>Lens strength <input type="range" id="ey-k" min="-0.8" max="1.6" step="0.05" value="0.9"></label>
       <label>Lens size <input type="range" id="ey-r" min="0.1" max="0.9" step="0.01" value="0.4"></label>
       <label>Turn (degrees) <input type="range" id="ey-rot" min="-180" max="180" step="1" value="0"></label>
+      <label>Lens across (%) <input type="range" id="ey-lx" min="0" max="100" step="1" value="50"></label>
+      <label>Lens down (%) <input type="range" id="ey-ly" min="0" max="100" step="1" value="50"></label>
     </div>
-    <p class="muted" id="ey-state" aria-live="polite"></p>
+    <p class="muted" id="ey-state"></p>
     <div class="btnrow">
       <button type="button" class="btn quiet" id="ey-match">Turn with the herring</button>
       <button type="button" class="btn quiet" id="ey-fliph" aria-pressed="false">Flip left–right</button>
@@ -693,18 +698,20 @@ function geoInverse(lat1, lon1, lat2, lon2) {
 /* Parse coordinates: "N 45° 12.345 W 093° 54.321", "45.20575, -93.90535", "N 45 12 20.7 W 93 54 19.3".
    Returns { lat, lon } or { err }. */
 function parseCoords(t) {
-  t = String(t || '').trim();
+  t = String(t || '').trim().replace(/[−‒–—]/g, '-'); // typographic minus signs and dashes
   if (!t) return { err: '' };
-  const T = t.toUpperCase().replace(/[′’']/g, ' ').replace(/[″"]/g, ' ').replace(/°/g, ' ');
+  let T = t.toUpperCase().replace(/[′’']/g, ' ').replace(/[″"]/g, ' ').replace(/°/g, ' ');
   const hs = T.match(/[NSEW]/g) || [];
   if (hs.length > 2 || /[A-DF-MO-RT-VX-Z]/.test(T.replace(/[NSEW]/g, ''))) return { err: 'Use numbers and N, S, E or W only.' };
-  // split into latitude and longitude parts
+  // With no decimal points anywhere, a comma between digits is a decimal comma (45,2 or 12,345).
+  if (!/\d\.\d/.test(T)) T = T.replace(/(\d),(\d)/g, '$1.$2');
   let parts;
   const hm = T.match(/^\s*([NS])([^EW]*)([EW])(.*)$/);
   const hs2 = T.match(/^(.*?)([NS])(.*?)([EW])\s*$/); // hemispheres written after the numbers
   if (hm) parts = [hm[1] + hm[2], hm[3] + hm[4]];
   else if (hs2 && /\d/.test(hs2[1]) && /\d/.test(hs2[3])) parts = [hs2[2] + hs2[1], hs2[4] + hs2[3]];
-  else if (/[,;]/.test(T.replace(/(\d),(\d)/g, '$1.$2'))) parts = T.replace(/(\d),(\d)(?=\d*\s*[,;]?)/g, '$1.$2').split(/[,;]/);
+  else if (hs.length) return { err: 'Put N or S with the latitude and E or W with the longitude, both before the numbers or both after.' };
+  else if (/[,;]/.test(T)) parts = T.split(/[,;]/).filter((x) => /\d/.test(x));
   else {
     const nums = T.match(/-?\d+(?:\.\d+)?/g) || [];
     const k = nums.length / 2;
@@ -712,15 +719,15 @@ function parseCoords(t) {
     parts = [nums.slice(0, k).join(' '), nums.slice(k).join(' ')];
   }
   if (parts.length !== 2) return { err: 'I need a latitude and a longitude.' };
-  const one = (p, pos, neg, max) => {
-    const neg1 = new RegExp(neg).test(p) || /^\s*-/.test(p.replace(/^[NSEW]\s*/, ''));
+  const one = (p, neg, max) => {
+    const neg1 = new RegExp(neg).test(p) || /^\s*-/.test(p.replace(/^\s*[NSEW]\s*/, ''));
     const n = (p.match(/\d+(?:\.\d+)?/g) || []).map(Number);
     if (n.length < 1 || n.length > 3) return null;
     if (n.slice(1).some((x) => x >= 60)) return NaN;
     const v = n[0] + (n[1] || 0) / 60 + (n[2] || 0) / 3600;
     return v > max ? NaN : (neg1 ? -v : v);
   };
-  const lat = one(parts[0], 'N', 'S', 90), lon = one(parts[1], 'E', 'W', 180);
+  const lat = one(parts[0], 'S', 90), lon = one(parts[1], 'W', 180);
   if (lat === null || lon === null) return { err: 'Give each half as degrees, degrees and minutes, or degrees, minutes and seconds.' };
   if (Number.isNaN(lat) || Number.isNaN(lon)) return { err: 'That is off the globe, or has minutes or seconds of 60 or more.' };
   return { lat, lon };
@@ -749,11 +756,12 @@ const compass = (b) => POINTS[Math.round(norm360(b) / 22.5) % 16];
 let angle = 0; // degrees the herring has turned from north, kept continuous so it takes the short way round
 let spinning = false;
 function setSpin(on) {
+  if (on && reduced()) { $('rh-says').textContent = 'The herring would spin, but you prefer less motion, so it holds still.'; return; }
   spinning = on;
   $('rh-spin').setAttribute('aria-pressed', String(on));
   turn.classList.toggle('spin', on);
   if (on) { turn.style.transform = ''; $('rh-bearing').textContent = ''; }
-  else turn.style.transform = `rotate(${angle}deg)`;
+  else { turn.style.transform = `rotate(${angle}deg)`; $('rh-bearing').textContent = `Pointing ${fmtBrg(angle)} (${compass(angle)}).`; }
 }
 function pointAt(brg, what) {
   if (spinning) setSpin(false);
@@ -778,15 +786,22 @@ const FACTS = [
 ];
 let factI = 0;
 $('rh-fact').addEventListener('click', () => { factI = (factI + 1) % FACTS.length; $('rh-says').textContent = FACTS[factI]; });
-$('rh-svg').addEventListener('click', () => {
+function flap() {
   const h = $('rh-herring');
   if (reduced()) { $('rh-says').textContent = 'The herring flaps (quietly, because you prefer less motion).'; return; }
   h.classList.remove('flap'); void h.getBoundingClientRect(); h.classList.add('flap');
-});
+}
+$('rh-svg').addEventListener('click', flap);
+$('rh-flap').addEventListener('click', flap);
 
 /* ---------- units ---------- */
 const UNITS = { m: 1, km: 1000, ft: 0.3048, yd: 0.9144, mi: 1609.344 };
-const num = (t) => { const v = String(t).trim().replace(/\s/g, '').replace(',', '.').replace('−', '-'); return v === '' || isNaN(+v) ? null : +v; };
+const num = (t) => {
+  let v = String(t).trim().replace(/\s/g, '').replace(/[\u2212\u2012\u2013\u2014]/g, '-');
+  if (/^-?\d{1,3}(,\d{3})+(\.\d+)?$/.test(v)) v = v.replace(/,/g, ''); // 1,200 or 12,345.6: thousands separators
+  else v = v.replace(',', '.'); // 1,5: a decimal comma
+  return v === '' || isNaN(+v) ? null : +v;
+};
 const fmtDist = (m) => {
   const f = (x, d) => x.toLocaleString('en-GB', { maximumFractionDigits: d, minimumFractionDigits: d });
   return `${f(m, 1)} m · ${f(m / 1000, 3)} km · ${f(m / 0.3048, 0)} ft · ${f(m / 1609.344, 3)} mi`;
@@ -798,12 +813,16 @@ function readLine(p) {
 function copyBtn(text, label) { return `<button type="button" class="btn quiet sm" data-copy="${esc(text)}" aria-label="Copy ${esc(label)}">Copy</button>`; }
 document.addEventListener('click', (e) => {
   const b = e.target.closest('[data-copy]'); if (!b) return;
-  const done = () => { const t = b.textContent; b.textContent = 'Copied'; setTimeout(() => { b.textContent = t; }, 1200); };
+  const done = () => { b.textContent = 'Copied'; clearTimeout(b._t); b._t = setTimeout(() => { b.textContent = 'Copy'; }, 1200); };
   if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(b.dataset.copy).then(done, () => { b.textContent = 'Select it instead'; });
 });
 
+/* ---------- a short, unhurried summary for screen readers ---------- */
+function announce(id, text) { clearTimeout(announce[id]); announce[id] = setTimeout(() => { $(id).textContent = text; }, 800); }
+
 /* ---------- project a waypoint ---------- */
 function project() {
+  save();
   const from = parseCoords($('pj-from').value), brg = num($('pj-brg').value), dist = num($('pj-dist').value), unit = $('pj-unit').value;
   $('pj-read').textContent = from.err ? '' : readLine(from);
   const out = $('pj-out');
@@ -811,8 +830,8 @@ function project() {
   if (from.err) errs.push(from.err);
   if ($('pj-brg').value.trim() && (brg === null || brg < 0 || brg > 360)) errs.push('The bearing should be a number from 0 to 360.');
   if ($('pj-dist').value.trim() && (dist === null || dist < 0)) errs.push('The distance should be a number, 0 or more.');
-  if (errs.length) { out.innerHTML = `<p class="why">${esc(errs[0])}</p>`; return; }
-  if (from.err !== undefined || brg === null || dist === null) { out.innerHTML = ''; return; }
+  if (errs.length) { out.innerHTML = `<p class="why">${esc(errs[0])}</p>`; announce('pj-status', errs[0]); return; }
+  if (from.err !== undefined || brg === null || dist === null) { out.innerHTML = ''; announce('pj-status', ''); return; }
   const m = dist * UNITS[unit];
   if (m > 20000000) { out.innerHTML = '<p class="why">That is more than halfway round the Earth. Try a shorter distance.</p>'; return; }
   const r = geoDirect(from.lat, from.lon, brg, m);
@@ -821,26 +840,32 @@ function project() {
     <p class="muted">${esc(dec)} ${copyBtn(dec, 'projected decimal coordinates')}</p>
     <p class="muted">${esc(fmtDist(m))} at ${esc(fmtBrg(brg))} (${compass(brg)}). Arriving, you'd be facing ${esc(fmtBrg(r.finalBrg))}.</p>`;
   pointAt(brg, 'the projected waypoint');
-  save();
+  announce('pj-status', `Projected waypoint: ${c}.`);
 }
 ['pj-from', 'pj-brg', 'pj-dist'].forEach((id) => $(id).addEventListener('input', project));
 $('pj-unit').addEventListener('change', project);
 
 /* ---------- distance and bearing ---------- */
 function measure() {
+  save();
   const a = parseCoords($('ms-from').value), b = parseCoords($('ms-to').value);
   $('ms-read').textContent = [a.err === undefined ? 'From: ' + readLine(a) : '', b.err === undefined ? 'To: ' + readLine(b) : ''].filter(Boolean).join(' ');
   const out = $('ms-out');
   const err = a.err || b.err;
-  if (err) { out.innerHTML = `<p class="why">${esc(err)}</p>`; return; }
-  if (a.err !== undefined || b.err !== undefined) { out.innerHTML = ''; return; }
+  if (err) { out.innerHTML = `<p class="why">${esc(err)}</p>`; announce('ms-status', err); return; }
+  if (a.err !== undefined || b.err !== undefined) { out.innerHTML = ''; announce('ms-status', ''); return; }
   const r = geoInverse(a.lat, a.lon, b.lat, b.lon);
-  if (r.s === 0) { out.innerHTML = '<p class="rh-big">0 m: those are the same point.</p>'; return; }
+  if (r.s < 0.005) { out.innerHTML = '<p class="rh-big">0 m: those are the same point.</p>'; announce('ms-status', 'Those are the same point.'); return; }
+  if (!r.ok) { // nearly opposite points: the ellipsoid formulas don't settle, so only a rough sphere distance and no direction
+    out.innerHTML = `<p class="rh-big">About ${esc(fmtDist(r.s))}</p>
+      <p class="muted">These points are on almost opposite sides of the Earth. There the ellipsoid formulas don’t settle, and almost every direction is nearly as short, so this distance comes from a sphere and may be out by up to about 25 km, and no starting bearing can be given.</p>`;
+    announce('ms-status', `About ${Math.round(r.s / 1000)} kilometres; points almost opposite each other.`);
+    return;
+  }
   out.innerHTML = `<p class="rh-big">${esc(fmtDist(r.s))} ${copyBtn((Math.round(r.s * 10) / 10) + ' m', 'distance in metres')}</p>
-    <p class="muted">Set off at ${esc(fmtBrg(r.brg1))} (${compass(r.brg1)}) ${copyBtn(fmtBrg(r.brg1), 'bearing')}${r.ok ? `; you'd arrive facing ${esc(fmtBrg(r.brg2))}` : ''}.</p>
-    ${r.ok ? '' : '<p class="muted">These points are on almost opposite sides of the Earth, where the ellipsoid formulas don’t settle, so this uses a sphere and may be out by a few kilometres.</p>'}`;
+    <p class="muted">Set off at ${esc(fmtBrg(r.brg1))} (${compass(r.brg1)}) ${copyBtn(fmtBrg(r.brg1), 'bearing')}; you'd arrive facing ${esc(fmtBrg(r.brg2))}.</p>`;
   pointAt(r.brg1, 'from the first point to the second');
-  save();
+  announce('ms-status', `Distance ${fmtDist(r.s)}, setting off at ${fmtBrg(r.brg1)}.`);
 }
 ['ms-from', 'ms-to'].forEach((id) => $(id).addEventListener('input', measure));
 
@@ -870,42 +895,53 @@ function setSource(img, w, h) {
   const s = Math.min(1, 1600 / Math.max(w, h));
   const c = document.createElement('canvas'); c.width = Math.max(1, Math.round(w * s)); c.height = Math.max(1, Math.round(h * s));
   const cx2 = c.getContext('2d'); cx2.imageSmoothingEnabled = false; cx2.drawImage(img, 0, 0, c.width, c.height); // no blending: every pixel keeps an original colour
+  $('ey-why').textContent = '';
   src = c; srcData = null; lens = { x: 0.5, y: 0.5 }; renderEye();
 }
 let srcData = null; // the picture's pixels, read once per picture
+function geomOf() {
+  const rot = +$('ey-rot').value * Math.PI / 180, w = src.width, h = src.height, cs = Math.cos(rot), sn = Math.sin(rot);
+  return { cs, sn, w, h, W: Math.round(w * Math.abs(cs) + h * Math.abs(sn)), H: Math.round(w * Math.abs(sn) + h * Math.abs(cs)) };
+}
+/* Draw the turned, flipped, lensed picture onto `cv` at `scale` of full size. Every output pixel copies exactly one
+   pixel of the picture (nearest neighbour), so no colour is ever blended or changed. */
+function drawEye(cv, scale) {
+  const g = geomOf(), { cs, sn, w, h, W, H } = g, k = +$('ey-k').value, rr = +$('ey-r').value;
+  if (!srcData) srcData = src.getContext('2d').getImageData(0, 0, w, h).data;
+  const Wo = Math.max(1, Math.round(W * scale)), Ho = Math.max(1, Math.round(H * scale));
+  if (cv.width !== Wo) cv.width = Wo; if (cv.height !== Ho) cv.height = Ho;
+  const ctx = cv.getContext('2d'), out = ctx.createImageData(Wo, Ho), o = out.data, S = srcData;
+  const R = rr * Math.min(W, H) / 2, cx = lens.x * W, cy = lens.y * H, lensOn = Math.abs(k) >= 1e-3 && R >= 2;
+  for (let y = 0; y < Ho; y++) {
+    for (let x = 0; x < Wo; x++) {
+      let px = (x + 0.5) / scale, py = (y + 0.5) / scale; // this pixel, in full-size coordinates
+      if (lensOn) { // undo the lens: inside radius R, distance d shows distance R·(d/R)^(1+k)
+        const dx = px - cx, dy = py - cy, d = Math.hypot(dx, dy);
+        if (d < R && d > 0) { const f = Math.pow(d / R, 1 + k) * R / d; px = cx + dx * f; py = cy + dy * f; }
+      }
+      const ux = px - W / 2, uy = py - H / 2;
+      let sx = cs * ux + sn * uy, sy = -sn * ux + cs * uy; // undo the turn
+      if (flipH) sx = -sx; if (flipV) sy = -sy;
+      const ix = Math.floor(sx + w / 2), iy = Math.floor(sy + h / 2);
+      if (ix < 0 || iy < 0 || ix >= w || iy >= h) continue; // outside the picture: left transparent
+      const a = (y * Wo + x) * 4, b2 = (iy * w + ix) * 4;
+      o[a] = S[b2]; o[a + 1] = S[b2 + 1]; o[a + 2] = S[b2 + 2]; o[a + 3] = S[b2 + 3];
+    }
+  }
+  ctx.putImageData(out, 0, 0);
+}
 function renderEye() {
   cancelAnimationFrame(eyeRaf);
   eyeRaf = requestAnimationFrame(() => {
     if (!src) return;
-    const rot = +$('ey-rot').value * Math.PI / 180, k = +$('ey-k').value, rr = +$('ey-r').value;
-    const w = src.width, h = src.height, cs = Math.cos(rot), sn = Math.sin(rot);
-    const W = Math.round(w * Math.abs(cs) + h * Math.abs(sn)), H = Math.round(w * Math.abs(sn) + h * Math.abs(cs));
-    if (!srcData) srcData = src.getContext('2d').getImageData(0, 0, w, h).data;
-    ecv.width = W; ecv.height = H;
-    const out = ectx.createImageData(W, H), o = out.data, S = srcData;
-    const R = rr * Math.min(W, H) / 2, cx = lens.x * W, cy = lens.y * H, lensOn = Math.abs(k) >= 1e-3 && R >= 2;
-    // Every output pixel fetches exactly one pixel of the picture (nearest neighbour), so no colour is ever blended:
-    // undo the lens (inside radius R, distance d shows distance R·(d/R)^(1+k)), then undo the turn and the flips.
-    for (let y = 0; y < H; y++) {
-      for (let x = 0; x < W; x++) {
-        let px = x + 0.5, py = y + 0.5;
-        if (lensOn) {
-          const dx = px - cx, dy = py - cy, d = Math.hypot(dx, dy);
-          if (d < R && d > 0) { const f = Math.pow(d / R, 1 + k) * R / d; px = cx + dx * f; py = cy + dy * f; }
-        }
-        const ux = px - W / 2, uy = py - H / 2;
-        let sx = cs * ux + sn * uy, sy = -sn * ux + cs * uy; // turn back
-        if (flipH) sx = -sx; if (flipV) sy = -sy;
-        const ix = Math.floor(sx + w / 2), iy = Math.floor(sy + h / 2);
-        if (ix < 0 || iy < 0 || ix >= w || iy >= h) continue; // outside the picture: left transparent
-        const a = (y * W + x) * 4, b2 = (iy * w + ix) * 4;
-        o[a] = S[b2]; o[a + 1] = S[b2 + 1]; o[a + 2] = S[b2 + 2]; o[a + 3] = S[b2 + 3];
-      }
-    }
-    ectx.putImageData(out, 0, 0);
-    updateEyeState();
+    const { W, H } = geomOf();
+    const box = ecv.parentElement.getBoundingClientRect(), dpr = Math.min(window.devicePixelRatio || 1, 2);
+    const fit = Math.min((box.width || 360) * dpr / W, (box.height || 360) * dpr / H, 900 / Math.max(W, H)); // the preview only needs screen resolution
+    drawEye(ecv, Math.min(1, fit));
+    syncLensSliders(); updateEyeState();
   });
 }
+function syncLensSliders() { $('ey-lx').value = Math.round(lens.x * 100); $('ey-ly').value = Math.round(lens.y * 100); }
 function updateEyeState() {
   const k = +$('ey-k').value, rot = +$('ey-rot').value;
   $('ey-state').textContent = `Lens ${k > 0 ? 'bulges' : k < 0 ? 'pinches' : 'is flat'}, centred ${Math.round(lens.x * 100)}% across and ${Math.round(lens.y * 100)}% down. Turned ${rot}°${flipH ? ', flipped left–right' : ''}${flipV ? ', flipped upside down' : ''}.`;
@@ -927,7 +963,9 @@ ecv.addEventListener('keydown', (e) => {
   lens = { x: Math.min(1, Math.max(0, lens.x + m[0] * 0.04)), y: Math.min(1, Math.max(0, lens.y + m[1] * 0.04)) }; renderEye();
 });
 ['ey-k', 'ey-r', 'ey-rot'].forEach((id) => $(id).addEventListener('input', renderEye));
-$('ey-match').addEventListener('click', () => { $('ey-rot').value = Math.round(norm180(angle)); renderEye(); });
+$('ey-lx').addEventListener('input', () => { lens.x = +$('ey-lx').value / 100; renderEye(); });
+$('ey-ly').addEventListener('input', () => { lens.y = +$('ey-ly').value / 100; renderEye(); });
+$('ey-match').addEventListener('click', () => { $('ey-rot').value = spinning ? 0 : Math.round(norm180(angle)); renderEye(); });
 $('ey-fliph').addEventListener('click', () => { flipH = !flipH; $('ey-fliph').setAttribute('aria-pressed', String(flipH)); renderEye(); });
 $('ey-flipv').addEventListener('click', () => { flipV = !flipV; $('ey-flipv').setAttribute('aria-pressed', String(flipV)); renderEye(); });
 $('ey-reset').addEventListener('click', () => {
@@ -936,7 +974,8 @@ $('ey-reset').addEventListener('click', () => {
 });
 $('ey-save').addEventListener('click', () => {
   if (!src) return;
-  ecv.toBlob((b) => { if (!b) return; const a = document.createElement('a'); a.href = URL.createObjectURL(b); a.download = 'through-the-herrings-eye.png'; document.body.appendChild(a); a.click(); setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 1000); }, 'image/png');
+  const full = document.createElement('canvas'); drawEye(full, 1); // save at full size
+  full.toBlob((b) => { if (!b) return; const a = document.createElement('a'); a.href = URL.createObjectURL(b); a.download = 'through-the-herrings-eye.png'; document.body.appendChild(a); a.click(); setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 1000); }, 'image/png');
 });
 
 /* ---------- remember inputs ---------- */

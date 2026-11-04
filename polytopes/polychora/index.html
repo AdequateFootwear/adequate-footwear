@@ -618,7 +618,7 @@ input.hin.wide{width:min(100%,18em)}
       <summary>How to read the picture</summary>
       <div class="explain">
         <p>A 4D shape can't be drawn directly, so this shows its shadow. A cube's shadow on paper is a square inside a square; in the same way, the tesseract's shadow in 3D is a cube inside a cube. The inner cube is just as big as the outer one, but it is further away in the fourth direction, so it looks smaller. That is the perspective view. The flat (orthographic) view drops the fourth coordinate instead, so nothing shrinks, but more edges land on top of each other.</p>
-        <p>Every cell is a solid, and every one has the same size, even when the shadow squashes it. Turning through a plane that includes W swaps a little of the fourth direction into the other three, so cells seem to turn inside out and swap places: the shape itself isn't changing, only its shadow.</p>
+        <p>Every cell is a solid, and cells of the same kind are all the same size, even when the shadow squashes them. Turning through a plane that includes W swaps a little of the fourth direction into the other three, so cells seem to turn inside out and swap places: the shape itself isn't changing, only its shadow.</p>
         <p>“One cell” picks out one cell's edges; Next steps to the next one. “One vertex” picks out the edges that meet at one corner. For shapes with more than one kind of cell, the cell-type buttons pick out every cell of that kind.</p>
       </div>
     </details>
@@ -685,7 +685,7 @@ input.hin.wide{width:min(100%,18em)}
 
   <footer>
     <span>Polychora · <a href="../">all polytopes tools</a> · <a href="../../">all AdequateFootwear tools</a></span>
-    <span class="mono">V − E + F − C = 0</span>
+    <span class="mono">V − E + F − C = χ</span>
   </footer>
 </main>
 
@@ -971,15 +971,22 @@ function makeProg(vs, fs) {
   gl.linkProgram(p);
   return gl.getProgramParameter(p, gl.LINK_STATUS) ? p : null;
 }
-function initGL() {
-  try { gl = cv.getContext('webgl', { antialias: true, alpha: true, premultipliedAlpha: true }) || cv.getContext('experimental-webgl'); } catch (e) { gl = null; }
-  if (gl) { progL = makeProg(VS_LINE, FS_LINE); progP = makeProg(VS_PT, FS_PT); }
-  if (!gl || !progL || !progP) { gl = null; $('nogl').hidden = false; cv.hidden = true; document.querySelectorAll('#look .vctl, #look .wkey').forEach((x) => { x.hidden = true; }); return; }
+function setupGL() { // programs, buffers and state: run at start and again after the browser restores a lost context
+  progL = makeProg(VS_LINE, FS_LINE); progP = makeProg(VS_PT, FS_PT);
+  if (!progL || !progP) return false;
   idxExt = gl.getExtension('OES_element_index_uint');
   ebuf = gl.createBuffer(); hbuf = gl.createBuffer(); pbuf = gl.createBuffer(); ibAll = gl.createBuffer(); ibBold = gl.createBuffer(); ibFaint = gl.createBuffer(); ibH = gl.createBuffer();
   gl.disable(gl.DEPTH_TEST);
   gl.enable(gl.BLEND); gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
   readColors();
+  return true;
+}
+function initGL() {
+  try { gl = cv.getContext('webgl', { antialias: true, alpha: true, premultipliedAlpha: true }) || cv.getContext('experimental-webgl'); } catch (e) { gl = null; }
+  if (!gl || !setupGL()) { gl = null; $('nogl').hidden = false; cv.hidden = true; document.querySelectorAll('#look .vctl, #look .wkey').forEach((x) => { x.hidden = true; }); return; }
+  // Phones can drop the graphics context (a backgrounded tab, a GPU reset). Ask for it back, and rebuild when it returns.
+  cv.addEventListener('webglcontextlost', (e) => { e.preventDefault(); setSpin(false); });
+  cv.addEventListener('webglcontextrestored', () => { if (setupGL()) { buildMesh(); if (!reduceMotion()) setSpin(true); } });
 }
 /* each edge is 4 vertices (pa = this end, pb = the other end, sd = which side), drawn as two triangles */
 const bigIdx = (nQuads) => nQuads * 4 > 65535 && !!idxExt;

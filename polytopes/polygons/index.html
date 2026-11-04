@@ -509,6 +509,11 @@ dl.flist{margin:0}
 #p-why:empty{display:none}
 #which .calc label:first-child{flex:1 1 16em;min-width:0}
 #w-kind{width:100%;min-width:0}
+#p-note:empty{display:none}
+.g-lbl,.g-num{paint-order:stroke;stroke:var(--surface);stroke-width:.025px;stroke-linejoin:round}
+:root{--dc1:#2F7A4D;--dc2:#87600F;--dc3:#2F5F92;--dc4:#A04A2C;--dc5:#6F4E9C;--dc6:#2B6F6D;--dc7:#5A661B;--dc8:#9C3F68}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){--dc1:#5DB07F;--dc2:#D9AE5C;--dc3:#6E9DD0;--dc4:#D07E61;--dc5:#A88BD0;--dc6:#66B8B5;--dc7:#B5C266;--dc8:#D27B9E}}
+:root[data-theme="dark"]{--dc1:#5DB07F;--dc2:#D9AE5C;--dc3:#6E9DD0;--dc4:#D07E61;--dc5:#A88BD0;--dc6:#66B8B5;--dc7:#B5C266;--dc8:#D27B9E}
 
 /* ---------- Polytopes: shared notepad ---------- */
 ul.notes{list-style:none;margin:8px 0;padding:0;display:flex;flex-direction:column;gap:6px}
@@ -564,6 +569,7 @@ input.hin.wide{width:min(100%,18em)}
     </div>
     <p class="help">Step 1 joins each corner to the next, making an ordinary polygon. A larger step joins every second, third… corner, making a star: 5 sides with step 2 is the pentagram {5/2}. When sides and step share a factor, the result is several polygons laid over each other: {6/2} is two triangles.</p>
     <p class="why" id="p-why" role="alert"></p>
+    <p class="help" id="p-note" aria-live="polite"></p>
     <div class="famchips" role="group" aria-label="Common polygons">
       <button type="button" class="fchip" data-nd="3/1">triangle</button>
       <button type="button" class="fchip" data-nd="4/1">square</button>
@@ -734,8 +740,8 @@ function describe(n, d) {
   const nm = starNames(n);
   if (g === 1) return { title: nm[0] + ' ' + sym, names: nm, sym, kind: 'regular star polygon', g };
   const comp = n / g, cd = d / g;
-  const part = cd === 1 ? polyNames(comp)[0] : starNames(comp)[0] + ` {${comp}/${cd}}`;
-  return { title: nm[0] + ' ' + sym, names: nm, sym, kind: `compound of ${NUMW[g] || g} ${plural(part, g)}`, g, comp, cd };
+  const part = cd === 1 ? plural(polyNames(comp)[0], g) : `${plural(starNames(comp)[0], g)} {${comp}/${cd}}`;
+  return { title: nm[0] + ' ' + sym, names: nm, sym, kind: `compound of ${NUMW[g] || g} ${part}`, g, comp, cd };
 }
 function parseName(t) {
   t = t.trim().toLowerCase();
@@ -777,6 +783,7 @@ function constructible(n) {
 }
 function phi(n) { let r = n, m = n; for (let p = 2; p * p <= m; p++) if (m % p === 0) { while (m % p === 0) m /= p; r -= r / p; } if (m > 1) r -= r / m; return r; }
 const big = (b) => b.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ',');
+const bigShow = (b) => { const t = b.toString(); return t.length > 60 ? `${t.slice(0, 12)}…${t.slice(-12)} (${t.length.toLocaleString('en')} digits; the notepad gets them all)` : big(b); };
 
 /* ---------- state ---------- */
 let N = 5, D = 1;
@@ -802,11 +809,12 @@ function check(n, d) {
 }
 function setND(n, d, from) {
   const why = check(n, d);
-  $('p-why').textContent = why;
+  $('p-why').textContent = why; $('p-note').textContent = '';
   if (why) return;
-  if (2 * d > n) { d = n - d; $('p-why').textContent = `A step of ${n - d} gives the same shape as a step of ${d}, so it is shown as {${n}/${d}}.`; }
+  if (2 * d > n) { const old = d; d = n - d; $('p-note').textContent = `A step of ${old} gives the same shape as a step of ${d}, so it is shown as ${describe(n, d).sym}.`; }
   N = n; D = d; hiddenK = new Set();
   if (from !== 'inputs') { $('p-n').value = n; $('p-d').value = d; }
+  if (from !== 'name') $('p-name').value = '';
   try { localStorage.setItem('aft.polygons.last', n + '/' + d); } catch (e) { /* storage unavailable */ }
   render();
 }
@@ -877,7 +885,8 @@ function factRows() {
   R('Points where the diagonals cross inside', big(I), I.toString(), 'For the regular polygon {' + n + '}. A point where several diagonals meet counts once.');
   if (REGIONS[n]) R('Regions the diagonals cut it into', big(BigInt(REGIONS[n])), REGIONS[n]);
   else if (n > 120) rows.push({ k: 'Regions the diagonals cut it into', v: 'only counted up to 120 sides', note: '', nonote: true });
-  R('Ways to cut it into triangles with non-crossing diagonals', big(catalan(n - 2)), catalan(n - 2).toString());
+  const tri = catalan(n - 2);
+  R('Ways to cut it into triangles with non-crossing diagonals', bigShow(tri), tri.toString());
   rows.push({ head: 'Construction' });
   const c = constructible(n);
   R('Can be drawn with compass and straightedge', c.ok ? 'yes' : 'no', c.ok ? 'yes' : 'no', c.ok ? (c.used.length ? `${n} = 2^k × ${c.used.join(' × ')}` : `${n} is a power of 2`) : `No, because ${c.why}.`);
@@ -902,9 +911,10 @@ function renderFacts() {
 }
 
 /* ---------- picture ---------- */
-const COLS = ['--fc1', '--fc2', '--fc3', '--fc4', '--fc5', '--fc6', '--fc7', '--fc8'];
+const COLS = ['--dc1', '--dc2', '--dc3', '--dc4', '--dc5', '--dc6', '--dc7', '--dc8'];
 function el(tag, attrs, parent) { const e = document.createElementNS(SVGNS, tag); for (const k in attrs) e.setAttribute(k, attrs[k]); if (parent) parent.appendChild(e); return e; }
 function corner(k, R) { const t = -Math.PI / 2 + 2 * Math.PI * k / N; return [R * Math.cos(t), R * Math.sin(t)]; }
+let cpCache = { n: 0, pts: null };
 function crossPoints() { // every 4 corners a<b<c<e give one crossing: chords (a,c) and (b,e)
   const n = N, P = [...Array(n).keys()].map((k) => corner(k, 1)), seen = new Map();
   for (let a = 0; a < n; a++) for (let b = a + 1; b < n; b++) for (let c = b + 1; c < n; c++) for (let e = c + 1; e < n; e++) {
@@ -921,9 +931,7 @@ function renderPic() {
   const n = N, d = D, info = describe(n, d);
   $('pic-t').textContent = `Drawing of the ${info.title}, a ${info.kind}`;
   const sw = 0.012;
-  if (show.circ) el('circle', { cx: 0, cy: 0, r: 1, class: 'g-guide' }, svg);
   const rIn = Math.cos(Math.PI * d / n);
-  if (show.inc) el('circle', { cx: 0, cy: 0, r: rIn, class: 'g-guide alt' }, svg);
   // filled outline
   const g = info.g, comp = n / g, cd = d / g;
   let path = '';
@@ -932,9 +940,11 @@ function renderPic() {
     path += 'Z';
   }
   el('path', { d: path, class: 'g-fill' }, svg);
+  if (show.circ) el('circle', { cx: 0, cy: 0, r: 1, class: 'g-guide' }, svg);
+  if (show.inc) el('circle', { cx: 0, cy: 0, r: rIn, class: 'g-guide alt' }, svg);
   // diagonals
   const half = Math.floor(n / 2);
-  $('t-cross').disabled = n > 40; $('t-diag').disabled = n > 60;
+  $('t-cross').disabled = n > 40; $('t-diag').disabled = n > 60; $('t-num').disabled = n > 60;
   if (show.diag && n <= 60) {
     for (let k = 2; k <= half; k++) {
       if (hiddenK.has(k)) continue;
@@ -943,7 +953,11 @@ function renderPic() {
       for (let i = 0; i < cnt; i++) { const [x1, y1] = corner(i, 1), [x2, y2] = corner(i + k, 1); el('line', { x1, y1, x2, y2 }, gEl); }
     }
   }
-  if (show.cross && n <= 40) { const gEl = el('g', { class: 'g-dot' }, svg); crossPoints().forEach(([x, y]) => el('circle', { cx: x, cy: y, r: n > 24 ? 0.008 : 0.014 }, gEl)); }
+  if (show.cross && n <= 40) {
+    if (cpCache.n !== n) cpCache = { n, pts: crossPoints() };
+    const rr = n > 24 ? 0.008 : 0.014; // one path of tiny circles: far lighter than thousands of elements
+    el('path', { class: 'g-dot', d: cpCache.pts.map(([x, y]) => `M${(x - rr).toFixed(5)} ${y.toFixed(5)}a${rr} ${rr} 0 1 0 ${2 * rr} 0a${rr} ${rr} 0 1 0 ${-2 * rr} 0`).join('') }, svg);
+  }
   el('path', { d: path, class: 'g-edge', 'stroke-width': sw * 2 }, svg);
   if (show.ang) {
     const [x0, y0] = corner(0, 1), [xa, ya] = corner(d, 1), [xb, yb] = corner(-d, 1);
@@ -982,7 +996,7 @@ function render() {
   document.querySelectorAll('#pick .fchip').forEach((b) => { const on = b.dataset.nd === N + '/' + D; b.classList.toggle('on', on); b.setAttribute('aria-pressed', String(on)); });
   renderPic(); renderFacts();
   const big40 = N > 40, big60 = N > 60;
-  $('pic-help').textContent = '“Diagonals” draws every line between two corners that aren’t neighbours, coloured by how many steps apart the corners are. “Crossing points” marks where diagonals cross inside a regular polygon.' + (big60 ? ' Diagonals are drawn up to 60 sides and crossing points up to 40.' : big40 ? ' Crossing points are drawn up to 40 sides.' : '');
+  $('pic-help').textContent = '“Diagonals” draws every line between two corners that aren’t neighbours, coloured by how many steps apart the corners are. “Crossing points” marks where diagonals cross inside a regular polygon.' + (big60 ? ' Diagonals and corner numbers are drawn up to 60 sides, and crossing points up to 40.' : big40 ? ' Crossing points are drawn up to 40 sides.' : '');
 }
 
 /* ---------- inputs ---------- */
@@ -991,41 +1005,43 @@ $('p-n').addEventListener('change', readInputs); $('p-d').addEventListener('chan
 $('p-name').addEventListener('change', () => {
   const r = parseName($('p-name').value);
   if (!r) { $('p-why').textContent = `“${$('p-name').value}” isn't a name or symbol this page knows. Try a number of sides, {7/3}, or a name such as icositetragon.`; return; }
-  setND(r[0], r[1]);
+  setND(r[0], r[1], 'name');
 });
 document.querySelectorAll('#pick .fchip').forEach((b) => b.addEventListener('click', () => { const [n, d] = b.dataset.nd.split('/').map(Number); $('p-name').value = ''; setND(n, d); }));
-$('prec').addEventListener('change', () => { renderFacts(); renderPic(); });
+$('prec').addEventListener('change', renderFacts);
 $('s-kind').addEventListener('change', renderFacts);
 $('s-val').addEventListener('input', renderFacts);
 
 /* ---------- which polygon? ---------- */
 function whichList() {
-  const kind = $('w-kind').value, raw = String($('w-val').value).trim().replace(',', '.');
-  const out = [];
-  if (!raw) { $('w-count').textContent = ''; $('w-list').innerHTML = ''; return; }
-  const v = Number(raw.replace(/[°\s]/g, ''));
-  if (!isFinite(v)) { $('w-count').textContent = 'Type a number.'; $('w-list').innerHTML = ''; return; }
-  const near = (x) => Math.abs(x - v) < 0.01;
-  const add = (n, d, val) => out.push({ n, d, val });
-  if (['corner', 'ext', 'sum', 'central'].includes(kind)) {
-    for (let n = 3; n <= 10000; n++) {
+  const kind = $('w-kind').value, raw0 = String($('w-val').value).trim();
+  const angle = ['corner', 'ext', 'sum', 'central'].includes(kind);
+  const out = []; let more = false;
+  if (!raw0) { $('w-count').textContent = ''; $('w-list').innerHTML = ''; return; }
+  const add = (n, d, val) => { if (out.length < 60) out.push({ n, d, val }); else more = true; };
+  if (angle) {
+    const v = Number(raw0.replace(',', '.').replace(/[°\s]/g, ''));
+    if (!isFinite(v)) { $('w-count').textContent = 'Type a number.'; $('w-list').innerHTML = ''; return; }
+    for (let n = 3; n <= 10000 && !more; n++) {
       const dmax = kind === 'central' ? 1 : Math.floor((n - 1) / 2);
       for (let d = 1; d <= dmax; d++) {
         if (d > 1 && n > 400) break;
         if (d > 1 && gcd(n, d) !== 1) continue; // compounds aren't single polygons
         const val = kind === 'corner' ? 180 * (1 - 2 * d / n) : kind === 'ext' ? 360 * d / n : kind === 'sum' ? 180 * (n - 2 * d) : 360 / n;
-        if (near(val)) add(n, d, deg(val));
+        if (Math.abs(val - v) < 0.01) add(n, d, deg(val));
       }
-      if (out.length > 60) break;
     }
-  } else if (Number.isInteger(v) && v >= 0) {
-    if (kind === 'diag') { const n = (3 + Math.sqrt(9 + 8 * v)) / 2; if (Number.isInteger(n) && n >= 3) add(n, 1, big(BigInt(v))); }
-    else if (kind === 'cross') { for (let n = 3; n <= 10000; n++) { const c = crossings(n); if (c === BigInt(v)) add(n, 1, big(c)); if (c > BigInt(v)) break; } }
-    else if (kind === 'regions') { for (const n in REGIONS) if (REGIONS[n] === v) add(+n, 1, big(BigInt(v))); }
-    else if (kind === 'tri') { for (let n = 3; n <= 2000; n++) { const c = catalan(n - 2); if (c === BigInt(v)) add(n, 1, big(c)); if (c > BigInt(v)) break; } }
+  } else {
+    const digits = raw0.replace(/[,\s  ._']/g, ''); // counts may be written with thousands separators
+    if (!/^\d+$/.test(digits)) { $('w-count').textContent = 'Type a whole number.'; $('w-list').innerHTML = ''; return; }
+    const V = BigInt(digits);
+    if (kind === 'diag') { for (let n = 3; n <= 10000; n++) { const c = BigInt(n * (n - 3) / 2); if (c === V) add(n, 1, big(c)); if (c > V) break; } } // n(n−3)/2 only grows
+    else if (kind === 'cross') { for (let n = 3; n <= 10000; n++) { const c = crossings(n); if (c === V) add(n, 1, big(c)); } } // not monotonic: I(11) = 330 but I(12) = 301
+    else if (kind === 'regions') { for (const n in REGIONS) if (BigInt(REGIONS[n]) === V) add(+n, 1, big(V)); }
+    else if (kind === 'tri') { for (let n = 3; n <= 10000; n++) { const c = catalan(n - 2); if (c === V) add(n, 1, bigShow(c)); if (c > V) break; } }
   }
-  $('w-count').textContent = out.length ? `${out.length} ${out.length === 1 ? 'polygon fits' : 'polygons fit'}.` : (kind === 'regions' ? 'Nothing up to 120 sides fits.' : 'Nothing fits. Check the value, or try another fact.');
-  $('w-list').innerHTML = out.slice(0, 60).map((o) => `<li><button type="button" data-nd="${o.n}/${o.d}"><span class="pn">${esc(describe(o.n, o.d).title)}</span><span class="pm">${esc(o.val)} · ${esc(describe(o.n, o.d).kind)}</span></button></li>`).join('');
+  $('w-count').textContent = more ? `More than 60 polygons fit; the first 60 are listed.` : out.length ? `${out.length} ${out.length === 1 ? 'polygon fits' : 'polygons fit'}.` : (kind === 'regions' ? 'Nothing up to 120 sides fits.' : 'Nothing fits. Check the value, or try another fact.');
+  $('w-list').innerHTML = out.map((o) => `<li><button type="button" data-nd="${o.n}/${o.d}"><span class="pn">${esc(describe(o.n, o.d).title)}</span><span class="pm">${esc(o.val)} · ${esc(describe(o.n, o.d).kind)}</span></button></li>`).join('');
 }
 $('w-kind').addEventListener('change', whichList); $('w-val').addEventListener('input', whichList);
 $('w-list').addEventListener('click', (e) => { const b = e.target.closest('button[data-nd]'); if (!b) return; const [n, d] = b.dataset.nd.split('/').map(Number); setND(n, d); $('look').scrollIntoView({ behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth', block: 'start' }); });
@@ -1036,7 +1052,7 @@ let notes = [];
 try { notes = JSON.parse(localStorage.getItem(NKEY) || '[]'); if (!Array.isArray(notes)) notes = []; } catch (e) { notes = []; }
 const saveNotes = () => { try { localStorage.setItem(NKEY, JSON.stringify(notes)); } catch (e) { /* storage unavailable */ } };
 function flash(msg) { $('n-msg').textContent = msg; clearTimeout(flash.t); flash.t = setTimeout(() => { $('n-msg').textContent = ''; }, 2500); }
-function addNote(label, value) { notes.push({ label: String(label).slice(0, 200), value: String(value).slice(0, 400) }); saveNotes(); renderNotes(); flash('Added to the notepad.'); }
+function addNote(label, value) { notes.push({ label: String(label).slice(0, 200), value: String(value).slice(0, 10000) }); saveNotes(); renderNotes(); flash('Added to the notepad.'); }
 function renderNotes() {
   $('nempty').hidden = notes.length > 0;
   $('nlist').innerHTML = notes.map((n, i) => `<li><span class="nl">${esc(n.label)}</span><button type="button" class="nv" data-i="${i}" title="Put this in the last box you used">${esc(n.value)}</button><button type="button" class="ndel" data-i="${i}" aria-label="Delete note: ${esc(n.label)}">×</button></li>`).join('');

@@ -1171,7 +1171,7 @@ let notes = [];
 try { notes = JSON.parse(localStorage.getItem(NKEY) || '[]'); if (!Array.isArray(notes)) notes = []; } catch (e) { notes = []; }
 const saveNotes = () => { try { localStorage.setItem(NKEY, JSON.stringify(notes)); } catch (e) { /* storage unavailable */ } };
 function flash(msg) { $('n-msg').textContent = msg; clearTimeout(flash.t); flash.t = setTimeout(() => { $('n-msg').textContent = ''; }, 2500); }
-function addNote(label, value) { notes.push({ label: String(label).slice(0, 200), value: String(value).slice(0, 400) }); saveNotes(); renderNotes(); flash('Added to the notepad.'); }
+function addNote(label, value) { notes.push({ label: String(label).slice(0, 200), value: String(value).slice(0, 10000) }); saveNotes(); renderNotes(); flash('Added to the notepad.'); }
 function renderNotes() {
   $('nempty').hidden = notes.length > 0;
   $('nlist').innerHTML = notes.map((n, i) => `<li><span class="nl">${esc(n.label)}</span><button type="button" class="nv" data-i="${i}" title="Put this in the last box you used">${esc(n.value)}</button><button type="button" class="ndel" data-i="${i}" aria-label="Delete note: ${esc(n.label)}">×</button></li>`).join('');

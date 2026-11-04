@@ -68,6 +68,7 @@ body{
   font-size:16px; line-height:1.5; -webkit-font-smoothing:antialiased;
 }
 button,input,textarea,select{font:inherit;color:inherit}
+::placeholder{color:var(--muted);opacity:1} /* browsers default to a pale grey that fails 4.5:1 */
 :focus-visible{outline:2px solid var(--focus);outline-offset:2px}
 ::selection{background:var(--accent-soft)}
 .mono,.num{font-family:"IBM Plex Mono","SFMono-Regular",Menlo,Consolas,monospace}
@@ -200,7 +201,7 @@ tr:last-child td{border-bottom:0}
 
 /* ---------- message reader ---------- */
 .conv-opts{display:flex;gap:10px 16px;flex-wrap:wrap;align-items:end;margin:6px 0 10px}
-.conv-opts label{display:flex;flex-direction:column;gap:4px;font-size:13px;color:var(--muted)}
+.conv-opts label{display:flex;flex-direction:column;gap:4px;font-size:13px;color:var(--muted);min-width:0;max-width:100%} /* lets a long select shrink to the card */
 .conv-opts label.inline{flex-direction:row;align-items:center;gap:8px;color:var(--ink);font-size:15px}
 .conv-opts select{border:1px solid var(--line-strong);border-radius:6px;background:var(--surface);padding:6px 8px;font-size:15px;color:var(--ink);max-width:100%}
 .conv-opts input[type=checkbox]{width:17px;height:17px}
@@ -264,6 +265,7 @@ footer a{color:inherit}
 .play-controls label,.calc label{display:flex;flex-direction:column;gap:4px;font-size:14px;color:var(--muted)}
 .calc{display:flex;gap:10px 16px;flex-wrap:wrap;align-items:flex-end;margin:12px 0 6px}
 .calc label{flex-direction:row;align-items:center;gap:8px;color:var(--ink);font-size:15px}
+.calc label{max-width:100%;min-width:0}.calc select{min-width:0;max-width:100%} /* lets a long select shrink to the card on a narrow phone */
 .calc var,.play var{font-family:"IBM Plex Mono",monospace;font-style:normal;font-weight:600}
 input[type=number],input[type=text],select{border:1px solid var(--line-strong);border-radius:6px;background:var(--surface);padding:7px 9px;font-size:15px;color:var(--ink);max-width:100%}
 input[type=text]{font-family:"IBM Plex Mono",monospace;min-width:0;width:12em}
@@ -274,6 +276,7 @@ input[type=number]{width:6.5em;font-family:"IBM Plex Mono",monospace}
 .say var,.out var{font-family:"IBM Plex Mono",monospace;font-style:normal;font-weight:600}
 .out{color:var(--ink-2)}
 .out p{margin:8px 0}
+.out p,.out var{overflow-wrap:anywhere} /* long numbers wrap instead of widening the page */
 .out .num,.say .num{font-family:"IBM Plex Mono",monospace;word-break:break-all}
 .out .big,.q .big{font-family:"Barlow Condensed",sans-serif;font-size:26px;color:var(--ink)}
 .one-chip{display:inline-block;background:var(--accent);color:var(--accent-ink);border-radius:4px;padding:0 6px;font-family:"IBM Plex Mono",monospace;font-weight:600}
@@ -410,7 +413,7 @@ ol.readas li.bad{color:var(--error)}
 .sanity{margin-left:auto;font-family:"IBM Plex Mono",monospace;font-size:12.5px;color:var(--brass);border:1px solid var(--brass);border-radius:999px;padding:1px 9px}
 .page{border-top:1px solid var(--line);padding:12px 0 4px}
 .page:first-child{border-top:0;padding-top:4px}
-.page .pname{flex:1;min-width:8em;border:1px solid var(--line);border-radius:6px;background:var(--surface);padding:5px 8px;font-size:15px;color:var(--ink);font-family:"Barlow",system-ui,sans-serif}
+.page .pname{flex:1;min-width:8em;border:1px solid var(--line-strong);border-radius:6px;background:var(--surface);padding:5px 8px;font-size:15px;color:var(--ink);font-family:"Barlow",system-ui,sans-serif}
 .nw{font-size:12.5px;color:var(--muted)}
 .pgsmall{font-size:12.5px;color:var(--muted)}
 table.nums{table-layout:fixed}
@@ -581,12 +584,17 @@ table.nums td:last-child{overflow-wrap:anywhere;white-space:normal}
     const t = $('#en-t').value, m = $('#en-m').value; let digits = '', note = '', skipped = 0;
     if (m === 'c3' || m === 'c4') {
       const w = m === 'c3' ? 3 : 4, cps = [...t].map((c) => c.codePointAt(0));
-      const tooBig = cps.find((v) => v >= 10 ** w);
-      if (tooBig !== undefined) { $('#en-out').innerHTML = `<p>“${esc(String.fromCodePoint(tooBig))}” has code ${tooBig}, which needs more than ${w} digits. Try 4-digit codes.</p>`; return; }
+      const bad = cps.find((v) => v >= 10 ** w || !printable(v, w));  // anything the 'A number to text' reader below couldn't turn back into text
+      if (bad !== undefined) {
+        const why = bad >= 10 ** w ? `“${esc(String.fromCodePoint(bad))}” has code ${bad}, which needs more than ${w} digits. ${bad < 10000 ? 'Try 4-digit codes.' : 'Try hexadecimal bytes, which can hold any character.'}`
+          : w === 3 && bad > 255 ? `“${esc(String.fromCodePoint(bad))}” has code ${bad}. Codes above 255 need 4-digit blocks, so 3-digit codes can’t be read back. Try 4-digit codes.`
+          : `The text holds a character that isn’t printable (code ${bad}), so it couldn’t be read back. Take it out and try again.`;
+        $('#en-out').innerHTML = `<p>${why}</p>`; return;
+      }
       digits = cps.map((v) => String(v).padStart(w, '0')).join('');
       note = cps.map((v, i) => `${esc(String.fromCodePoint(v))} = ${String(v).padStart(w, '0')}`).slice(0, 12).join(', ') + (cps.length > 12 ? ', …' : '');
     } else if (m === 'a2') {
-      const ls = [...t.toUpperCase()].filter((c) => /[A-Z]/.test(c)); skipped = [...t].length - ls.length;
+      const ls = [...t].filter((c) => /[A-Za-z]/.test(c)).map((c) => c.toUpperCase()); skipped = [...t].length - ls.length;
       digits = ls.map((c) => String(c.charCodeAt(0) - 64).padStart(2, '0')).join('');
       note = ls.slice(0, 12).map((c) => `${c} = ${String(c.charCodeAt(0) - 64).padStart(2, '0')}`).join(', ') + (ls.length > 12 ? ', …' : '');
     } else {
@@ -597,7 +605,7 @@ table.nums td:last-child{overflow-wrap:anywhere;white-space:normal}
       return;
     }
     const num = digits.replace(/^0+(?=\d)/, '');
-    $('#en-out').innerHTML = `<p>${note}</p><p>Blocks written together: <span class="num">${digits || '—'}</span></p><p>As a number: <b class="num">${num || '0'}</b> (${plural(num.length, 'digit')})${num.length < digits.length ? `. The leading zero${digits.length - num.length > 1 ? 's' : ''} disappeared, as section 4 explains.` : '.'}</p>${skipped ? `<p class="help">${plural(skipped, 'character')} that ${skipped === 1 ? 'isn’t a letter was' : 'aren’t letters were'} left out: letter positions only cover A to Z.</p>` : ''}`;
+    $('#en-out').innerHTML = `<p>${note}</p><p>Blocks written together: <span class="num">${digits || '—'}</span></p><p>As a number: <b class="num">${num || '0'}</b> (${plural(num.length, 'digit')})${num.length < digits.length ? `. The leading zero${digits.length - num.length > 1 ? 's' : ''} disappeared, as section 4 explains.` : '.'}</p>${skipped ? `<p class="help">${plural(skipped, 'character')} outside A to Z ${skipped === 1 ? 'was' : 'were'} left out: letter positions only cover the 26 plain letters.</p>` : ''}`;
   }
   function decode(){
     const raw = $('#de-n').value.replace(/[\s,_]/g, ''), m = $('#de-m').value;

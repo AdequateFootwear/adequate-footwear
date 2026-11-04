@@ -68,6 +68,7 @@ body{
   font-size:16px; line-height:1.5; -webkit-font-smoothing:antialiased;
 }
 button,input,textarea,select{font:inherit;color:inherit}
+::placeholder{color:var(--muted);opacity:1} /* browsers default to a pale grey that fails 4.5:1 */
 :focus-visible{outline:2px solid var(--focus);outline-offset:2px}
 ::selection{background:var(--accent-soft)}
 .mono,.num{font-family:"IBM Plex Mono","SFMono-Regular",Menlo,Consolas,monospace}
@@ -200,7 +201,7 @@ tr:last-child td{border-bottom:0}
 
 /* ---------- message reader ---------- */
 .conv-opts{display:flex;gap:10px 16px;flex-wrap:wrap;align-items:end;margin:6px 0 10px}
-.conv-opts label{display:flex;flex-direction:column;gap:4px;font-size:13px;color:var(--muted)}
+.conv-opts label{display:flex;flex-direction:column;gap:4px;font-size:13px;color:var(--muted);min-width:0;max-width:100%} /* lets a long select shrink to the card */
 .conv-opts label.inline{flex-direction:row;align-items:center;gap:8px;color:var(--ink);font-size:15px}
 .conv-opts select{border:1px solid var(--line-strong);border-radius:6px;background:var(--surface);padding:6px 8px;font-size:15px;color:var(--ink);max-width:100%}
 .conv-opts input[type=checkbox]{width:17px;height:17px}
@@ -264,6 +265,7 @@ footer a{color:inherit}
 .play-controls label,.calc label{display:flex;flex-direction:column;gap:4px;font-size:14px;color:var(--muted)}
 .calc{display:flex;gap:10px 16px;flex-wrap:wrap;align-items:flex-end;margin:12px 0 6px}
 .calc label{flex-direction:row;align-items:center;gap:8px;color:var(--ink);font-size:15px}
+.calc label{max-width:100%;min-width:0}.calc select{min-width:0;max-width:100%} /* lets a long select shrink to the card on a narrow phone */
 .calc var,.play var{font-family:"IBM Plex Mono",monospace;font-style:normal;font-weight:600}
 input[type=number],input[type=text],select{border:1px solid var(--line-strong);border-radius:6px;background:var(--surface);padding:7px 9px;font-size:15px;color:var(--ink);max-width:100%}
 input[type=text]{font-family:"IBM Plex Mono",monospace;min-width:0;width:12em}
@@ -274,6 +276,7 @@ input[type=number]{width:6.5em;font-family:"IBM Plex Mono",monospace}
 .say var,.out var{font-family:"IBM Plex Mono",monospace;font-style:normal;font-weight:600}
 .out{color:var(--ink-2)}
 .out p{margin:8px 0}
+.out p,.out var{overflow-wrap:anywhere} /* long numbers wrap instead of widening the page */
 .out .num,.say .num{font-family:"IBM Plex Mono",monospace;word-break:break-all}
 .out .big,.q .big{font-family:"Barlow Condensed",sans-serif;font-size:26px;color:var(--ink)}
 .one-chip{display:inline-block;background:var(--accent);color:var(--accent-ink);border-radius:4px;padding:0 6px;font-family:"IBM Plex Mono",monospace;font-weight:600}
@@ -410,7 +413,7 @@ ol.readas li.bad{color:var(--error)}
 .sanity{margin-left:auto;font-family:"IBM Plex Mono",monospace;font-size:12.5px;color:var(--brass);border:1px solid var(--brass);border-radius:999px;padding:1px 9px}
 .page{border-top:1px solid var(--line);padding:12px 0 4px}
 .page:first-child{border-top:0;padding-top:4px}
-.page .pname{flex:1;min-width:8em;border:1px solid var(--line);border-radius:6px;background:var(--surface);padding:5px 8px;font-size:15px;color:var(--ink);font-family:"Barlow",system-ui,sans-serif}
+.page .pname{flex:1;min-width:8em;border:1px solid var(--line-strong);border-radius:6px;background:var(--surface);padding:5px 8px;font-size:15px;color:var(--ink);font-family:"Barlow",system-ui,sans-serif}
 .nw{font-size:12.5px;color:var(--muted)}
 .pgsmall{font-size:12.5px;color:var(--muted)}
 table.nums{table-layout:fixed}
@@ -699,7 +702,16 @@ S(y) ≡ (7 − (T₂ mod 7)) mod 7
   }
   function doDoom(){
     const y = int($('#dd-y'), 1, 9999, 2026), m = +$('#dd-m').value, d = int($('#dd-d'), 1, 31, 1);
-    if (d > dim(m, y)) { $('#dd-out').innerHTML = `<p>${MONTHS[m - 1]} ${y} has only ${dim(m, y)} days.</p>`; $('#dd-steps').innerHTML = ''; $('#zeller').textContent = ''; return; }
+    const work = $('.dd-work'), zel = $('#zeller').closest('details');
+    if (d > dim(m, y)) {
+      // no weekday for a date that doesn't exist: clear all the working, including the clock
+      $('#dd-out').innerHTML = `<p>${MONTHS[m - 1]} ${y} has only ${dim(m, y)} days.</p>`;
+      $('#dd-steps').innerHTML = ''; $('#dd-fline').innerHTML = ''; $('#zeller').textContent = '';
+      $('#dd-wheel').innerHTML = ''; $('#dd-wheel').setAttribute('aria-label', 'The steps on a 7-day clock');
+      work.hidden = true; work.style.display = 'none'; zel.hidden = true; zel.style.display = 'none';
+      return;
+    }
+    work.hidden = false; work.style.display = ''; zel.hidden = false; zel.style.display = '';
     const r = doomsday(y, m, d), c = Math.floor(y / 100);
     $('#dd-out').innerHTML = `<p class="big">${MONTHS[m - 1]} ${d}, ${y} is a <b>${DAYS[r.w]}</b>.</p>`;
     const odd = (() => { let t = r.T; const s = [String(t)]; if (t % 2) { t += 11; s.push(`odd, +11 → ${t}`); } t /= 2; s.push(`halve → ${t}`); if (t % 2) { t += 11; s.push(`odd, +11 → ${t}`); } const m7 = t % 7; s.push(`mod 7 → ${m7}`); s.push(`7 − ${m7} → ${(7 - m7) % 7}`); return s.join(', '); })();
@@ -743,7 +755,15 @@ S(y) ≡ (7 − (T₂ mod 7)) mod 7
     cur.done = true;
     for (const x of document.querySelectorAll('#pr-btns button')) { x.disabled = true; if (+x.getAttribute('data-dow') === r.w) x.classList.add('right'); }
     if (guess === r.w) { st.streak++; st.best = Math.max(st.best, st.streak); $('#pr-say').innerHTML = `<b>Right!</b> It's a ${DAYS[r.w]}.`; }
-    else { b.classList.add('wrong'); st.streak = 0; $('#pr-say').innerHTML = `Not quite: it's a <b>${DAYS[r.w]}</b>. Anchor ${DAYS[r.anchor]}, doomsday ${DAYS[r.yd]} for ${cur.y}, nearest doomsday date ${MONTHS[cur.m - 1]} ${r.dd}.`; }
+    else {
+      b.classList.add('wrong'); st.streak = 0;
+      // the doomsday date in this month nearest the asked date: the table date plus or minus whole weeks
+      let near = r.dd + 7 * Math.round((cur.d - r.dd) / 7);
+      if (near < 1) near += 7; else if (near > dim(cur.m, cur.y)) near -= 7;
+      const k = near - r.dd, how = k ? ` (${r.dd} ${k > 0 ? '+' : '−'} ${Math.abs(k)})` : '';
+      const tail = near === cur.d ? `and ${MONTHS[cur.m - 1]} ${cur.d} is itself a doomsday date${how}` : `nearest doomsday date ${MONTHS[cur.m - 1]} ${near}${how}`;
+      $('#pr-say').innerHTML = `Not quite: it's a <b>${DAYS[r.w]}</b>. Anchor ${DAYS[r.anchor]}, doomsday ${DAYS[r.yd]} for ${cur.y}, ${tail}.`;
+    }
     save(); showStreak();
   });
   $('#pr-next').addEventListener('click', newDate); $('#pr-range').addEventListener('change', newDate);

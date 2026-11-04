@@ -68,6 +68,7 @@ body{
   font-size:16px; line-height:1.5; -webkit-font-smoothing:antialiased;
 }
 button,input,textarea,select{font:inherit;color:inherit}
+::placeholder{color:var(--muted);opacity:1} /* browsers default to a pale grey that fails 4.5:1 */
 :focus-visible{outline:2px solid var(--focus);outline-offset:2px}
 ::selection{background:var(--accent-soft)}
 .mono,.num{font-family:"IBM Plex Mono","SFMono-Regular",Menlo,Consolas,monospace}
@@ -200,7 +201,7 @@ tr:last-child td{border-bottom:0}
 
 /* ---------- message reader ---------- */
 .conv-opts{display:flex;gap:10px 16px;flex-wrap:wrap;align-items:end;margin:6px 0 10px}
-.conv-opts label{display:flex;flex-direction:column;gap:4px;font-size:13px;color:var(--muted)}
+.conv-opts label{display:flex;flex-direction:column;gap:4px;font-size:13px;color:var(--muted);min-width:0;max-width:100%} /* lets a long select shrink to the card */
 .conv-opts label.inline{flex-direction:row;align-items:center;gap:8px;color:var(--ink);font-size:15px}
 .conv-opts select{border:1px solid var(--line-strong);border-radius:6px;background:var(--surface);padding:6px 8px;font-size:15px;color:var(--ink);max-width:100%}
 .conv-opts input[type=checkbox]{width:17px;height:17px}
@@ -264,6 +265,7 @@ footer a{color:inherit}
 .play-controls label,.calc label{display:flex;flex-direction:column;gap:4px;font-size:14px;color:var(--muted)}
 .calc{display:flex;gap:10px 16px;flex-wrap:wrap;align-items:flex-end;margin:12px 0 6px}
 .calc label{flex-direction:row;align-items:center;gap:8px;color:var(--ink);font-size:15px}
+.calc label{max-width:100%;min-width:0}.calc select{min-width:0;max-width:100%} /* lets a long select shrink to the card on a narrow phone */
 .calc var,.play var{font-family:"IBM Plex Mono",monospace;font-style:normal;font-weight:600}
 input[type=number],input[type=text],select{border:1px solid var(--line-strong);border-radius:6px;background:var(--surface);padding:7px 9px;font-size:15px;color:var(--ink);max-width:100%}
 input[type=text]{font-family:"IBM Plex Mono",monospace;min-width:0;width:12em}
@@ -274,6 +276,7 @@ input[type=number]{width:6.5em;font-family:"IBM Plex Mono",monospace}
 .say var,.out var{font-family:"IBM Plex Mono",monospace;font-style:normal;font-weight:600}
 .out{color:var(--ink-2)}
 .out p{margin:8px 0}
+.out p,.out var{overflow-wrap:anywhere} /* long numbers wrap instead of widening the page */
 .out .num,.say .num{font-family:"IBM Plex Mono",monospace;word-break:break-all}
 .out .big,.q .big{font-family:"Barlow Condensed",sans-serif;font-size:26px;color:var(--ink)}
 .one-chip{display:inline-block;background:var(--accent);color:var(--accent-ink);border-radius:4px;padding:0 6px;font-family:"IBM Plex Mono",monospace;font-weight:600}
@@ -410,7 +413,7 @@ ol.readas li.bad{color:var(--error)}
 .sanity{margin-left:auto;font-family:"IBM Plex Mono",monospace;font-size:12.5px;color:var(--brass);border:1px solid var(--brass);border-radius:999px;padding:1px 9px}
 .page{border-top:1px solid var(--line);padding:12px 0 4px}
 .page:first-child{border-top:0;padding-top:4px}
-.page .pname{flex:1;min-width:8em;border:1px solid var(--line);border-radius:6px;background:var(--surface);padding:5px 8px;font-size:15px;color:var(--ink);font-family:"Barlow",system-ui,sans-serif}
+.page .pname{flex:1;min-width:8em;border:1px solid var(--line-strong);border-radius:6px;background:var(--surface);padding:5px 8px;font-size:15px;color:var(--ink);font-family:"Barlow",system-ui,sans-serif}
 .nw{font-size:12.5px;color:var(--muted)}
 .pgsmall{font-size:12.5px;color:var(--muted)}
 table.nums{table-layout:fixed}
@@ -470,7 +473,7 @@ table.nums td:last-child{overflow-wrap:anywhere;white-space:normal}
     <div class="panel-head"><span class="step">Step 2</span><h2 id="h2-s">Words to seek</h2></div>
     <p class="lead">Throw words at the pages: the ones you think the fact is near, and their synonyms. Separate them with commas or new lines. A phrase in quotes is matched as a whole.</p>
     <div class="field">
-      <textarea class="numin txt" id="seek" rows="3" spellcheck="false" autocomplete="off" aria-describedby="seek-help"></textarea>
+      <textarea class="numin txt" id="seek" rows="3" spellcheck="false" autocomplete="off" aria-labelledby="h2-s" aria-describedby="seek-help"></textarea>
       <p class="help" id="seek-help">The Index only searches what you paste. It can't tell you whether you've found an answer; it can only show you where your words lead. There may be some unusual features that occur at times as you use this tool.</p>
       <div class="conv-opts">
         <label class="inline"><input type="checkbox" id="opt-stem" checked> Match other endings too (spurn, spurned, spurning)</label>
@@ -490,6 +493,7 @@ table.nums td:last-child{overflow-wrap:anywhere;white-space:normal}
     <p class="lead">Every number the pages contain, written as digits or as words (“a thousand”), with the sentence it sits in. Useful when you know the fact is a number but not where it hides.</p>
     <div class="field"><label class="inline small">Only numbers whose sentence contains <input type="text" id="num-filter" class="coordin short" spellcheck="false" autocomplete="off" placeholder="any word"></label></div>
     <div class="scroll"><table class="ftab nums" id="nums"></table></div>
+    <p class="help" id="num-more" hidden></p>
   </section>
 
   <footer>
@@ -520,41 +524,74 @@ table.nums td:last-child{overflow-wrap:anywhere;white-space:normal}
     seek: 'depths, slumber, wake'
   };
   let st = { pages: [{ name: '', text: '' }], seek: '', stem: true, onlyNum: false, sanity: 99, filter: '' };
-  try { const s = JSON.parse(localStorage.getItem(LS) || 'null'); if (s && Array.isArray(s.pages)) st = Object.assign(st, s); } catch (e) {}
+  let had = false; // true once this browser has saved state, so the example only appears on a first visit
+  try { const s = JSON.parse(localStorage.getItem(LS) || 'null'); if (s && Array.isArray(s.pages)) { st = Object.assign(st, s); had = true; } } catch (e) {}
   const save = () => { try { localStorage.setItem(LS, JSON.stringify(st)); } catch (e) {} };
 
   /* ---------- number words ---------- */
-  const SMALL = { zero:0, one:1, two:2, three:3, four:4, five:5, six:6, seven:7, eight:8, nine:9, ten:10, eleven:11, twelve:12, thirteen:13, fourteen:14, fifteen:15, sixteen:16, seventeen:17, eighteen:18, nineteen:19, twenty:20, thirty:30, forty:40, fifty:50, sixty:60, seventy:70, eighty:80, ninety:90, hundred:100, thousand:1000, million:1000000, billion:1000000000, dozen:12, score:20 };
-  const NUMWORD = new RegExp(`\\b(?:a |an )?(?:(?:${Object.keys(SMALL).join('|')})(?:[- ](?:${Object.keys(SMALL).join('|')}))*)\\b`, 'gi');
-  function wordValue(w){
-    let total = 0, cur = 0;
-    for (const p of w.toLowerCase().replace(/^an? /, 'one ').split(/[- ]/)) {
-      const v = SMALL[p]; if (v === undefined) continue;
-      if (v === 100) cur = (cur || 1) * 100; else if (v >= 1000) { total += (cur || 1) * v; cur = 0; } else cur += v;
+  const SMALL = { zero:0, one:1, two:2, three:3, four:4, five:5, six:6, seven:7, eight:8, nine:9, ten:10, eleven:11, twelve:12, thirteen:13, fourteen:14, fifteen:15, sixteen:16, seventeen:17, eighteen:18, nineteen:19, twenty:20, thirty:30, forty:40, fifty:50, sixty:60, seventy:70, eighty:80, ninety:90, hundred:100, thousand:1000, million:1000000, billion:1000000000, trillion:1000000000000, dozen:12, score:20 };
+  // ordinals count as the number they're made from: twenty-first = 21, the third gate = 3
+  const ORDS = { first:1, second:2, third:3, fourth:4, fifth:5, sixth:6, seventh:7, eighth:8, ninth:9, tenth:10, eleventh:11, twelfth:12, thirteenth:13, fourteenth:14, fifteenth:15, sixteenth:16, seventeenth:17, eighteenth:18, nineteenth:19, twentieth:20, thirtieth:30, fortieth:40, fiftieth:50, sixtieth:60, seventieth:70, eightieth:80, ninetieth:90, hundredth:100, thousandth:1000, millionth:1000000, billionth:1000000000, trillionth:1000000000000 };
+  const alt = (ws) => ws.slice().sort((a, b) => b.length - a.length).join('|');
+  const CARD = alt(Object.keys(SMALL));
+  const SCALE = 'hundred|thousand|million|billion|trillion|dozen|score';
+  const SUB = alt(Object.keys(SMALL).concat(Object.keys(ORDS)).filter((w) => (SMALL[w] ?? ORDS[w]) < 100));
+  // words join with a hyphen or a space, or with "and" after a hundred, thousand, score and so on (two hundred and thirteen)
+  const SEP = `(?:[- ]|(?<=(?:${SCALE})) and (?=(?:${SUB})\\b))`;
+  // "second" on its own is usually time, so it only counts as "the second" or at the end of a compound (twenty-second)
+  const ORD1 = alt(Object.keys(ORDS).filter((w) => w !== 'second'));
+  const NUMWORD = new RegExp(`\\b(?:(?:an?) (?=(?:${CARD})\\b))?(?:(?:${CARD})(?:${SEP}(?:${CARD}))*(?:${SEP}(?:${ORD1})|-second)?|(?:${ORD1})|(?<=\\bthe )second)\\b`, 'gi');
+  const kind = (v, w) => w === 'dozen' || w === 'score' || v === 100 ? 'hund' : v >= 1000 ? 'scale' : v === 0 || (v >= 10 && v < 20) ? 'teen' : v < 10 ? 'unit' : 'tens';
+  // reads a run of number words; a run that is really two numbers ("nineteen twenty-three") comes back as two
+  function wordNumbers(raw, at){
+    const out = []; let total = 0, cur = 0, last = '', start = -1, end = 0, first = true;
+    const finish = () => { if (start >= 0) out.push({ i: at + start, len: end - start, raw: raw.slice(start, end), v: String(total + cur), word: true }); total = 0; cur = 0; last = ''; start = -1; };
+    for (const m of raw.matchAll(/[a-z]+/gi)) {
+      let p = m[0].toLowerCase();
+      if (first && (p === 'a' || p === 'an')) { start = m.index; first = false; p = 'one'; }
+      first = false;
+      if (p === 'and') continue;
+      const v = SMALL[p] ?? ORDS[p]; if (v === undefined) continue;
+      const k = kind(v, p.replace(/th$/, ''));
+      if (k !== 'hund' && k !== 'scale' && last && last !== 'hund' && last !== 'scale' && !(last === 'tens' && k === 'unit')) finish();
+      if (start < 0) start = m.index;
+      if (k === 'hund') cur = (cur || 1) * v;
+      else if (k === 'scale') { if (v >= total) total = ((total + cur) || 1) * v; else total += (cur || 1) * v; cur = 0; }
+      else cur += v;
+      last = k; end = m.index + m[0].length;
     }
-    return total + cur;
+    finish();
+    return out;
   }
-  const DIGITS = /\d[\d,]*(?:\.\d+)?/g;
+  const DIGITS = /\d{1,3}(?:,\d{3})+(?!\d)(?:\.\d+)?|\d+(?:\.\d+)?/g; // commas only as thousands separators
   function numbersIn(text){
     const out = [];
     for (const m of text.matchAll(DIGITS)) out.push({ i: m.index, len: m[0].length, raw: m[0], v: m[0].replace(/,/g, '') });
-    for (const m of text.matchAll(NUMWORD)) { if (/^(a|an)$/i.test(m[0].trim())) continue; if (/^score$/i.test(m[0])) continue; out.push({ i: m.index, len: m[0].length, raw: m[0], v: String(wordValue(m[0])), word: true }); }
+    for (const m of text.matchAll(NUMWORD)) { if (/^(a|an)$/i.test(m[0].trim())) continue; if (/^score$/i.test(m[0])) continue; out.push(...wordNumbers(m[0], m.index)); }
     return out.sort((a, b) => a.i - b.i);
   }
 
   /* ---------- seeking ---------- */
   function terms(){
     const out = [];
-    const re = /"([^"]+)"|([^,\n]+)/g; let m;
+    const re = /\s*(?:["“”„]([^"“”„]+)["“”„]|([^,\n]+))/g; let m; // straight or curly quotes, with or without a space after the comma
     while ((m = re.exec(st.seek))) { const t = (m[1] || m[2] || '').trim(); if (t) out.push(t); }
     return [...new Set(out.map((t) => t.toLowerCase()))];
   }
   const reEsc = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  // word edges that understand accents and punctuation (café, Mr., U.S.), not just a to z
+  const B = '(?<![\\p{L}\\p{M}\\p{N}_])', A = '(?![\\p{L}\\p{M}\\p{N}_])', MORE = '[\\p{L}\\p{M}]{0,4}';
   function termRe(t){
     const base = reEsc(t).replace(/\s+/g, '\\s+');
-    if (!st.stem || /\s/.test(t)) return new RegExp(`\\b${base}\\b`, 'gi');
-    const stem = t.length >= 4 ? reEsc(t.replace(/(e|s|es|ed|ing|ly)$/i, '')) : base;
-    return new RegExp(`\\b${stem}[a-z]{0,4}\\b`, 'gi');
+    if (!st.stem || /\s/.test(t)) return new RegExp(`${B}${base}${A}`, 'giu');
+    if (t.length < 4) return new RegExp(`${B}${base}${MORE}${A}`, 'giu');
+    const s = t.replace(/(e|s|es|ed|ing|ly)$/i, ''), cut = t.slice(s.length).toLowerCase();
+    // a stem of four letters or more takes any short ending; a shorter one only takes the endings of its own word,
+    // so wake still finds waking and cats finds cat, but here doesn't find her and this doesn't find thing
+    if (s.length >= 4) return new RegExp(`${B}${reEsc(s)}${MORE}${A}`, 'giu');
+    if (s.length === 3 && cut === 's') return new RegExp(`${B}${reEsc(s)}s?${A}`, 'giu');
+    if (s.length === 3 && cut !== 'ly') return new RegExp(`${B}${reEsc(s)}(?:e|es|ed|ing|er|ers)${A}`, 'giu');
+    return new RegExp(`${B}${base}${MORE}${A}`, 'giu');
   }
   function passages(){
     const out = [];
@@ -638,6 +675,8 @@ table.nums td:last-child{overflow-wrap:anywhere;white-space:normal}
     });
     $('#nums').innerHTML = rows.length ? '<thead><tr><th>Number</th><th>Where it appears</th></tr></thead><tbody>' + rows.slice(0, 400).map((r) => `<tr><td class="num"><b>${esc(r.n.v)}</b>${r.n.word ? `<br><span class="nw">“${esc(r.n.raw.trim())}”</span>` : ''}</td><td><span class="pgsmall">${esc(st.pages[r.page].name || 'Page ' + (r.page + 1))}</span><br>${highlight(r.s, res, q, r.page)}</td></tr>`).join('') + '</tbody>' : '';
     $('#num-meta').textContent = rows.length ? `${rows.length} number${rows.length === 1 ? '' : 's'}` : '';
+    const more = $('#num-more'); more.hidden = rows.length <= 400;
+    more.textContent = rows.length > 400 ? `Showing the first 400 of ${rows.length}. Type a word in the box above to see only the numbers whose sentence contains it.` : '';
   }
   function touchSanity(){ if (st.sanity > 1) st.sanity--; }
 
@@ -658,7 +697,7 @@ table.nums td:last-child{overflow-wrap:anywhere;white-space:normal}
   const fill = () => { $('#seek').value = st.seek; $('#opt-stem').checked = st.stem; $('#opt-num').checked = st.onlyNum; $('#num-filter').value = st.filter; renderPages(); };
   $('#btn-example').addEventListener('click', () => { st = Object.assign(st, JSON.parse(JSON.stringify(EXAMPLE)), { sanity: 99, onlyNum: false, filter: '' }); fill(); save(); render(); });
   $('#btn-clear').addEventListener('click', () => { st = { pages: [{ name: '', text: '' }], seek: '', stem: true, onlyNum: false, sanity: 99, filter: '' }; fill(); save(); render(); });
-  if (!st.pages.some((p) => p.text)) Object.assign(st, JSON.parse(JSON.stringify(EXAMPLE)));
+  if (!had) Object.assign(st, JSON.parse(JSON.stringify(EXAMPLE)));
   fill(); render();
 })();
 </script>

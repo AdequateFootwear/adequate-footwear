@@ -4,7 +4,7 @@ Optional files and tools associated with AdequateFootwear's geocaches.
 
 **Live site:** https://adequatefootwear.github.io/adequate-footwear/
 
-None of these tools is needed to solve any cache. Everything required is on each cache page and in the field. The tools run entirely in the browser and send nothing anywhere.
+None of these tools is needed to solve any cache. Everything required is on each cache page and in the field. The tools run entirely in the browser and send nothing anywhere. Tools built with help from Claude (Anthropic).
 
 ## Tools
 

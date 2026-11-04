@@ -563,7 +563,7 @@ dl.flist{margin:0}
 #partC .pC-tri{stroke:var(--ink-2);stroke-width:.018;stroke-linejoin:round}
 #partC .pC-tx{fill:var(--ink);font-family:"IBM Plex Mono",monospace;font-weight:600;text-anchor:middle;dominant-baseline:central;pointer-events:none}
 #partC .pC-gl{font-family:"Barlow",sans-serif;font-weight:500;fill:var(--ink-2)}
-#partC .pC-tn{fill:var(--ink-2);font-family:"IBM Plex Mono",monospace;text-anchor:middle;dominant-baseline:central;pointer-events:none}
+#partC .pC-tn{fill:var(--ink);font-family:"IBM Plex Mono",monospace;text-anchor:middle;dominant-baseline:central;pointer-events:none}
 #partC .pC-ix{fill:var(--muted);font-family:"IBM Plex Mono",monospace;text-anchor:middle;dominant-baseline:central}
 #partC .own .pC-tx{text-decoration:underline}
 #partC [data-cell]{cursor:pointer}
@@ -584,6 +584,8 @@ dl.flist{margin:0}
 #partC .pC-seq{display:flex;flex-wrap:wrap;align-items:center;gap:4px 2px;margin:6px 0}
 #partC .pC-chip{display:inline-flex;align-items:center;justify-content:center;min-width:26px;height:26px;padding:0 5px;border:1px solid var(--line-strong);border-radius:6px;font:600 14px "IBM Plex Mono",monospace;color:var(--ink)}
 #partC .pC-arr{color:var(--muted);font-size:13px;padding:0 1px}
+#partC .pC-tarr{padding:0 4px;font-style:italic}
+#partC .pC-chip.pC-turned{border-style:dashed}
 #partC .pC-histrow{display:flex;align-items:center;gap:8px}
 #partC .pC-warn{color:var(--warn);margin:6px 0}
 #partC .pC-how ol,#partC .pC-steps{padding-left:22px;margin:8px 0;color:var(--ink-2);max-width:72ch}
@@ -600,16 +602,20 @@ dl.flist{margin:0}
 #partC .pC-lab[open] summary{margin-bottom:6px}
 #partC .pC-strips{margin:4px 0}
 #partC .pC-strip{margin:0;border:1px solid var(--line);border-radius:10px;background:var(--surface);padding:6px;overflow-x:auto}
-#partC .pC-strip svg{min-width:300px}
+#partC .pC-strip svg{min-width:var(--pC-minw,300px)}
 #partC .pC-fig{margin:8px 0 4px;padding:6px;border:1px solid var(--line);border-radius:10px;background:var(--surface-2);overflow-x:auto}
 #partC .pC-fig svg{margin:0 auto;max-height:300px}
 #partC .pC-foldline{stroke:var(--accent);stroke-width:.05;stroke-dasharray:.1 .07;stroke-linecap:round}
 #partC [hidden]{display:none!important}
 @media print{
+  #pC-strips{color-scheme:light;
+    --surface:#FFFFFF;--surface-3:#DFE3D6;--ink:#172019;--ink-2:#434C41;--muted:#646C60;--line:#D0D6C8;--brass:#86590A;
+    --fc0:#D5D9CF;--fc1:#4E9A6B;--fc2:#D2A24C;--fc3:#4F7FAF;--fc4:#B5654A;--fc5:#8A6BB0;--fc6:#4F9C9A;--fc7:#9AA64A;--fc8:#B85C82}
   .pC-printing body *{visibility:hidden!important}
   .pC-printing #pC-strips,.pC-printing #pC-strips *{visibility:visible!important}
   .pC-printing #pC-strips{position:absolute;left:0;top:0;width:100%}
   .pC-printing #partC .pC-strip{border:0;overflow:visible}
+  #partC .pC-strip svg{min-width:0}
 }
 
 /* ---------- Polytopes: shared notepad ---------- */
@@ -670,9 +676,9 @@ input.hin.wide{width:min(100%,18em)}
         <p class="nogl pA-nogl" id="pA-nogl" hidden>This browser can't draw the 3D view, but the flat net and the facts are below.</p>
       </div>
       <div class="vctl">
-        <label class="slider" for="pA-t">Folded <input type="range" id="pA-t" min="0" max="100" step="1" value="0"> <output id="pA-tv" for="pA-t">0&nbsp;%</output></label>
+        <label class="slider" for="pA-t">Folded <input type="range" id="pA-t" min="0" max="100" step="1" value="0"> <output id="pA-tv" for="pA-t" aria-live="off">0&nbsp;%</output></label>
         <div class="btnrow">
-          <button type="button" class="btn quiet" id="pA-play" aria-pressed="false">Play</button>
+          <button type="button" class="btn quiet" id="pA-play">Play</button>
           <button type="button" class="btn quiet" id="pA-reset">Reset view</button>
           <button type="button" class="btn quiet" id="pA-next">Another net</button>
           <button type="button" class="btn quiet" id="pA-nums" aria-pressed="true">Face numbers</button>
@@ -717,7 +723,7 @@ input.hin.wide{width:min(100%,18em)}
         <label class="pB-f pB-labf"><span id="pB-labt">Label</span><input type="text" id="pB-lab" maxlength="3" autocomplete="off" autocapitalize="characters" spellcheck="false"></label>
         <div class="btnrow"><button type="button" class="btn quiet" id="pB-unlabel">Clear labels</button><button type="button" class="btn quiet" id="pB-clear">Clear the grid</button></div>
         <p class="help" id="pB-keys">Tap a cell to add or remove it. To label one, switch to <b>Label</b>, tap it and type up to 3 letters or digits. With a keyboard: arrow keys move, Space adds or removes, typing labels, Backspace deletes. Unlabelled cells show their number (#1, #2…).</p>
-        <ul class="checks" id="pB-res" role="status"></ul>
+        <ul class="checks" id="pB-res"></ul>
         <p class="pB-clue" id="pB-clue" hidden></p>
       </div>
     </div>
@@ -1009,14 +1015,15 @@ void main(){vec3 nn=normalize(vn);float d=abs(dot(nn,normalize(vec3(0.35,0.55,0.
       gl.disable(gl.POLYGON_OFFSET_FILL);
       gl.uniform1f(U('uflat'), 1); bind('line'); gl.drawArrays(gl.LINES, 0, nLine);
     }
-    if (overlay) {
+    if (overlay && (!gl || !r.width || !r.height)) overlay.innerHTML = ''; // nothing drawn (no WebGL, or hidden): no labels
+    else if (overlay) {
       // labels: project each face centre; hide when the face points away or is behind another face's plane at the centre
       const proj = (q) => { // q already in model space (after tx)
         const e = [M[0] * q[0] + M[4] * q[1] + M[8] * q[2] + M[12], M[1] * q[0] + M[5] * q[1] + M[9] * q[2] + M[13], M[2] * q[0] + M[6] * q[1] + M[10] * q[2] + M[14]];
         const cx = P[0] * e[0] / -e[2], cy = P[5] * e[1] / -e[2];
         return { x: (cx + 1) / 2 * r.width, y: (1 - cy) / 2 * r.height, e };
       };
-      let html = '';
+      let html = ''; const placed = []; // centres and widths of the labels already placed
       const all = V3.centroid(faces.map((f) => V3.centroid(f.pts.map(tx)))); // middle of the whole shape
       faces.forEach((f) => {
         if (!f.label && f.label !== 0) return;
@@ -1027,7 +1034,10 @@ void main(){vec3 nn=normalize(vn);float d=abs(dot(nn,normalize(vec3(0.35,0.55,0.
         if (out < 0) n = V3.scl(n, -1); // point the normal away from the middle of the shape
         const flatish = Math.abs(out) < 0.02; // a flat or nearly flat net: show every label
         const pc = proj(c), pn = proj(V3.add(c, V3.scl(n, 0.05)));
-        if (!opts.twoSided && !flatish && pn.e[2] - pc.e[2] <= 0) return; // the face points away from the viewer
+        if (!opts.twoSided && !flatish && V3.dot(V3.sub(pn.e, pc.e), pc.e) >= 0) return; // the face points away from the viewer (eye at the origin)
+        const lw = String(f.label).length * 9 + 10; // about the label's size: lw × 14 px around its centre
+        if (placed.some((q) => Math.abs(q.x - pc.x) < (q.w + lw) / 2 && Math.abs(q.y - pc.y) < 14)) return; // would cover a label already placed
+        placed.push({ x: pc.x, y: pc.y, w: lw });
         html += `<span class="flabel" style="left:${pc.x.toFixed(1)}px;top:${pc.y.toFixed(1)}px">${esc(f.label)}</span>`;
       });
       overlay.innerHTML = html;
@@ -1053,6 +1063,10 @@ void main(){vec3 nn=normalize(vn);float d=abs(dot(nn,normalize(vec3(0.35,0.55,0.
     if (!m) return; e.preventDefault(); quat = qmul(qaxis([m[0], m[1], 0], Math.PI / 18), quat); draw();
   });
   if (window.ResizeObserver) new ResizeObserver(() => draw()).observe(cv);
+  if (window.matchMedia) { // the OS switched light/dark: pick up the new theme's colours
+    const mq = matchMedia('(prefers-color-scheme: dark)'), onScheme = () => { build(); draw(); };
+    if (mq.addEventListener) mq.addEventListener('change', onScheme); else if (mq.addListener) mq.addListener(onScheme);
+  }
   return {
     ok: !!gl,
     /* setFaces(faces, { reframe }) : reframe = true (default) fits the view to these faces; pass false while animating */
@@ -1380,7 +1394,7 @@ function partA_init() {
   $('pA-t').addEventListener('input', () => { pA_stop(); pA_setT(Number($('pA-t').value) / 100); });
   $('pA-play').addEventListener('click', () => { if (pA_playing) pA_stop(); else pA_play(); });
   $('pA-reset').addEventListener('click', () => pA_view.reset());
-  $('pA-next').addEventListener('click', () => { if (pA_nets.length < 2) return; pA_cur = (pA_cur + 1) % pA_nets.length; pA_showNet(true); });
+  $('pA-next').addEventListener('click', () => { if (pA_nets.length < 2) return; pA_cur = (pA_cur + 1) % pA_nets.length; pA_showNet(!reducedMotion()); });
   $('pA-nums').addEventListener('click', () => { pA_nums = !pA_nums; $('pA-nums').setAttribute('aria-pressed', String(pA_nums)); pA_drawSvg(); pA_setT(pA_t); });
   $('pA-facts').addEventListener('click', (e) => {
     const b = e.target.closest('.nplus'); if (!b) return;
@@ -1411,7 +1425,8 @@ function pA_showNet(animate) {
 }
 function pA_setT(t) {
   pA_t = Math.max(0, Math.min(1, t));
-  $('pA-t').value = String(Math.round(pA_t * 100)); $('pA-tv').textContent = Math.round(pA_t * 100) + '\u00a0%';
+  const pct = Math.round(pA_t * 100) + '\u00a0%';
+  $('pA-t').value = String(Math.round(pA_t * 100)); $('pA-t').setAttribute('aria-valuetext', pct); $('pA-tv').textContent = pct;
   const R = pA_nets[pA_cur]; if (!R) return;
   const X = foldNet(R.net, pA_t);
   pA_vopts.twoSided = pA_t < 0.75;
@@ -1419,7 +1434,7 @@ function pA_setT(t) {
 }
 function pA_play() {
   if (pA_t >= 1) pA_setT(0);
-  pA_playing = true; $('pA-play').textContent = 'Pause'; $('pA-play').setAttribute('aria-pressed', 'true');
+  pA_playing = true; $('pA-play').textContent = 'Pause';
   let last = 0;
   const step = (ts) => {
     if (!pA_playing) return;
@@ -1432,7 +1447,7 @@ function pA_play() {
 }
 function pA_stop() {
   pA_playing = false; cancelAnimationFrame(pA_raf);
-  const b = $('pA-play'); if (b) { b.textContent = 'Play'; b.setAttribute('aria-pressed', 'false'); }
+  const b = $('pA-play'); if (b) b.textContent = 'Play';
 }
 function pA_legend() {
   $('pA-legend').innerHTML = pA_kinds(pA_G).map((k) => `<span class="lg pA-lg" role="listitem"><span class="sw" style="background:var(${pA_colVar(k.sides)})"></span>${k.count} ${esc(pA_plural(k.kind, k.count))}</span>`).join('');
@@ -1457,7 +1472,9 @@ function pA_drawSvg() {
   });
   const title = `A flat net of the ${G.name}: ${G.F.length} faces${pA_nums ? `, numbered 1 to ${G.F.length}` : ''}, joined by ${G.F.length - 1} folds.`;
   $('pA-svg').setAttribute('viewBox', `0 0 ${W.toFixed(4)} ${H.toFixed(4)}`);
-  $('pA-svg').style.minWidth = Math.min(W * 30, 1600).toFixed(0) + 'px'; // big nets scroll sideways in their frame rather than shrinking to nothing
+  const mw = Math.min(W * 30, 1600); // big nets scroll sideways in their frame rather than shrinking to nothing
+  $('pA-svg').style.minWidth = mw.toFixed(0) + 'px';
+  $('pA-svg').style.maxHeight = `max(min(62vh, 560px), ${(mw * H / W).toFixed(0)}px)`; // lift the height cap to the height that width needs, so the net isn't letterboxed
   $('pA-svg').innerHTML = `<title id="pA-svgt">${esc(title)}</title><g class="pA-faces">${faces}</g>` +
     `<path class="pA-fold" d="${folds}" vector-effect="non-scaling-stroke"/><path class="pA-cut" d="${cuts}" vector-effect="non-scaling-stroke"/><g class="pA-nums">${labels}</g>`;
 }
@@ -1652,6 +1669,7 @@ function pB_place(type, cells) {
 const pB_EXAMPLE = { cells: [[0, 0, 'K'], [0, 1, 'Q'], [1, 1, 'F'], [1, 2, 'Z'], [1, 3, 'H'], [2, 1, 'N']], clue: 'Example clue (made up): which letter is opposite Q?' };
 const pB_st = { type: 'sq', solid: 'auto', cells: { sq: new Map(), tri: new Map() }, cur: { sq: [3, 3], tri: [2, 5] }, mode: 'draw', t: 1, res: null, list: [] };
 let pB_view = null, pB_anim = 0;
+let pB_nbN = null; // cell count when the neighbours list was last shown (null: a new drawing or preset)
 
 function pB_save() {
   try {
@@ -1778,7 +1796,9 @@ function pB_renderFacts() {
     nb += row(`${esc(names[i])} touches`, esc(txt.join(', ')), [`Neighbours of ${names[i]} (${solidName})`, txt.join(', ')]);
   });
   $('pB-nb').innerHTML = nb;
-  $('pB-nbd').open = res.N <= 8;
+  // open by default for small nets; only reset that when a drawing is loaded or the count crosses 8, so the solver's choice sticks
+  if (pB_nbN === null || (pB_nbN <= 8) !== (res.N <= 8)) $('pB-nbd').open = res.N <= 8;
+  pB_nbN = res.N;
 }
 
 function pB_draw3d() {
@@ -1847,6 +1867,14 @@ function pB_toggle(r, c) {
   pB_refresh({ edited: true });
 }
 function pB_say(msg) { $('pB-live').textContent = msg; }
+/* the result as one sentence for the announcement: each item's heading, then its detail, without the icon */
+function pB_resText() {
+  return [...$('pB-res').children].map((li) => {
+    const parts = ['']; li.querySelector('span:not(.ic)').childNodes.forEach((n) => { if (n.nodeName === 'BR') parts.push(''); else parts[parts.length - 1] += n.textContent; });
+    const [head, ...more] = parts.map((t) => t.trim()).filter(Boolean);
+    return [head.replace(/([^.!?])$/, '$1.')].concat(more).join(' ');
+  }).join(' ');
+}
 
 function pB_loadCells(type, cells, labelled) {
   pB_stop();
@@ -1855,6 +1883,7 @@ function pB_loadCells(type, cells, labelled) {
   placed.forEach(([r, c], i) => m.set(`${r},${c}`, labelled ? pB_clean(cells[i][2]) : ''));
   pB_st.cells[type] = m;
   pB_st.cur[type] = placed[0];
+  pB_nbN = null;
 }
 
 function partB_example() {
@@ -1895,7 +1924,7 @@ function partB_init() {
     if (pB_st.mode === 'label') {
       if (!pB_st.cells[T].has(k)) { pB_st.cells[T].set(k, ''); pB_refresh({ edited: true }); } else pB_refresh();
       $('pB-lab').focus(); $('pB-lab').select();
-    } else pB_toggle(r, c);
+    } else { pB_toggle(r, c); pB_say(pB_resText()); } // tapping announces the result too, not only the keyboard
   });
   // (focus must not redraw the grid: a click that focuses it would lose its target)
   svg.addEventListener('focus', () => { const [r, c] = pB_st.cur[pB_st.type]; pB_say(pB_describeCell(pB_st.type, r, c)); });
@@ -1909,7 +1938,7 @@ function partB_init() {
       pB_st.cur[T] = [r, c]; pB_renderGrid(pB_badSet()); pB_syncLabel(); pB_say(pB_describeCell(T, r, c));
       return;
     }
-    if (e.key === ' ' || e.key === 'Enter') { e.preventDefault(); pB_toggle(r, c); pB_say(pB_describeCell(T, r, c) + ' ' + $('pB-res').textContent); return; }
+    if (e.key === ' ' || e.key === 'Enter') { e.preventDefault(); pB_toggle(r, c); pB_say(pB_describeCell(T, r, c) + ' ' + pB_resText()); return; }
     if (e.key === 'Backspace' || e.key === 'Delete') {
       if (!m.has(k)) return; e.preventDefault();
       m.set(k, e.key === 'Delete' ? '' : [...m.get(k)].slice(0, -1).join('')); pB_refresh(); pB_say(pB_describeCell(T, r, c));
@@ -2341,7 +2370,7 @@ function pC_stripSVG(w, s) {
   let nums = '';
   for (let t = 0; t < M; t++) { const x = (t + 1) / 2; nums += pC_text(x, maxY + 0.17, 0, String(t + 1), 'pC-ix', 0.13); }
   const W = (M + 1) / 2;
-  return `<svg viewBox="-0.08 ${pC_f(minY - 0.08)} ${pC_f(W + 0.16)} ${pC_f(maxY - minY + 0.34)}" role="img" aria-label="Side ${pC_sideNo(def, s)} of the ${def.name.toLowerCase()} strip" xmlns="http://www.w3.org/2000/svg">${body}${nums}</svg>`;
+  return `<svg viewBox="-0.08 ${pC_f(minY - 0.08)} ${pC_f(W + 0.16)} ${pC_f(maxY - minY + 0.34)}" style="--pC-minw:${Math.ceil((W + 0.16) * 104)}px" role="img" aria-label="Side ${pC_sideNo(def, s)} of the ${def.name.toLowerCase()} strip" xmlns="http://www.w3.org/2000/svg">${body}${nums}</svg>`;
 }
 
 /* a folding diagram: the strip part-folded, seen from above, with the next fold line dashed */
@@ -2386,7 +2415,7 @@ function pC_steps(w) {
     items.push(`Now fold it like a trihexaflexagon. Fold the wound strip <b>back</b>, away from you, along the line between its 2nd and 3rd triangles (dashed).${fig(rolled, 2, 'The wound strip with the fold line between its 2nd and 3rd triangles')}`);
     items.push(`Fold back again between its 5th and 6th triangles.${fig(S[pC_ROLL.length], 8, 'After the first of these folds, with the next fold line')}`);
     items.push(`Fold back between its 8th and 9th triangles, but bring the very end <b>in front</b> of the first triangle (tuck it over, not under), so that the blank glue triangle at the end lies face down on the blank first triangle.${fig(S[pC_ROLL.length + 1], 14, 'After the second fold, with the last fold line')}`);
-    items.push(`Glue the two blank triangles together. The hexagon now shows six 3s facing you and six 1s on the back. To reach the usual starting position, pinch-flex it once (2 comes up), move one corner round and flex again: now 1 faces you and 2 is on the back.${fig(S[S.length - 1], undefined, 'The finished hexahexaflexagon: six 3s facing you')}`);
+    items.push(`Glue the two blank triangles together. The hexagon now shows six 3s facing you and six 1s on the back. To bring 1 to the front, pinch-flex it once: 2 or 6 comes up, depending on which set of corners you pinch. Then move one corner round and flex again: now 1 faces you, with 2 (or 6) on the back.${fig(S[S.length - 1], undefined, 'The finished hexahexaflexagon: six 3s facing you')}`);
   }
   $('pC-steps').innerHTML = items.map((t) => `<li>${t}</li>`).join('');
 }
@@ -2400,7 +2429,7 @@ function pC_front(st, back) { // the face number on top (or underneath), or 0 if
 const pC_key2 = (st, k) => JSON.stringify([st.stacks, st.leaves, k]);
 function pC_reset() {
   const B = pC_built[pC_which];
-  pC_sim.st = { ...B.state, w: pC_which }; pC_sim.k = 1; pC_sim.hist = [pC_front(pC_sim.st, false)]; pC_sim.trav = null;
+  pC_sim.st = { ...B.state, w: pC_which }; pC_sim.k = 1; pC_sim.hist = [{ f: pC_front(pC_sim.st, false) }]; pC_sim.trav = null;
   pC_msg('');
 }
 function pC_wrapState(st) { st.w = pC_which; return st; }
@@ -2409,22 +2438,25 @@ function pC_doFlex() {
   if (!r.ok) { pC_msg('It won’t open at this corner. Try the next corner.', true); return false; }
   pC_sim.st = pC_wrapState(r.state);
   const f = pC_front(pC_sim.st, false), b = pC_front(pC_sim.st, true);
-  pC_sim.hist.push(f);
+  pC_sim.hist.push({ f });
   pC_msg(`Flexed: face ${f} is on top now, face ${b} underneath.`);
   return true;
 }
 function pC_msg(t, warn) { const el = $('pC-msg'); el.textContent = t; el.classList.toggle('warn', !!warn); }
 function pC_traverse() {
-  let st = pC_sim.st, k = pC_sim.k;
-  const start = pC_key2(st, k % 2), seq = [{ f: pC_front(st, false) }];
+  /* settle a corner: if it won't open at k, step one corner round, as a solver would. The start and every state after a
+     flex are compared with their corners settled, so a corner that won't open never hides the way back to the start */
+  const settle = (s, k) => { const r = pC_flex(s, pC_e(k)); if (r.ok) return { k, r, moved: false }; const k2 = (k + 5) % 6; return { k: k2, r: pC_flex(s, pC_e(k2)), moved: true }; };
+  let st = pC_sim.st, nx = settle(st, pC_sim.k);
+  const start = pC_key2(st, nx.k % 2), seq = [{ f: pC_front(st, false) }];
   for (let n = 0; n < 400; n++) {
-    let r = pC_flex(st, pC_e(k)), moved = false;
-    if (!r.ok) { k = (k + 5) % 6; moved = true; r = pC_flex(st, pC_e(k)); }
-    if (!r.ok) return { stuck: true, seq };
-    st = pC_wrapState(r.state);
-    seq.push({ f: pC_front(st, false), moved });
+    if (!nx.r.ok) return { stuck: true, seq };
+    const k = nx.k;
+    st = pC_wrapState(nx.r.state);
+    seq.push({ f: pC_front(st, false), moved: nx.moved });
+    nx = settle(st, k);
     // back where it started (perhaps turned round in your hand: that is the same position of the paper)
-    for (let r = 0; r < 6; r++) if (pC_key2(pC_spin(st, r), (k + r) % 2) === start) return { seq, flexes: seq.length - 1 };
+    for (let r = 0; r < 6; r++) if (pC_key2(pC_spin(st, r), (nx.k + r) % 2) === start) return { seq, flexes: seq.length - 1 };
   }
   return { seq, long: true };
 }
@@ -2466,14 +2498,16 @@ function pC_renderSim() {
     return `<button type="button" class="btn small quiet pC-visb" data-cell="${t}${s}" aria-label="Relabel the ${pC_POS[sec]} triangle (side ${pC_sideNo(def, s)}, triangle ${t + 1}, face ${fc})">${pC_POS[sec]}: <b>${esc(pC_cellLab(w, t, s))}</b></button>`;
   }).join('');
   // history
-  $('pC-hist').innerHTML = pC_sim.hist.map((x, i) => `${i ? '<span class="pC-arr" aria-hidden="true">→</span>' : ''}<span class="pC-chip pC-f${pC_faceCol(w, x)}">${x}</span>`).join('');
-  $('pC-histn').textContent = `${pC_sim.hist.length - 1} flex${pC_sim.hist.length === 2 ? '' : 'es'}`;
+  $('pC-hist').innerHTML = pC_sim.hist.map((x, i) => `${!i ? '' : x.turn ? '<span class="pC-arr pC-tarr">turned over</span>' : '<span class="pC-arr" aria-hidden="true">→</span>'}<span class="pC-chip pC-f${pC_faceCol(w, x.f)}${x.turn ? ' pC-turned' : ''}">${x.f}</span>`).join('');
+  const nf = pC_sim.hist.filter((x, i) => i && !x.turn).length, nt = pC_sim.hist.filter((x) => x.turn).length;
+  $('pC-histn').textContent = `${nf} flex${nf === 1 ? '' : 'es'}${nt ? `, turned over ${nt === 1 ? 'once' : nt + ' times'}` : ''}`;
 }
 function pC_renderTrav() {
   const T = pC_sim.trav, el = $('pC-trav');
   if (!T) { el.innerHTML = ''; $('pC-travnote').hidden = true; return; }
   const w = pC_which;
-  if (T.stuck) { el.innerHTML = '<p class="pC-warn">It won’t flex at this corner or the next one, so the traverse stops here.</p>'; return; }
+  if (T.stuck) { el.innerHTML = '<p class="pC-warn">It won’t flex at this corner or the next one, so the traverse stops here.</p>'; $('pC-travnote').hidden = true; return; }
+  if (T.long) { el.innerHTML = `<p class="pC-warn">After ${T.seq.length - 1} flexes it still hadn’t come back to where it started, so the traverse stopped there.</p>`; $('pC-travnote').hidden = true; return; }
   const seq = T.seq.map((x, i) => `${i ? `<span class="pC-arr" aria-hidden="true">${x.moved ? '↻→' : '→'}</span>` : ''}<span class="pC-chip pC-f${pC_faceCol(w, x.f)}">${x.f}</span>`).join('');
   const cnt = {}; T.seq.slice(1).forEach((x) => { cnt[x.f] = (cnt[x.f] || 0) + 1; });
   const counts = Object.keys(cnt).sort().map((f) => `face ${f}: ${cnt[f]}`).join(', ');
@@ -2527,8 +2561,9 @@ function pC_pickCell(cell) {
   const sel = $('pC-cell'); if (!sel.querySelector(`option[value="${cell}"]`)) return;
   sel.value = cell; pC_syncCell(); $('pC-lab').open = true; $('pC-cellv').focus(); $('pC-cellv').select();
 }
-/* the example: a made-up puzzle, letters written on single triangles of face 1 that spell a word in only one of the
-   three ways face 1 turns up */
+/* the example: a made-up puzzle, letters written on single triangles of face 1. Face 1 turns up three times in a
+   traverse but in only two arrangements (two of the three are one arrangement turned a sixth); the letters come round
+   in the same order every time, and only in one arrangement does each letter line up with the centre */
 function pC_example() {
   pC_which = 'hexa'; pC_lab.hexa = { faces: {}, cells: {} };
   pC_reset();
@@ -2541,7 +2576,7 @@ function pC_example() {
   const view = pC_view(target, false), word = 'LICHEN';
   pC_READ.forEach((sec, j) => { const { t, s } = view[sec].side; pC_lab.hexa.cells[t + s] = word[j]; });
   pC_save(); pC_renderAll();
-  pC_msg('Example loaded: face 1 has a letter on each of its triangles. Face 1 turns up three times in a traverse, and only once do the letters read LICHEN clockwise from the top. Flex to find it.');
+  pC_msg('Example loaded: a made-up letter on each of face 1’s six triangles. Face 1 turns up three times in a traverse, but in only two different arrangements: two of the three are the same arrangement turned a sixth of a turn. The letters always come round in the order LICHEN; what changes is how each one is turned. In one arrangement every letter leans; in the other, every letter lines up with the centre, three pointing out and three pointing in. Flex to find it.');
 }
 
 function partC_init() {
@@ -2558,14 +2593,14 @@ function partC_init() {
   $('pC-next').addEventListener('click', () => { pC_sim.k = (pC_sim.k + 5) % 6; pC_msg(`Pinch corner moved to the ${pC_CORNER[pC_sim.k]}.`); pC_renderSim(); });
   $('pC-turn').addEventListener('click', () => {
     pC_sim.st = pC_wrapState(pC_turn(pC_sim.st)); pC_sim.k = pC_mod(3 - pC_sim.k, 6);
-    pC_sim.hist.push(pC_front(pC_sim.st, false));
+    pC_sim.hist.push({ f: pC_front(pC_sim.st, false), turn: true });
     pC_msg(`Turned over: face ${pC_front(pC_sim.st, false)} on top now. The pinch corner stays with the same bit of paper.`); pC_renderSim();
   });
   $('pC-restart').addEventListener('click', () => { pC_reset(); pC_renderSim(); pC_renderTrav(); pC_msg('Back to how it looks just after gluing.'); });
-  $('pC-histclr').addEventListener('click', () => { pC_sim.hist = [pC_front(pC_sim.st, false)]; pC_renderSim(); });
+  $('pC-histclr').addEventListener('click', () => { pC_sim.hist = [{ f: pC_front(pC_sim.st, false) }]; pC_renderSim(); });
   $('pC-travb').addEventListener('click', () => { pC_sim.trav = pC_traverse(); pC_renderTrav(); });
   $('pC-travadd').addEventListener('click', () => {
-    const T = pC_sim.trav; if (!T || T.stuck) return;
+    const T = pC_sim.trav; if (!T || T.stuck || T.long) return;
     addNote(`${pC_DEFS[pC_which].name} traverse`, T.seq.map((x) => x.f).join(' '));
   });
   $('pC-readadd').addEventListener('click', () => addNote(`${pC_DEFS[pC_which].name} face ${pC_front(pC_sim.st, false)}, clockwise from top`, $('pC-read').textContent));

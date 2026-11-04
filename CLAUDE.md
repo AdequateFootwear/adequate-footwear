@@ -54,7 +54,7 @@ Make puzzles *slightly* more accessible: take the tedium out, never hand solvers
   The folder also holds four lessons, listed under “Start here”: `symmetric-and-asymmetric/`,
   `modular-arithmetic/`, `letters-to-numbers/` and `working-mod-n-squared/`. They aren't worksheets, so they don't carry
   `ntModule` or `asymKit`, and like the worksheets they never mention a specific cache.
-- **Polytopes** (`polytopes/`): interactive shape references, `polygons/` and `polyhedra/` so far,
+- **Polytopes** (`polytopes/`): interactive shape references, `nets/`, `polygons/` and `polyhedra/` so far,
   listed alphabetically on the folder page. Every fact is worked out from the shapes themselves, never
   from a cache, and like the lessons the pages never mention a specific cache. The tools share one
   notepad in `localStorage` (key `aft.polytopes.notes`); its markup, script and CSS are the same in

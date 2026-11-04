@@ -54,6 +54,9 @@ Make puzzles *slightly* more accessible: take the tedium out, never hand solvers
   The folder also holds four lessons, listed under “Start here”: `symmetric-and-asymmetric/`,
   `modular-arithmetic/`, `letters-to-numbers/` and `working-mod-n-squared/`. They aren't worksheets, so they don't carry
   `ntModule` or `asymKit`, and like the worksheets they never mention a specific cache.
+- **Polytopes** (`polytopes/`): interactive shape references, starting with `polyhedra/`. Every fact
+  is worked out from the shapes themselves, never from a cache, and like the lessons the pages never
+  mention a specific cache. The tools share one notepad in `localStorage` (key `aft.polytopes.notes`).
 - **Never rename or move a published tool's folder.** Cache pages link to these addresses, and
   GitHub doesn't redirect Pages URLs.
 

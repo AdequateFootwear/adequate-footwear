@@ -426,6 +426,9 @@ table.nums th:first-child,table.nums td:first-child{width:6.5em}
 .stir-head .found{display:flex;gap:4px;flex-wrap:wrap;margin-left:auto}
 .tchip{font-size:12px;border:1px solid var(--line-strong);border-radius:999px;padding:0 7px;color:var(--ink-2)}
 mark.hit{background:var(--accent-soft);color:var(--ink);border-radius:3px;padding:0 2px;font-weight:600}
+mark.glimmer{box-shadow:0 0 0 1px var(--brass),0 0 10px var(--brass);animation:glimmer 2.4s ease-in-out infinite}
+@keyframes glimmer{50%{box-shadow:0 0 0 1px var(--brass),0 0 2px var(--brass)}}
+@media (prefers-reduced-motion:reduce){mark.glimmer{animation:none}}
 mark.num{background:transparent;color:var(--ink);border-bottom:2px solid var(--brass);font-weight:600}
 mark.num.w{border-bottom-style:dashed}
 .wait-msg{color:var(--muted);font-style:italic}
@@ -446,7 +449,7 @@ table.nums td:last-child{overflow-wrap:anywhere;white-space:normal}
     <div class="top">
       <div class="brand">
         <h1>The <span class="hl">Eldritch</span> Index</h1>
-        <p>Hunting one small fact through pages of lore? Paste the pages in and throw words at them. The Index shows which passages answer, and every number they hold. It knows nothing of any puzzle; it searches only what you give it.</p>
+        <p>Hunting one small fact through pages of lore? Paste the pages in and throw words at them. The Index shows which passages answer, and every number they hold. It can’t tell you whether you’ve found an answer; it searches only what you give it.</p>
       </div>
       <div class="top-actions"><button class="btn quiet" id="btn-example" type="button">Load example</button><button class="btn quiet" id="btn-clear" type="button">Clear everything</button></div>
     </div>
@@ -468,7 +471,7 @@ table.nums td:last-child{overflow-wrap:anywhere;white-space:normal}
     <p class="lead">Throw words at the pages: the ones you think the fact is near, and their synonyms. Separate them with commas or new lines. A phrase in quotes is matched as a whole.</p>
     <div class="field">
       <textarea class="numin txt" id="seek" rows="3" spellcheck="false" autocomplete="off" aria-describedby="seek-help"></textarea>
-      <p class="help" id="seek-help">The Index only searches what you paste. It doesn't know any puzzle's answer, so it can't tell you you're right; it can only show you where your words lead.</p>
+      <p class="help" id="seek-help">The Index only searches what you paste. It can't tell you whether you've found an answer; it can only show you where your words lead. There may be some unusual features that occur at times as you use this tool.</p>
       <div class="conv-opts">
         <label class="inline"><input type="checkbox" id="opt-stem" checked> Match other endings too (spurn, spurned, spurning)</label>
         <label class="inline"><input type="checkbox" id="opt-num"> Only passages that contain a number</label>
@@ -561,14 +564,35 @@ table.nums td:last-child{overflow-wrap:anywhere;white-space:normal}
     });
     return out;
   }
-  function highlight(text, res){
+  function highlight(text, res, q, pi){
     const marks = [];
-    res.forEach((re, k) => { re.lastIndex = 0; for (const m of text.matchAll(re)) marks.push({ i: m.index, j: m.index + m[0].length, cls: 'hit', k }); });
+    res.forEach((re, k) => { re.lastIndex = 0; for (const m of text.matchAll(re)) marks.push({ i: m.index, j: m.index + m[0].length, cls: q && glimmers(text, m, k, q, pi) ? 'hit glimmer' : 'hit', k }); });
     for (const n of numbersIn(text)) marks.push({ i: n.i, j: n.i + n.len, cls: 'num' + (n.word ? ' w' : ''), title: n.word ? `= ${n.v}` : '' });
     marks.sort((a, b) => a.i - b.i || b.j - a.j);
     let out = '', pos = 0;
     for (const m of marks) { if (m.i < pos) continue; out += esc(text.slice(pos, m.i)) + `<mark class="${m.cls}"${m.title ? ` title="${m.title}"` : ''}>${esc(text.slice(m.i, m.j))}</mark>`; pos = m.j; }
     return out + esc(text.slice(pos));
+  }
+
+
+  /* ---------- quirks: harmless oddities that come and go ---------- */
+  const norm = (x) => String(x || '').toLowerCase().replace(/[^a-zÀ-ɏ0-9]+/g, ' ').trim();
+  const titleOf = (pi) => { const p = st.pages[pi]; if (p.name && p.name.trim()) return p.name; const first = (p.text.split('\n').find((l) => l.trim()) || '').trim(); return first.length <= 120 ? first : ''; };
+  const likeTitle = (term, title) => { const t = norm(term), T = norm(title); if (t.length < 3 || !T) return false; return T === t || T.includes(t) || t.includes(T); };
+  const isPal = (w) => { const x = w.toLowerCase().replace(/[^a-z]/g, ''); return x.length >= 3 && x === [...x].reverse().join(''); };
+  const MURMURS = { 66: 'Your words have been counted. Some of them twice.', 33: 'The Index has misplaced one of your pages. It is probably behind you.', 13: 'Something in the margins is reading along.', 1: 'Rest now. The pages will still be here, and so, unfortunately, will the words.' };
+  function quirkState(ts, res, ps){
+    const counts = res.map((re) => ps.reduce((n, p) => { re.lastIndex = 0; return n + [...p.text.matchAll(re)].length; }, 0));
+    const words = new Set(); for (const p of ps) for (const w of p.text.toLowerCase().match(/[a-z]{3,}/g) || []) words.add(w);
+    return { thirteen: new Set(counts.map((c, k) => (c === 13 ? k : -1)).filter((k) => k >= 0)), words, ts };
+  }
+  function glimmers(text, m, k, q, pi){
+    const w = m[0], low = w.toLowerCase();
+    if (q.thirteen.has(k)) return true;
+    if (isPal(w)) return true;
+    if (low.length >= 3 && !isPal(w) && q.words.has([...low].reverse().join(''))) return true;
+    if (pi !== undefined && /\bas\s+$/i.test(text.slice(Math.max(0, m.index - 8), m.index)) && likeTitle(q.ts[k], titleOf(pi))) return true;
+    return false;
   }
 
   /* ---------- render ---------- */
@@ -581,10 +605,15 @@ table.nums td:last-child{overflow-wrap:anywhere;white-space:normal}
   }
   const VERDICT = (k, n) => k === 0 ? '' : k >= n && n > 1 ? 'It wakes: every word you sought is here.' : k >= 2 ? 'It stirs.' : 'A whisper.';
   function render(){
-    const ts = terms(), res = ts.map(termRe), ps = passages();
+    const ts = terms(), res = ts.map(termRe), ps = passages(), q = quirkState(ts, res, ps);
     // sanity, purely for atmosphere
-    $('#sanity').textContent = `Sanity ${st.sanity}`;
-    $('#omen').textContent = `“${OMENS[(99 - st.sanity) % OMENS.length]}”`;
+    const hour = new Date().getHours() === 3;
+    $('#sanity').textContent = hour ? 'Sanity ∞' : `Sanity ${st.sanity}`;
+    let omen = `“${OMENS[(99 - st.sanity) % OMENS.length]}”`;
+    if (MURMURS[st.sanity]) omen = MURMURS[st.sanity];
+    if (ts.some((t) => /^cats?$/.test(t))) omen = '“It is said that in Ulthar, which lies beyond the river Skai, no man may kill a cat.”';
+    if (hour) omen = 'It is the hour when the Index reads you.';
+    $('#omen').textContent = omen;
     // stirs
     let shown = 0;
     if (!ps.length) $('#stirs').innerHTML = '<p class="wait-msg">Paste a page in Step 1 to begin.</p>';
@@ -596,7 +625,7 @@ table.nums td:last-child{overflow-wrap:anywhere;white-space:normal}
       $('#stirs').innerHTML = scored.length ? scored.slice(0, 60).map((x) => `
         <div class="stir s${Math.min(x.k, 3)}">
           <div class="stir-head"><span class="pg">${esc(st.pages[x.p.page].name || 'Page ' + (x.p.page + 1))}</span><span class="verdict">${VERDICT(x.k, ts.length)}</span><span class="found">${ts.filter((t, i) => x.found[i]).map((t) => `<span class="tchip">${esc(t)}</span>`).join('')}</span></div>
-          <p>${highlight(x.p.text, res)}</p>
+          <p>${highlight(x.p.text, res, q, x.p.page)}</p>
         </div>`).join('') + (scored.length > 60 ? `<p class="help">Showing the first 60 of ${scored.length}.</p>` : '')
         : `<p class="wait-msg">Silence. None of the passages hold ${ts.length === 1 ? 'that word' : 'any of those words'}${st.onlyNum ? ' alongside a number' : ''}. Try other words, or other pages.</p>`;
     }
@@ -607,7 +636,7 @@ table.nums td:last-child{overflow-wrap:anywhere;white-space:normal}
       const sentences = p.text.split(/(?<=[.!?])\s+/);
       for (const s of sentences) for (const n of numbersIn(s)) if (!f || s.toLowerCase().includes(f)) rows.push({ page: p.page, n, s });
     });
-    $('#nums').innerHTML = rows.length ? '<thead><tr><th>Number</th><th>Where it appears</th></tr></thead><tbody>' + rows.slice(0, 400).map((r) => `<tr><td class="num"><b>${esc(r.n.v)}</b>${r.n.word ? `<br><span class="nw">“${esc(r.n.raw.trim())}”</span>` : ''}</td><td><span class="pgsmall">${esc(st.pages[r.page].name || 'Page ' + (r.page + 1))}</span><br>${highlight(r.s, res)}</td></tr>`).join('') + '</tbody>' : '';
+    $('#nums').innerHTML = rows.length ? '<thead><tr><th>Number</th><th>Where it appears</th></tr></thead><tbody>' + rows.slice(0, 400).map((r) => `<tr><td class="num"><b>${esc(r.n.v)}</b>${r.n.word ? `<br><span class="nw">“${esc(r.n.raw.trim())}”</span>` : ''}</td><td><span class="pgsmall">${esc(st.pages[r.page].name || 'Page ' + (r.page + 1))}</span><br>${highlight(r.s, res, q, r.page)}</td></tr>`).join('') + '</tbody>' : '';
     $('#num-meta').textContent = rows.length ? `${rows.length} number${rows.length === 1 ? '' : 's'}` : '';
   }
   function touchSanity(){ if (st.sanity > 1) st.sanity--; }

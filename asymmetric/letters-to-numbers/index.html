@@ -426,6 +426,9 @@ table.nums th:first-child,table.nums td:first-child{width:6.5em}
 .stir-head .found{display:flex;gap:4px;flex-wrap:wrap;margin-left:auto}
 .tchip{font-size:12px;border:1px solid var(--line-strong);border-radius:999px;padding:0 7px;color:var(--ink-2)}
 mark.hit{background:var(--accent-soft);color:var(--ink);border-radius:3px;padding:0 2px;font-weight:600}
+mark.glimmer{box-shadow:0 0 0 1px var(--brass),0 0 10px var(--brass);animation:glimmer 2.4s ease-in-out infinite}
+@keyframes glimmer{50%{box-shadow:0 0 0 1px var(--brass),0 0 2px var(--brass)}}
+@media (prefers-reduced-motion:reduce){mark.glimmer{animation:none}}
 mark.num{background:transparent;color:var(--ink);border-bottom:2px solid var(--brass);font-weight:600}
 mark.num.w{border-bottom-style:dashed}
 .wait-msg{color:var(--muted);font-style:italic}

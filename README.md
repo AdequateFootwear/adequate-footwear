@@ -34,3 +34,11 @@ None of these tools is needed to solve any cache. Everything required is on each
 | ↳ Polychora | https://adequatefootwear.github.io/adequate-footwear/polytopes/polychora/ | The six regular convex polychora, the ten Schläfli–Hess star polychora, the snub 24-cell and the grand antiprism: a 4D viewer (turn through the fourth dimension, highlight a cell, a cell type or a vertex), counts, cells and faces by type, vertex and edge figures, Euler characteristic, density, symmetry, dual, Petrie polygon and sizes, names and short names, a filter by facts, and the shared notepad. |
 | ↳ Polygons | https://adequatefootwear.github.io/adequate-footwear/polytopes/polygons/ | Regular polygons, star polygons {n/d} and compounds: a drawing with circles, numbered corners, diagonals by length and their crossing points; names, angles, radii, perimeters and areas at any size; diagonal counts and lengths, crossing points (Poonen–Rubinstein), regions (counted up to 120 sides), triangulations and constructibility; a reverse lookup from one known fact; and the shared notepad. |
 | ↳ Polyhedra | https://adequatefootwear.github.io/adequate-footwear/polytopes/polyhedra/ | All 75 uniform polyhedra (with Skilling’s figure), the Catalan solids, prisms and antiprisms of any size, and the two snub antiprisms: a 3D view, counts, vertex configurations, symmetry, radii, volumes and angles, names, nicknames, short names and index numbers, a filter by facts, and simple coordinate helpers. |
+
+## Specific cache files
+
+Copies of files that a particular cache page already links, kept apart from the general tools above.
+
+| Tool | Address | What it does |
+|---|---|---|
+| .bison Files | https://adequatefootwear.github.io/adequate-footwear/dot-bison-files/ | A second, view-only copy of a records release: each file as a table, map, picture or formatted text, plus its text and its bytes, with nothing to download or install. |

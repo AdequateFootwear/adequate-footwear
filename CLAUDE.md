@@ -66,7 +66,9 @@ Make puzzles *slightly* more accessible: take the tedium out, never hand solvers
   The viewers are strict readers: a file that doesn't open says why, and its Text and Bytes views
   still show everything. Rule 1 still holds: the files are already public through the cache page,
   and this page adds nothing beyond them. Its text never mentions the cache, puzzles or answers.
-  It isn't a generic helper, so it has its own reviewer note (see "Linking a tool from a cache page").
+  It isn't a generic helper, so it has its own reviewer note (see "Linking a tool from a cache page"),
+  and it is listed apart from the tools, under "Specific cache files" at the bottom of `index.html`
+  and `README.md`.
 - **Never rename or move a published tool's folder.** Cache pages link to these addresses, and
   GitHub doesn't redirect Pages URLs.
 

@@ -15,7 +15,6 @@ None of these tools is needed to solve any cache. Everything required is on each
 | Day of the Week | https://adequatefootwear.github.io/adequate-footwear/day-of-the-week/ | Conway’s Doomsday rule: the formulas and why they work, a calculator that shows every step on a 7-day wheel, and a practice game. |
 | The Eldritch Index | https://adequatefootwear.github.io/adequate-footwear/eldritch-index/ | Searches pages you paste for the words you suspect, ranks the passages that answer, and lists every number (digits or words) with its sentence. Can’t tell you whether you’ve found an answer. |
 | Red Herring | https://adequatefootwear.github.io/adequate-footwear/red-herring/ | This might come in handy for something... |
-| .bison Files | https://adequatefootwear.github.io/adequate-footwear/dot-bison-files/ | A second, view-only copy of a records release: each file as a table, map, picture or formatted text, plus its text and its bytes, with nothing to download or install. |
 | Asymmetric Cryptosystems (folder) | https://adequatefootwear.github.io/adequate-footwear/asymmetric/ | Guided worksheets for public-key puzzles, one per cryptosystem. Named for the cryptosystem, not the cache, so solvers still work out which system a puzzle uses. |
 | ↳ Symmetric and Asymmetric | https://adequatefootwear.github.io/adequate-footwear/asymmetric/symmetric-and-asymmetric/ | Lesson: classical ciphers (Caesar, Vigenère, Gronsfeld), the key-sharing problem, one-way functions, encryption versus key exchange, and the solver as Eve. |
 | ↳ Modular Arithmetic Basics | https://adequatefootwear.github.io/adequate-footwear/asymmetric/modular-arithmetic/ | Interactive lesson: clock arithmetic, inverses, powers and generators, Fermat, Euler and φ, primes and factoring, square-and-multiply and extended Euclid, the CRT, square roots mod a prime, Pohlig–Hellman, and a tiny RSA exercise. |
@@ -35,3 +34,11 @@ None of these tools is needed to solve any cache. Everything required is on each
 | ↳ Polychora | https://adequatefootwear.github.io/adequate-footwear/polytopes/polychora/ | The six regular convex polychora, the ten Schläfli–Hess star polychora, the snub 24-cell and the grand antiprism: a 4D viewer (turn through the fourth dimension, highlight a cell, a cell type or a vertex), counts, cells and faces by type, vertex and edge figures, Euler characteristic, density, symmetry, dual, Petrie polygon and sizes, names and short names, a filter by facts, and the shared notepad. |
 | ↳ Polygons | https://adequatefootwear.github.io/adequate-footwear/polytopes/polygons/ | Regular polygons, star polygons {n/d} and compounds: a drawing with circles, numbered corners, diagonals by length and their crossing points; names, angles, radii, perimeters and areas at any size; diagonal counts and lengths, crossing points (Poonen–Rubinstein), regions (counted up to 120 sides), triangulations and constructibility; a reverse lookup from one known fact; and the shared notepad. |
 | ↳ Polyhedra | https://adequatefootwear.github.io/adequate-footwear/polytopes/polyhedra/ | All 75 uniform polyhedra (with Skilling’s figure), the Catalan solids, prisms and antiprisms of any size, and the two snub antiprisms: a 3D view, counts, vertex configurations, symmetry, radii, volumes and angles, names, nicknames, short names and index numbers, a filter by facts, and simple coordinate helpers. |
+
+## Specific cache files
+
+Copies of files that a particular cache page already links, kept apart from the general tools above.
+
+| Tool | Address | What it does |
+|---|---|---|
+| .bison Files | https://adequatefootwear.github.io/adequate-footwear/dot-bison-files/ | A second, view-only copy of a records release: each file as a table, map, picture or formatted text, plus its text and its bytes, with nothing to download or install. |

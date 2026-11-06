@@ -59,19 +59,27 @@ Make puzzles *slightly* more accessible: take the tedium out, never hand solvers
   from a cache, and like the lessons the pages never mention a specific cache. The tools share one
   notepad in `localStorage` (key `aft.polytopes.notes`); its markup, script and CSS are the same in
   every tool, so keep every copy identical.
-- **.bison Files** (`dot-bison-files/`) is the one tool that carries a cache's own released files: a
-  second, view-only copy of the files its cache page links, so solvers can look at them without
-  downloading. That is the only exception to the fictional-example rule. Show every file exactly as
-  released, name included, and never add, guess or explain anything about a file beyond showing it.
-  The viewers are strict readers: a file that doesn't open says why, and its Text and Bytes views
-  still show everything. Rule 1 still holds: the files are already public through the cache page,
-  and this page adds nothing beyond them. Apart from the owner's own note that the collection isn't needed to solve the puzzle and isn't to
-  be relied upon, its text never mentions the cache, puzzles or answers.
-  It isn't a generic helper, so it has its own reviewer note (see "Linking a tool from a cache page"),
-  and it is listed apart from the tools, under "Specific cache files" at the bottom of `index.html`
-  and `README.md`.
 - **Never rename or move a published tool's folder.** Cache pages link to these addresses, and
   GitHub doesn't redirect Pages URLs.
+
+## Specific cache files
+Everything above governs **the tools**: general helpers that never mention a specific cache, a
+puzzle or its answers. The **Specific cache files** section is different and runs under its own
+rules. It holds pages that carry one cache's own released files as view-only copies, so solvers
+can look at them without downloading. Today that is **.bison Files** (`dot-bison-files/`).
+- These pages may name their cache, talk about the puzzle, and carry the cache owner's notes
+  (for example that the collection isn't needed to solve and isn't to be relied upon). The
+  fictional-example rule doesn't apply: the real released files are the point.
+- Rule 1 still holds: a page carries only what the cache page already makes public, never final
+  or stage coordinates, answers, keywords or checker values beyond that. Rules 2 to 5 hold too.
+- Show every file exactly as released, name included, and never add, guess or explain anything
+  about a file beyond showing it. The viewers are strict readers: a file that doesn't open says
+  why, and its Text and Bytes views still show everything.
+- List them only under "Specific cache files" at the bottom of `index.html` and `README.md`,
+  apart from the tools.
+- They aren't generic helpers, so they have their own reviewer note (see "Linking a tool from a
+  cache page").
+- Never rename or move their folders either: cache pages link to them.
 
 ## How changes land
 Work on a branch and open a pull request. Aegis reviews and merges, and Pages republishes `main`
@@ -96,6 +104,6 @@ cryptosystem: TOOL NAME = "Asymmetric Cryptosystems worksheets", TOOL = `asymmet
 Reviewer note when submitting: "The linked TOOL NAME page is an optional, generic helper I host
 on GitHub Pages. It contains no solution information and isn't needed to solve."
 
-For .bison Files, use this reviewer note instead: "The linked .bison Files page is an optional,
-view-only second copy of the files this cache page already links, which I host on GitHub Pages.
-It adds nothing to them and isn't needed to solve."
+For a page in Specific cache files, use this reviewer note instead (here for .bison Files): "The
+linked .bison Files page is an optional, view-only second copy of the files this cache page
+already links, which I host on GitHub Pages. It adds nothing to them and isn't needed to solve."

@@ -437,7 +437,7 @@ mark.num.w{border-bottom-style:dashed}
 .wait-msg{color:var(--muted);font-style:italic}
 table.nums td{vertical-align:top}
 table.nums td:last-child{overflow-wrap:anywhere;white-space:normal}
-/* ---------- .bison Files ---------- */
+/* ---------- fileview.css: the shared file viewer (see fileview.js); keep every copy identical ---------- */
 /* map layer colours and code token colours, each at least 4.5:1 on the page surfaces in its theme */
 :root{
   --m1:#2563A8;--m2:#8A4FA0;--m3:#9A6200;--m4:#0F7C80;--m5:#5B6B00;--m6:#B0447A;
@@ -452,22 +452,11 @@ table.nums td:last-child{overflow-wrap:anywhere;white-space:normal}
   --tk-com:#A3AC9D;--tk-str:#6FD3C6;--tk-num:#E8B866;--tk-kw:#C9A7F2;--tk-pp:#8DB8FF;
 }
 [hidden]{display:none !important} /* buttons and rows set their own display, which would otherwise beat the hidden attribute */
-.bf-note{color:var(--ink-2);font-size:15px;margin:0;max-width:70ch}
 .panel{min-width:0}
 .panel h3.bf-name,.bf-name{font-family:"IBM Plex Mono",monospace;font-weight:600;font-size:17px;letter-spacing:0;text-transform:none;margin:0;color:var(--ink);overflow-wrap:anywhere;min-width:0}
 .bf-name:focus{outline:none}
 @media (max-width:420px){.panel h3.bf-name,.bf-name{font-size:15.5px}}
 .bf-name:focus-visible{outline:2px solid var(--focus);outline-offset:2px}
-
-/* the list of files */
-.bf-list{list-style:none;margin:10px 0 0;padding:0;display:grid;grid-template-columns:repeat(auto-fill,minmax(min(100%,290px),1fr));gap:6px}
-.bf-file{width:100%;display:flex;justify-content:space-between;align-items:baseline;gap:4px 12px;flex-wrap:wrap;text-align:left;cursor:pointer;
-  border:1px solid var(--line-strong);border-radius:7px;background:var(--surface);color:var(--ink);padding:8px 10px;line-height:1.3}
-.bf-file:hover{background:var(--surface-2)}
-.bf-file[aria-current="true"]{border-color:var(--accent);box-shadow:inset 4px 0 0 var(--accent);background:var(--accent-soft)}
-.bf-fn{font-family:"IBM Plex Mono",monospace;font-size:14px;overflow-wrap:anywhere;min-width:0}
-.bf-fs{font-size:13px;color:var(--muted);font-variant-numeric:tabular-nums;white-space:nowrap}
-.bf-file[aria-current="true"] .bf-fs{color:var(--ink-2)}
 
 /* the viewer */
 .bf-head{display:flex;align-items:baseline;gap:4px 12px;flex-wrap:wrap;margin:6px 0 10px}
@@ -526,6 +515,9 @@ mark.bf-hit.cur .bf-odd{color:var(--accent-ink);background:transparent}
 .bf-hex .hd{color:var(--brass)}
 .bf-hex .d{color:var(--muted)}
 .bf-hex .at{background:var(--accent);color:var(--accent-ink);border-radius:2px}
+.bf-hex .rg{background:var(--accent-soft);box-shadow:0 0 0 1px var(--accent);border-radius:2px}
+.bf-hex .rg .d{color:var(--ink-2)}
+.bf-hl{display:flex;flex-wrap:wrap;gap:6px 12px;align-items:center;margin:0 0 6px;font-size:14px;color:var(--ink);overflow-wrap:anywhere}
 .bf-pager{display:flex;flex-wrap:wrap;gap:6px 10px;align-items:center;margin:8px 0}
 .bf-pager .bf-count{min-width:0}
 @media (max-width:560px){.bf-pager .bf-count{order:-1;flex-basis:100%}}
@@ -615,6 +607,18 @@ input[type=range].bf-range{accent-color:var(--accent);width:9em;max-width:100%}
 .bf-md pre.md-raw{white-space:pre-wrap;font-family:"IBM Plex Mono",monospace;font-size:13px;color:var(--ink-2)}
 .bf-md .md-img,.bf-md .bf-imgref{font-family:"IBM Plex Mono",monospace;font-size:13px;color:var(--ink-2);border:1px dashed var(--line-strong);border-radius:4px;padding:0 5px}
 @media (max-width:520px){.bf-tab{padding:7px 10px 6px;font-size:15px}.bf-lines{font-size:12.5px}.bf-hex{font-size:12px}}
+/* ---------- .bison Files: what only this page has (the viewer's styles are in fileview.css) ---------- */
+.bf-note{color:var(--ink-2);font-size:15px;margin:0;max-width:70ch}
+
+/* the list of files */
+.bf-list{list-style:none;margin:10px 0 0;padding:0;display:grid;grid-template-columns:repeat(auto-fill,minmax(min(100%,290px),1fr));gap:6px}
+.bf-file{width:100%;display:flex;justify-content:space-between;align-items:baseline;gap:4px 12px;flex-wrap:wrap;text-align:left;cursor:pointer;
+  border:1px solid var(--line-strong);border-radius:7px;background:var(--surface);color:var(--ink);padding:8px 10px;line-height:1.3}
+.bf-file:hover{background:var(--surface-2)}
+.bf-file[aria-current="true"]{border-color:var(--accent);box-shadow:inset 4px 0 0 var(--accent);background:var(--accent-soft)}
+.bf-fn{font-family:"IBM Plex Mono",monospace;font-size:14px;overflow-wrap:anywhere;min-width:0}
+.bf-fs{font-size:13px;color:var(--muted);font-variant-numeric:tabular-nums;white-space:nowrap}
+.bf-file[aria-current="true"] .bf-fs{color:var(--ink-2)}
 </style>
 </head>
 <body>
@@ -649,14 +653,7 @@ input[type=range].bf-range{accent-color:var(--accent);width:9em;max-width:100%}
   <section class="panel" id="viewer" aria-labelledby="h-viewer">
     <div class="panel-head"><span class="step">2</span><h2 id="h-viewer">The viewer</h2></div>
     <p class="help" id="bf-empty">No file is open yet. Choose one from the list above.</p>
-    <div id="bf-open" hidden>
-      <div class="bf-head">
-        <h3 class="bf-name" id="bf-name" tabindex="-1"></h3>
-        <span class="bf-size" id="bf-size"></span>
-      </div>
-      <div class="bf-tabs" role="tablist" aria-label="Views of this file" id="bf-tabs"></div>
-      <div class="bf-panel" role="tabpanel" id="bf-panel" tabindex="0"></div>
-    </div>
+    <div id="bf-open" hidden></div>
     <p class="sr" role="status" id="bf-status"></p>
   </section>
 
@@ -3071,10 +3068,12 @@ function pickleLoad(u8) {
 
 const PK_NOPRINT = /[\p{Cc}\p{Cf}\p{Cs}\p{Co}\p{Cn}\p{Zl}\p{Zp}\p{Zs}]/u;
 
-/* repr of a str, choosing quotes and escapes the way Python does. */
+/* repr of a str, choosing quotes and escapes the way Python does. The text is built in pieces,
+   joined once, so a long value doesn't take far more memory than its own length. */
 function pyStr(s) {
   const q = s.includes("'") && !s.includes('"') ? '"' : "'";
-  let out = q;
+  const parts = [q];
+  let out = '';
   for (const ch of s) {
     const c = ch.codePointAt(0);
     if (ch === q || ch === '\\') out += '\\' + ch;
@@ -3087,23 +3086,28 @@ function pyStr(s) {
     else if (c <= 0xff) out += '\\x' + c.toString(16).padStart(2, '0');
     else if (c <= 0xffff) out += '\\u' + c.toString(16).padStart(4, '0');
     else out += '\\U' + c.toString(16).padStart(8, '0');
+    if (out.length >= 4096) { parts.push(out); out = ''; }
   }
-  return out + q;
+  parts.push(out, q);
+  return parts.join('');
 }
 
-/* repr of bytes. */
+/* repr of bytes, from a table of what each byte value is written as. */
+let PY_BYTE = null;
 function pyBytes(b) {
-  const q = b.includes(0x27) && !b.includes(0x22) ? '"' : "'";
-  let out = 'b' + q;
-  for (const c of b) {
-    if (c === q.charCodeAt(0) || c === 0x5c) out += '\\' + String.fromCharCode(c);
-    else if (c === 9) out += '\\t';
-    else if (c === 10) out += '\\n';
-    else if (c === 13) out += '\\r';
-    else if (c < 0x20 || c >= 0x7f) out += '\\x' + c.toString(16).padStart(2, '0');
-    else out += String.fromCharCode(c);
+  if (!PY_BYTE) {
+    PY_BYTE = [];
+    for (let c = 0; c < 256; c++) PY_BYTE.push(c === 0x5c ? '\\\\' : c === 9 ? '\\t' : c === 10 ? '\\n' : c === 13 ? '\\r' : c < 0x20 || c >= 0x7f ? '\\x' + c.toString(16).padStart(2, '0') : String.fromCharCode(c));
   }
-  return out + q;
+  const q = b.includes(0x27) && !b.includes(0x22) ? '"' : "'", qc = q.charCodeAt(0);
+  const parts = ['b' + q], run = [];
+  for (let i = 0; i < b.length; i++) {
+    const c = b[i];
+    run.push(c === qc ? '\\' + q : PY_BYTE[c]);
+    if (run.length >= 4096) { parts.push(run.join('')); run.length = 0; }
+  }
+  parts.push(run.join(''), q);
+  return parts.join('');
 }
 
 /* repr of a float: the shortest digits that read back the same, in Python's layout. */
@@ -3130,8 +3134,30 @@ function pyRepr(v, opts = {}) {
   const busy = new Set(); // containers being written out, to catch ones that contain themselves
   const WIDTH = 80;
   let work = 0, depth = 0;
+  // How much text it writes, at most: in one value, and made in all. A value met a second time
+  // (shared in the pickle, or met again by the layout below) is kept once written, unless it holds
+  // a container that contains itself, whose text depends on where it is met; so sharing doesn't
+  // make the work grow.
+  const MAX_ONE = 16e6, MAX_ALL = 64e6;
+  let made = 0, loops = 0;
+  const done = new Map(), met = new Set();
+  const tooLarge = () => { throw new Error('The value is too large to write out here.'); };
+  const joined = (list, f, sep) => { // the texts of a list's items, joined, giving up as soon as they are too long
+    const parts = []; let len = 0;
+    for (let i = 0; i < list.length; i++) { const t = f(list[i]); len += t.length + (i ? sep.length : 0); if (len > MAX_ONE) tooLarge(); parts.push(t); }
+    return parts.join(sep);
+  };
   const flat = (v) => {
-    if (++work > 3e6) throw new Error('The value is too large to write out here.');
+    if (++work > 3e6) tooLarge();
+    const obj = v !== null && typeof v === 'object';
+    if (obj && done.has(v)) return done.get(v);
+    const before = loops;
+    const r = flat1(v);
+    if (r.length > MAX_ONE || (made += r.length) > MAX_ALL) tooLarge();
+    if (obj && loops === before) { if (met.has(v)) done.set(v, r); else met.add(v); }
+    return r;
+  };
+  const flat1 = (v) => {
     if (v === null || v === undefined) return 'None';
     if (v === true) return 'True';
     if (v === false) return 'False';
@@ -3144,21 +3170,21 @@ function pyRepr(v, opts = {}) {
     if (v.__py === 'bytes') return pyBytes(v.v);
     if (v.__py === 'bytearray') return 'bytearray(' + pyBytes(v.v) + ')';
     if (v.__py === 'global') return v.module + '.' + v.name;
-    if (busy.has(v)) return Array.isArray(v) ? (v._tuple ? '(...)' : '[...]') : v.__py === 'dict' ? '{...}' : v.__py === 'set' || v.__py === 'frozenset' ? v.__py + '(...)' : '...';
+    if (busy.has(v)) { loops++; return Array.isArray(v) ? (v._tuple ? '(...)' : '[...]') : v.__py === 'dict' ? '{...}' : v.__py === 'set' || v.__py === 'frozenset' ? v.__py + '(...)' : '...'; }
     if (++depth > 900) throw new Error('The value is nested too deeply to write out here (more than 900 levels).');
     busy.add(v);
     try {
       if (Array.isArray(v)) {
-        const inner = v.map(flat).join(', ');
+        const inner = joined(v, flat, ', ');
         return v._tuple ? '(' + inner + (v.length === 1 ? ',)' : ')') : '[' + inner + ']';
       }
-      if (v.__py === 'dict') return '{' + v.entries.map(([k, x]) => flat(k) + ': ' + flat(x)).join(', ') + '}';
+      if (v.__py === 'dict') return '{' + joined(v.entries, ([k, x]) => flat(k) + ': ' + flat(x), ', ') + '}';
       if (v.__py === 'set' || v.__py === 'frozenset') {
         if (!v.items.length) return v.__py + '()';
-        const inner = '{' + v.items.map(flat).join(', ') + '}';
+        const inner = '{' + joined(v.items, flat, ', ') + '}';
         return v.__py === 'set' ? inner : 'frozenset(' + inner + ')';
       }
-      return callHead(v).map((part) => (typeof part === 'string' ? part : part.pre + part.items.map((it) => (it.k ? it.k : '') + flat(it.v)).join(', ') + part.post)).join('');
+      return joined(callHead(v), (part) => (typeof part === 'string' ? part : part.pre + joined(part.items, (it) => (it.k ? it.k : '') + flat(it.v), ', ') + part.post), '');
     } finally { busy.delete(v); depth--; }
   };
   // a call, persistent id or extension node as a list of pieces: plain strings, and argument
@@ -3197,7 +3223,7 @@ function pyRepr(v, opts = {}) {
   const fmt = (v, indent, allowance) => {
     const rep = flat(v);
     const container = v && typeof v === 'object' && !busy.has(v) && (Array.isArray(v) || ['dict', 'set', 'frozenset', 'call', 'persid', 'ext'].includes(v.__py));
-    if (rep.length <= WIDTH - indent - allowance || !container) { out += rep; return; }
+    if (rep.length <= WIDTH - indent - allowance || !container) { out += rep; if (out.length > MAX_ONE) tooLarge(); return; }
     busy.add(v);
     if (Array.isArray(v)) {
       const end = v._tuple ? (v.length === 1 ? ',)' : ')') : ']';
@@ -3356,7 +3382,7 @@ function mdDestTitle(s, i, closer, noTitle) {
     for (; j < s.length; j++) {
       const c = s[j];
       if (c === '\\' && MD_PUNCT.test(s[j + 1] || '')) { j++; continue; }
-      if (c === '(') depth++;
+      if (c === '(') { if (++depth > 32) return null; } // deeper nesting isn't read as an address, as in other CommonMark readers
       else if (c === ')') { if (!depth) break; depth--; }
       else if (/[\s\x00-\x1f\x7f]/.test(c)) break;
     }
@@ -3404,8 +3430,14 @@ function mdInline(src, refs) {
     if (d.prev) d.prev.next = d.next;
     if (d.next) d.next.prev = d.prev; else dTop = d.prev;
   };
+  // Works on a linked list of the nodes, so each match takes time only for what it wraps; the
+  // array is rebuilt from the list at the end.
   const processEmphasis = (arr, bottom) => {
     const openersBottom = {};
+    const cell = new Map(); // node -> its place in the list
+    let head = null, tail = null;
+    for (const v of arr) { const c = { v, prev: tail, next: null }; if (tail) tail.next = c; else head = c; tail = c; cell.set(v, c); }
+    const unlink = (c) => { if (c.prev) c.prev.next = c.next; else head = c.next; if (c.next) c.next.prev = c.prev; else tail = c.prev; };
     let closer = dTop;
     while (closer && closer.prev !== bottom) closer = closer.prev;
     while (closer) {
@@ -3422,12 +3454,14 @@ function mdInline(src, refs) {
         const use = ch === '~' ? closer.n : closer.n >= 2 && opener.n >= 2 ? 2 : 1;
         opener.n -= use; closer.n -= use;
         opener.node.s = opener.node.s.slice(0, opener.n); closer.node.s = closer.node.s.slice(0, closer.n);
-        const a = arr.indexOf(opener.node), b = arr.indexOf(closer.node);
-        const kids = arr.splice(a + 1, b - a - 1);
-        arr.splice(a + 1, 0, { t: ch === '~' ? 'del' : use === 2 ? 'strong' : 'em', kids });
+        const a = cell.get(opener.node), b = cell.get(closer.node);
+        const kids = [];
+        for (let c = a.next; c !== b; c = c.next) kids.push(c.v);
+        const w = { v: { t: ch === '~' ? 'del' : use === 2 ? 'strong' : 'em', kids }, prev: a, next: b };
+        a.next = w; b.prev = w;
         opener.next = closer; closer.prev = opener; // drop the runs in between
-        if (!opener.n) { arr.splice(arr.indexOf(opener.node), 1); removeDelim(opener); }
-        if (!closer.n) { const nx = closer.next; arr.splice(arr.indexOf(closer.node), 1); removeDelim(closer); closer = nx; }
+        if (!opener.n) { unlink(a); removeDelim(opener); }
+        if (!closer.n) { const nx = closer.next; unlink(b); removeDelim(closer); closer = nx; }
       } else {
         closer = closer.next;
         openersBottom[key] = old.prev;
@@ -3435,6 +3469,8 @@ function mdInline(src, refs) {
       }
     }
     while (dTop && dTop !== bottom) removeDelim(dTop);
+    arr.length = 0;
+    for (let c = head; c; c = c.next) arr.push(c.v);
   };
 
   while (i < src.length) {
@@ -3515,13 +3551,15 @@ function mdInline(src, refs) {
       }
       if (!link) { brackets.pop(); text += c; i++; continue; }
       flush();
-      const a = nodes.indexOf(op.node);
+      const a = nodes.lastIndexOf(op.node); // near the end: what follows it is what the link holds
       const kids = nodes.splice(a + 1);
       nodes.splice(a, 1);
       processEmphasis(kids, op.bottom);
       nodes.push({ t: op.image ? 'img' : 'link', href: link.href, title: link.title, kids });
       brackets.pop();
-      if (!op.image) for (const b of brackets) if (!b.image) b.active = false; // no links inside links
+      if (!op.image) { // no links inside links; the ones further down were already made inactive by an earlier link, if one is
+        for (let k = brackets.length - 1; k >= 0; k--) { const b = brackets[k]; if (b.image) continue; if (!b.active) break; b.active = false; }
+      }
       i = end; continue;
     }
     if (c === '\n') {
@@ -4034,6 +4072,91 @@ function btText(u8, start, end) {
 function bytesAsText(u8, start, end) { return btText(u8, start, end); }
 return { tiffRead, tiffToRGBA, tiffPixel, pickleLoad, pyRepr, csvParse, mdRender, highlight, bytesAsText };
 })();
+/* ==========================================================================================
+   fileview.js: a viewer for one file at a time, shared by every page that shows files.
+   It is written from scratch and inlined into each page by the builder's INCLUDE marker, so
+   keep every copy identical. It runs entirely in the browser: nothing is uploaded or fetched.
+
+   Make it once, after the three readers, with the readers it should use:
+     const FV = fileViewer({ SQ, PQ, FM });
+   where SQ = { sqliteOpen, gpkgLayers, sqliteText }, PQ = { parquetRead } and
+   FM = { tiffRead, tiffToRGBA, tiffPixel, pickleLoad, pyRepr, csvParse, mdRender, highlight, bytesAsText }.
+   fileViewer only touches the page when a viewer is opened, so it can also be loaded in Node
+   for tests: new Function(src + '; return fileViewer')()(readers).
+
+   An entry is { name, bytes } where bytes is a Uint8Array (a getter is fine: it is read when
+   needed). What is worked out from an entry is kept, keyed by the entry object itself, so open
+   the same object again to reuse it.
+
+   View ids. A plain id ('map', 'tables', 'table', 'picture', 'formatted', 'code', 'contents',
+   'text', 'bytes') reads the file the way its name says. An id with a reader after a colon
+   reads it that way whatever its name: 'map:gpkg', 'map:geojson', 'map:tiff', 'tables:sqlite',
+   'table:csv', 'table:tsv', 'table:parquet', 'table:geojson', 'picture:image', 'picture:tiff',
+   'formatted:md', 'code:c', 'code:r', 'contents:pickle'.
+
+   FV.viewsFor(name)    -> the plain view ids for a file name, chosen by the ending of the name only.
+   FV.allViews()        -> [{ id, label }] for an "Open as…" menu: every way of reading a file,
+                           each with a plain label. The labels name formats, because the person
+                           chooses them; nothing here guesses what a file is.
+   FV.labelOf(id)       -> the short label a tab shows for a view id ('Map', 'Table (CSV)' …).
+   FV.resolve(id, name) -> the id with its reader, as it would read a file of that name
+                           ('table', 'a.csv' -> 'table:csv'), or null when the name gives no
+                           reader for a plain id ('map', 'notes.txt' -> null). 'text' and 'bytes'
+                           come back as they are. An extra view's id comes back as it is.
+   FV.open(container, entry, opts) -> a viewer handle (below). Renders the file's name, size, a
+                           row of tabs and the open view into container (an empty element).
+                           Calling it again on the same container replaces what it shows.
+     opts.views         the tab list, in order, overriding viewsFor(entry.name). Ids the name
+                        can't resolve are left out, and two ids that read the file the same way
+                        make one tab (the first).
+     opts.initialView   the view to show first; the first tab if it isn't one of the tabs.
+     opts.onViewChange(id, entry)  called each time a view is shown, the first one included.
+     opts.extraViews    [{ id, label, render(el, entry, api) }]: more views this page adds. When
+                        opts.views is given it decides where they go; otherwise they follow
+                        the views the name gives. render may return a promise; anything it
+                        throws or rejects with is shown as the view's failure note.
+     opts.otherEntries  the other open files: the Map view offers those with a Map view by
+                        name as layers to draw too.
+     opts.readEntry(entry)  with otherEntries, gives a promise of an entry's bytes: the Map view
+                        calls it when one of them is chosen as a layer, before reading it, so a
+                        page can read files only when they are needed.
+     opts.settings      an object the viewer reads and writes its few settings on (only
+                        settings.wrap, for wrapping long lines, so far).
+     opts.onSettingsChange(settings)  called after the person changes a setting.
+     opts.scrollTo      an element to scroll to the top of the window once the name is shown
+                        (the section holding the viewer, say).
+     opts.focus         true moves the keyboard focus to the file's name (without scrolling).
+     opts.textLimit     a number of bytes: on a bigger file the Text, Code and Formatted views lay
+                        out only about that much from the start (to the end of a line), and say so.
+                        Without it, they lay out the whole file.
+     opts.onShowAllText(view)  with textLimit: those views' notes then offer to show everything,
+                        and call this with 'text', 'code' or 'formatted' when it is chosen (the page
+                        then opens the file again without textLimit).
+   The handle: { entry, view() -> the id shown, views() -> the tab ids, show(id),
+                 jumpToBytes(start, end), close() }.
+   api, given to an extra view's render:
+     api.bytes                 the entry's bytes
+     api.jumpToBytes(start, end)  switches to the Bytes view, turns to the page holding start,
+                               and marks bytes start to end - 1 (end is exclusive)
+     api.show(id)              switch to another tab
+     api.live()                false once the person has moved on to another view or file
+     api.onCleanup(fn)         run fn when this view is closed
+     api.memo(key, fn), api.memoAsync(key, fn)  work something out once per entry and keep it
+                               (or the reason it failed); keys are kept apart from the core's
+     api.fail(why)             the HTML of a failure note giving a plain reason
+     api.tableView(host, spec) the core's paged table (spec as tableView below)
+     api.esc, api.fmtInt, api.plural, api.hex2  helpers, as in FV.helpers
+   FV.forget(entry)     drops what was kept for an entry (and its picture address).
+   FV.readers           the readers it was made with. FV.helpers: { esc, fmtInt, plural, hex2, reasonOf, utf8Len,
+                        extOf }, where extOf(name) is the ending of a name as the views read it ('' for none).
+
+   One viewer at a time per page: the views use fixed element ids (bf-name, bf-tabs, bf-panel,
+   tx-…, bx-…, mp-… and so on). Announcements go to the element with id bf-status, which is
+   made inside the container if the page has none. The styles are in fileview.css.
+   ========================================================================================== */
+function fileViewer(R) {
+'use strict';
+const SQ = R.SQ, PQ = R.PQ, FM = R.FM;
 
 /* ---------- small helpers ---------- */
 const $ = (id) => document.getElementById(id);
@@ -4045,7 +4168,7 @@ const reasonOf = (err) => (err && err.message ? String(err.message) : String(err
 const cssVar = (name) => getComputedStyle(document.documentElement).getPropertyValue(name).trim();
 const escRe = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 let announceT = 0;
-function announce(text) { clearTimeout(announceT); announceT = setTimeout(() => { $('bf-status').textContent = text; }, 300); }
+function announce(text) { clearTimeout(announceT); announceT = setTimeout(() => { const s = $('bf-status'); if (s) s.textContent = text; }, 300); }
 function utf8Len(s) { // how many bytes a piece of valid text takes in UTF-8
   let n = 0;
   for (let i = 0; i < s.length; i++) {
@@ -4056,30 +4179,23 @@ function utf8Len(s) { // how many bytes a piece of valid text takes in UTF-8
   return n;
 }
 
-/* ---------- the files, decoded only when first opened ---------- */
-const coll = new Intl.Collator('en', { sensitivity: 'base', numeric: true });
-const entries = FILES.map((f) => {
-  const b64 = String(f.b64 || ''), pad = b64.endsWith('==') ? 2 : b64.endsWith('=') ? 1 : 0;
-  return { name: String(f.name), b64, size: b64.length ? b64.length / 4 * 3 - pad : 0, u8: null, memo: new Map() };
-}).sort((a, b) => coll.compare(a.name, b.name) || (a.name < b.name ? -1 : a.name > b.name ? 1 : 0));
-function bytesOf(e) {
-  if (!e.u8) {
-    const bin = atob(e.b64), u = new Uint8Array(bin.length);
-    for (let i = 0; i < bin.length; i++) u[i] = bin.charCodeAt(i);
-    e.u8 = u; e.b64 = '';
-  }
-  return e.u8;
-}
+/* ---------- what is kept for each entry: decoded results, or the reason they failed ---------- */
+const KEPT = new WeakMap();
+function st(e) { let s = KEPT.get(e); if (!s) { s = { memo: new Map(), url: null, tablePick: undefined }; KEPT.set(e, s); } return s; }
+function forget(e) { const s = KEPT.get(e); if (s && s.url) { try { URL.revokeObjectURL(s.url); } catch (err) { /* nothing to free */ } } KEPT.delete(e); }
+const bytesOf = (e) => e.bytes;
 /* Work something out once per file and keep the result, or the reason it failed. */
 function memo(e, key, fn) {
-  if (!e.memo.has(key)) { try { e.memo.set(key, { ok: true, v: fn() }); } catch (err) { e.memo.set(key, { ok: false, why: reasonOf(err) }); } }
-  const r = e.memo.get(key);
+  const m = st(e).memo;
+  if (!m.has(key)) { try { m.set(key, { ok: true, v: fn() }); } catch (err) { m.set(key, { ok: false, why: reasonOf(err) }); } }
+  const r = m.get(key);
   if (!r.ok) throw new Error(r.why);
   return r.v;
 }
 function memoAsync(e, key, fn) { // the same for a reader that takes time: the promise itself is kept
-  if (!e.memo.has(key)) e.memo.set(key, Promise.resolve().then(fn));
-  return e.memo.get(key);
+  const m = st(e).memo;
+  if (!m.has(key)) m.set(key, Promise.resolve().then(fn));
+  return m.get(key);
 }
 const strictText = (e) => memo(e, 'utf8', () => {
   try { return new TextDecoder('utf-8', { fatal: true }).decode(bytesOf(e)); } catch (err) { throw new Error('The file isn’t valid UTF-8 text, so it can’t be read this way.'); }
@@ -4091,12 +4207,9 @@ const parquetOf = (e) => memoAsync(e, 'parquet', () => PQ.parquetRead(bytesOf(e)
 /* ---------- which views a file gets: from the ending of its name only ---------- */
 const IMAGE_TYPES = { png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg', gif: 'image/gif', webp: 'image/webp', bmp: 'image/bmp' };
 const LABELS = { map: 'Map', tables: 'Tables', table: 'Table', picture: 'Picture', text: 'Text', bytes: 'Bytes', contents: 'Contents', code: 'Code', formatted: 'Formatted' };
-function extOf(name) { const i = name.lastIndexOf('.'); return i > 0 && i < name.length - 1 ? name.slice(i + 1).toLowerCase() : ''; }
-const isTiff = (e) => ['tif', 'tiff', 'geotiff'].includes(extOf(e.name));
-const isGpkg = (e) => extOf(e.name) === 'gpkg';
-const isGeojson = (e) => extOf(e.name) === 'geojson';
-function viewsFor(e) {
-  const x = extOf(e.name);
+function extOf(name) { name = String(name); const i = name.lastIndexOf('.'); return i > 0 && i < name.length - 1 ? name.slice(i + 1).toLowerCase() : ''; }
+function viewsFor(name) {
+  const x = extOf(name);
   if (x === 'gpkg') return ['map', 'tables', 'text', 'bytes'];
   if (IMAGE_TYPES[x]) return ['picture', 'text', 'bytes'];
   if (x === 'csv' || x === 'tsv' || x === 'parquet') return ['table', 'text', 'bytes'];
@@ -4109,79 +4222,185 @@ function viewsFor(e) {
   if (x === 'tif' || x === 'tiff') return ['picture', 'text', 'bytes'];
   return ['text', 'bytes']; // .json, the plain-text endings, and every other name
 }
+/* Every way of reading a file, for a page that lets the person choose: [id, tab label, menu label]. */
+const READERS = [
+  ['map:gpkg', 'Map (GeoPackage)', 'Map, read as a GeoPackage'],
+  ['map:geojson', 'Map (GeoJSON)', 'Map, read as GeoJSON'],
+  ['map:tiff', 'Map (GeoTIFF)', 'Map, read as a GeoTIFF picture'],
+  ['tables:sqlite', 'Tables (SQLite)', 'Tables, read as an SQLite database'],
+  ['table:csv', 'Table (CSV)', 'Table, read as comma-separated values (CSV)'],
+  ['table:tsv', 'Table (TSV)', 'Table, read as tab-separated values (TSV)'],
+  ['table:parquet', 'Table (Parquet)', 'Table, read as a Parquet file'],
+  ['table:geojson', 'Table (GeoJSON)', 'Table of features, read as GeoJSON'],
+  ['picture:image', 'Picture (browser)', 'Picture, as this browser opens PNG, JPEG, GIF, WebP and BMP'],
+  ['picture:tiff', 'Picture (TIFF)', 'Picture, read as a TIFF'],
+  ['formatted:md', 'Formatted (Markdown)', 'Formatted, read as Markdown'],
+  ['code:c', 'Code (C)', 'Code, coloured as C'],
+  ['code:r', 'Code (R)', 'Code, coloured as R'],
+  ['contents:pickle', 'Contents (pickle)', 'Contents, read as a Python pickle (no code from it is run)'],
+  ['text', 'Text', 'Text'],
+  ['bytes', 'Bytes', 'Bytes'],
+];
+const READER_IDS = new Set(READERS.map((r) => r[0]));
+function allViews() { return READERS.map(([id, , label]) => ({ id, label })); }
+/* The reader a plain view id uses for a file of this name, or '' when the name gives none. */
+function nameReader(base, name) {
+  const x = extOf(name), tif = x === 'tif' || x === 'tiff' || x === 'geotiff';
+  switch (base) {
+    case 'map': return x === 'gpkg' ? 'gpkg' : x === 'geojson' ? 'geojson' : tif ? 'tiff' : '';
+    case 'table': return x === 'csv' || x === 'tsv' || x === 'parquet' || x === 'geojson' ? x : '';
+    case 'tables': return 'sqlite';
+    case 'picture': return tif ? 'tiff' : 'image';
+    case 'code': return x === 'r' ? 'r' : 'c';
+    case 'formatted': return 'md';
+    case 'contents': return 'pickle';
+    default: return '';
+  }
+}
+function resolve(id, name) {
+  id = String(id);
+  if (id === 'text' || id === 'bytes' || READER_IDS.has(id)) return id;
+  if (!LABELS[id]) return null;
+  const r = nameReader(id, name);
+  return r ? `${id}:${r}` : null;
+}
+function labelOf(id) {
+  if (LABELS[id]) return LABELS[id];
+  const r = READERS.find((x) => x[0] === id);
+  return r ? r[1] : String(id);
+}
+
+/* ---------- the open viewer: one at a time ---------- */
+let cur = null, curOpts = {}, curTabs = [], curView = null, curHost = null, curExtra = new Map(), settings = {};
+let viewTok = 0, cleanup = null, redrawHook = null, pendingRange = null, themed = false;
+const live = (tok) => tok === viewTok;
+const saveSettings = () => { if (curOpts.onSettingsChange) { try { curOpts.onSettingsChange(settings); } catch (err) { /* the page's own business */ } } };
 function failNote(e, why) {
-  const also = viewsFor(e).includes('text') ? 'The Text and Bytes views still show everything in the file.' : 'The Bytes view still shows every byte in the file.';
+  const also = curTabs.some((t) => t.id === 'text') ? 'The Text and Bytes views still show everything in the file.' : 'The Bytes view still shows every byte in the file.';
   return `<div class="bf-fail" role="note"><p><span class="mark">This view can’t be shown.</span> ${esc(why)}</p><p class="also">${also}</p></div>`;
 }
-
-/* ---------- remembering the open file and view ---------- */
-const KEY = 'dot-bison-files:v1';
-let prefs = {};
-try { const p = JSON.parse(localStorage.getItem(KEY) || '{}'); if (p && typeof p === 'object') prefs = p; } catch (err) { /* storage unavailable */ }
-function savePrefs() { try { localStorage.setItem(KEY, JSON.stringify(prefs)); } catch (err) { /* storage unavailable */ } }
-function setHash(e, view) {
-  const h = '#' + encodeURIComponent(e.name) + (view && view !== viewsFor(e)[0] ? ':' + view : '');
-  try { if (location.hash !== h) history.replaceState(null, '', h); } catch (err) { /* some frames don't allow it */ }
+const tabIdOf = (v) => 'bf-tab-' + String(v).replace(/[^A-Za-z0-9_-]/g, '-');
+const BUILT = new WeakSet();
+function skeleton(host) {
+  if (BUILT.has(host) && host.querySelector('#bf-panel')) return;
+  BUILT.add(host);
+  host.innerHTML = `
+      <div class="bf-head">
+        <h3 class="bf-name" id="bf-name" tabindex="-1"></h3>
+        <span class="bf-size" id="bf-size"></span>
+      </div>
+      <div class="bf-tabs" role="tablist" aria-label="Views of this file" id="bf-tabs"></div>
+      <div class="bf-panel" role="tabpanel" id="bf-panel" tabindex="0"></div>
+    ${$('bf-status') ? '' : '<p class="sr" role="status" id="bf-status"></p>'}`;
+  const tabs = host.querySelector('#bf-tabs');
+  tabs.addEventListener('click', (ev) => { const t = ev.target.closest('[role=tab]'); if (t && host === curHost) showView(t.dataset.v); });
+  tabs.addEventListener('keydown', (ev) => { // arrow keys move along the tabs and open each one
+    const all = [...tabs.querySelectorAll('[role=tab]')], i = all.indexOf(document.activeElement);
+    if (i < 0 || host !== curHost) return;
+    const j = { ArrowRight: i + 1, ArrowLeft: i - 1, Home: 0, End: all.length - 1 }[ev.key];
+    if (j === undefined) return;
+    ev.preventDefault();
+    const t = all[(j + all.length) % all.length];
+    t.focus(); showView(t.dataset.v);
+  });
 }
-function readHash() {
-  const h = location.hash.slice(1);
-  if (!h) return null;
-  const i = h.lastIndexOf(':');
-  try { return { name: decodeURIComponent(i >= 0 ? h.slice(0, i) : h), view: i >= 0 ? h.slice(i + 1) : null }; } catch (err) { return null; }
+function themeFollow() { // the map follows the light or dark theme
+  if (themed) return;
+  themed = true;
+  const redraw = () => { if (redrawHook) redrawHook(); };
+  try { matchMedia('(prefers-color-scheme: dark)').addEventListener('change', redraw); } catch (err) { /* older browsers */ }
+  if (window.MutationObserver) new MutationObserver(redraw).observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
 }
-
-/* ---------- panel 1: the list of files ---------- */
-const list = $('bf-list');
-if (!entries.length) list.innerHTML = '<li class="help">No files are built into this copy of the page.</li>';
-else list.innerHTML = entries.map((e, i) => `<li><button type="button" class="bf-file" data-i="${i}" aria-current="false"><span class="bf-fn">${esc(e.name)}</span><span class="bf-fs">${esc(plural(e.size, 'byte'))}</span></button></li>`).join('');
-$('bf-files-help').textContent = entries.length ? `${plural(entries.length, 'file')}, listed by name. Choose one to open it in the viewer below.` : '';
-list.addEventListener('click', (ev) => {
-  const b = ev.target.closest('.bf-file'); if (!b) return;
-  const e = entries[+b.dataset.i];
-  openFile(e, e === cur ? curView : null, { focus: true });
-});
-
-/* ---------- panel 2: the viewer ---------- */
-let cur = null, curView = null, viewTok = 0, cleanup = null, redrawHook = null;
-function openFile(e, view, opts) {
-  cur = e;
-  list.querySelectorAll('.bf-file').forEach((b) => b.setAttribute('aria-current', String(entries[+b.dataset.i] === e)));
-  $('bf-empty').hidden = true; $('bf-open').hidden = false;
+function open(host, e, opts) {
+  opts = opts || {};
+  themeFollow();
+  stopView();
+  cur = e; curOpts = opts; curHost = host; settings = opts.settings || {};
+  curExtra = new Map((opts.extraViews || []).filter((x) => x && x.id && typeof x.render === 'function').map((x) => [String(x.id), x]));
+  const want = opts.views ? [...opts.views] : [...viewsFor(e.name), ...curExtra.keys()];
+  curTabs = [];
+  const seen = new Set();
+  for (const raw of want) {
+    const id = String(raw), key = curExtra.has(id) ? 'extra:' + id : resolve(id, e.name);
+    if (!key || seen.has(key)) continue;
+    seen.add(key);
+    curTabs.push({ id, key, label: curExtra.has(id) ? String(curExtra.get(id).label || id) : labelOf(id) });
+  }
+  skeleton(host);
   $('bf-name').textContent = e.name;
-  $('bf-size').textContent = plural(e.size, 'byte');
-  if (opts && opts.focus) { $('viewer').scrollIntoView({ block: 'start' }); $('bf-name').focus({ preventScroll: true }); }
-  const vs = viewsFor(e);
-  if (!vs.includes(view)) view = vs[0];
-  $('bf-tabs').innerHTML = vs.map((v) => `<button type="button" role="tab" class="bf-tab" id="bf-tab-${v}" data-v="${v}" aria-controls="bf-panel" aria-selected="false" tabindex="-1">${LABELS[v]}</button>`).join('');
-  showView(view);
-  announce(`Opened ${e.name}, ${LABELS[view]} view.`);
+  $('bf-size').textContent = plural(bytesOf(e).length, 'byte');
+  // scrolling and focus come before the view is drawn, so the page doesn't jump while it loads
+  if (opts.scrollTo && opts.scrollTo.scrollIntoView) opts.scrollTo.scrollIntoView({ block: 'start' });
+  if (opts.focus) $('bf-name').focus({ preventScroll: true });
+  let view = curTabs.find((t) => t.id === opts.initialView) || (opts.initialView != null && curTabs.find((t) => t.key === resolve(opts.initialView, e.name))) || curTabs[0];
+  $('bf-tabs').innerHTML = curTabs.map((t) => `<button type="button" role="tab" class="bf-tab" id="${esc(tabIdOf(t.id))}" data-v="${esc(t.id)}" aria-controls="bf-panel" aria-selected="false" tabindex="-1">${esc(t.label)}</button>`).join('');
+  if (view) { showView(view.id); announce(`Opened ${e.name}, ${view.label} view.`); }
+  else $('bf-panel').innerHTML = '';
+  return handle(host, e);
 }
-const tabs = $('bf-tabs');
-tabs.addEventListener('click', (ev) => { const t = ev.target.closest('[role=tab]'); if (t) showView(t.dataset.v); });
-tabs.addEventListener('keydown', (ev) => { // arrow keys move along the tabs and open each one
-  const all = [...tabs.querySelectorAll('[role=tab]')], i = all.indexOf(document.activeElement);
-  if (i < 0) return;
-  const j = { ArrowRight: i + 1, ArrowLeft: i - 1, Home: 0, End: all.length - 1 }[ev.key];
-  if (j === undefined) return;
-  ev.preventDefault();
-  const t = all[(j + all.length) % all.length];
-  t.focus(); showView(t.dataset.v);
-});
-function showView(v) {
-  const e = cur;
-  curView = v;
-  tabs.querySelectorAll('[role=tab]').forEach((t) => { const on = t.dataset.v === v; t.setAttribute('aria-selected', String(on)); t.tabIndex = on ? 0 : -1; });
-  const panel = $('bf-panel');
-  panel.setAttribute('aria-labelledby', `bf-tab-${v}`);
+function handle(host, e) {
+  const mine = () => cur === e && curHost === host;
+  return {
+    entry: e,
+    view: () => (mine() ? curView : null),
+    views: () => (mine() ? curTabs.map((t) => t.id) : []),
+    show: (v) => { if (mine()) showView(String(v)); },
+    jumpToBytes: (a, b) => { if (mine()) jumpToBytes(a, b); },
+    close: () => { if (!mine()) return; stopView(); viewTok++; cur = null; curHost = null; curTabs = []; curView = null; host.innerHTML = ''; BUILT.delete(host); },
+  };
+}
+function stopView() {
   if (cleanup) { try { cleanup(); } catch (err) { /* nothing to undo */ } cleanup = null; }
   redrawHook = null;
+}
+function showView(v) {
+  const e = cur, tab = curTabs.find((t) => t.id === v);
+  if (!e || !tab) return;
+  curView = v;
+  const tabs = $('bf-tabs');
+  tabs.querySelectorAll('[role=tab]').forEach((t) => { const on = t.dataset.v === v; t.setAttribute('aria-selected', String(on)); t.tabIndex = on ? 0 : -1; });
+  const panel = $('bf-panel');
+  panel.setAttribute('aria-labelledby', tabIdOf(v));
+  stopView();
   panel.innerHTML = '';
-  prefs.file = e.name; prefs.view = v; savePrefs(); setHash(e, v);
+  if (curOpts.onViewChange) { try { curOpts.onViewChange(v, e); } catch (err) { /* the page's own business */ } }
   const tok = ++viewTok;
   const failed = (err) => { if (tok === viewTok) panel.innerHTML = failNote(e, reasonOf(err)); };
-  try { const run = RENDER[v](e, panel, tok); if (run && run.catch) run.catch(failed); } catch (err) { failed(err); }
+  try {
+    let run;
+    if (tab.key.startsWith('extra:')) run = curExtra.get(v).render(panel, e, apiFor(e, tok));
+    else { const [base, fmt] = tab.key.split(':'); run = RENDER[base](e, panel, tok, fmt); }
+    if (run && run.catch) run.catch(failed);
+  } catch (err) { failed(err); }
 }
-const live = (tok) => tok === viewTok;
+function jumpToBytes(a, b) {
+  const N = bytesOf(cur).length;
+  a = Math.floor(Number(a)); b = Math.floor(Number(b));
+  if (!isFinite(a) || !N) return;
+  a = Math.max(0, Math.min(N - 1, a));
+  b = isFinite(b) ? Math.max(a + 1, Math.min(N, b)) : a + 1;
+  let t = curTabs.find((x) => x.id === 'bytes');
+  if (!t) { // a page that left the Bytes tab out still gets one to jump to
+    t = { id: 'bytes', key: 'bytes', label: 'Bytes' };
+    curTabs.push(t);
+    $('bf-tabs').insertAdjacentHTML('beforeend', `<button type="button" role="tab" class="bf-tab" id="${tabIdOf('bytes')}" data-v="bytes" aria-controls="bf-panel" aria-selected="false" tabindex="-1">Bytes</button>`);
+  }
+  pendingRange = [a, b];
+  showView('bytes');
+}
+function apiFor(e, tok) {
+  return {
+    get bytes() { return bytesOf(e); },
+    jumpToBytes: (a, b) => { if (live(tok)) jumpToBytes(a, b); },
+    show: (v) => { if (live(tok)) showView(String(v)); },
+    live: () => live(tok),
+    onCleanup: (fn) => { if (!live(tok) || typeof fn !== 'function') return; const prev = cleanup; cleanup = prev ? () => { try { prev(); } finally { fn(); } } : fn; },
+    memo: (key, fn) => memo(e, 'page:' + key, fn),
+    memoAsync: (key, fn) => memoAsync(e, 'page:' + key, fn),
+    fail: (why) => failNote(e, String(why)),
+    tableView, esc, fmtInt, plural, hex2: HEX2,
+  };
+}
 
 /* ---------- formatting values for tables and lists ---------- */
 const NUMLIKE = /^\s*[-+]?(\d[\d,]*(\.\d*)?|\.\d+)([eE][-+]?\d+)?\s*$/;
@@ -4252,7 +4471,7 @@ function tableView(host, spec) {
 /* ---------- lines of text, with numbers, drawn a chunk at a time ---------- */
 /* o: { label, count, chunks: [[firstLine, endLine], ...], html(i) -> the inside of line i } */
 function linesBox(host, o) {
-  const wrap = prefs.wrap !== false;
+  const wrap = settings.wrap !== false;
   host.innerHTML = `<div class="bf-lines${wrap ? ' wrap' : ''}" tabindex="0" role="region" aria-label="${esc(o.label)}" style="--gw:${String(o.count).length}ch"></div>
     <div class="bf-more"><span aria-live="polite"></span><button type="button" class="btn small">Show more</button></div>`;
   const box = host.firstElementChild, more = host.lastElementChild, btn = more.querySelector('button');
@@ -4282,17 +4501,17 @@ function linesBox(host, o) {
   };
 }
 function wrapToggle(id) {
-  return `<label><input type="checkbox" id="${id}"${prefs.wrap !== false ? ' checked' : ''}> Wrap long lines</label>`;
+  return `<label><input type="checkbox" id="${id}"${settings.wrap !== false ? ' checked' : ''}> Wrap long lines</label>`;
 }
 function hookWrap(id, lb) {
-  $(id).addEventListener('change', () => { prefs.wrap = $(id).checked; savePrefs(); lb.setWrap(prefs.wrap); });
+  $(id).addEventListener('change', () => { settings.wrap = $(id).checked; saveSettings(); lb.setWrap(settings.wrap); });
 }
 
 /* ---------- the Text view ---------- */
 /* Splits the file into lines the way a plain text viewer does (at LF, CR LF or a lone CR), keeping each piece's byte offset. */
-function textModel(e) {
-  return memo(e, 'textmodel', () => {
-    const u8 = bytesOf(e), runs = FM.bytesAsText(u8, 0, u8.length);
+function textModel(e, upto) {
+  return memo(e, upto === undefined ? 'textmodel' : 'textmodel:' + upto, () => {
+    const u8 = upto === undefined ? bytesOf(e) : bytesOf(e).subarray(0, upto), runs = FM.bytesAsText(u8, 0, u8.length);
     const lines = [];
     let segs = [], str = '', start = 0, off = 0, crAtEnd = false;
     const add = (s, odd) => { segs.push([s, odd, off]); str += s; off += odd ? s.length : utf8Len(s); };
@@ -4350,11 +4569,17 @@ function textLineHTML(u8, M, i, hits, curK) {
   }
   return out;
 }
+/* Where a limited Text view stops: at the end of a line within the last 64 KB before the limit, if there is one. */
+function textCut(u8, limit) {
+  for (let i = limit - 1; i >= Math.max(0, limit - 65536); i--) if (u8[i] === 10 || (u8[i] === 13 && u8[i + 1] !== 10)) return i + 1;
+  return limit;
+}
 function renderText(e, panel) {
   const u8 = bytesOf(e);
   if (!u8.length) { panel.innerHTML = '<p class="bf-info">This file is empty: it holds no bytes.</p>'; return; }
+  const lim = curOpts.textLimit, upto = lim > 0 && u8.length > lim ? textCut(u8, Math.floor(lim)) : undefined;
   let M;
-  try { M = textModel(e); } catch (err) { panel.innerHTML = `<div class="bf-fail"><p><span class="mark">The text can’t be shown.</span> ${esc(reasonOf(err))}</p><p class="also">The Bytes view still shows every byte in the file.</p></div>`; return; }
+  try { M = textModel(e, upto); } catch (err) { panel.innerHTML = `<div class="bf-fail"><p><span class="mark">The text can’t be shown.</span> ${esc(reasonOf(err))}</p><p class="also">The Bytes view still shows every byte in the file.</p></div>`; return; }
   panel.innerHTML = `<div class="bf-tools">
       <label for="tx-find">Find</label>
       <span class="grp"><input type="search" id="tx-find" autocomplete="off" spellcheck="false" aria-describedby="tx-count">
@@ -4362,8 +4587,10 @@ function renderText(e, panel) {
       <span class="bf-count" id="tx-count" aria-live="polite"></span></span>
       ${wrapToggle('tx-wrap')}
     </div>
+    ${upto === undefined ? '' : `<div class="bf-info" role="note"><p>This file is ${esc(fmtInt(u8.length))} bytes long, so the Text view lays out only its first ${esc(fmtInt(upto))} bytes, and Find looks only there. The Bytes view shows every byte, with the bytes as letters in its right-hand column.</p>${typeof curOpts.onShowAllText === 'function' ? '<div class="btnrow"><button type="button" class="btn small" id="tx-all">Show all of the text (it may take a while)</button></div>' : ''}</div>`}
     <div id="tx-host"></div>
     <p class="bf-probe" id="tx-probe" aria-live="polite"></p>`;
+  if ($('tx-all')) $('tx-all').addEventListener('click', () => curOpts.onShowAllText('text'));
   let hits = [], byLine = new Map(), curK = -1;
   const lb = linesBox($('tx-host'), { label: `The text of ${e.name}`, count: M.lines.length, chunks: M.chunks, html: (i) => textLineHTML(u8, M, i, byLine.get(i) || [], curK) });
   hookWrap('tx-wrap', lb);
@@ -4447,12 +4674,17 @@ function splitHighlighted(html) {
   if (lines.length > 1 && lines[lines.length - 1].replace(/<[^>]*>/g, '') === '') lines.pop(); // a final line break doesn't start another line
   return lines;
 }
-function renderCode(e, panel) {
+function renderCode(e, panel, tok, fmt) {
   let text;
   try { text = strictText(e); } catch (err) { panel.innerHTML = failNote(e, reasonOf(err)); return; }
-  const lang = extOf(e.name) === 'r' ? 'r' : 'c';
-  const lines = memo(e, 'code', () => splitHighlighted(FM.highlight(text, lang)));
-  panel.innerHTML = `<div class="bf-tools">${wrapToggle('cd-wrap')}</div><div id="cd-host"></div>`;
+  const lang = fmt === 'r' ? 'r' : 'c';
+  // with textLimit, a bigger file is coloured and laid out only up to about that much, as in the Text view
+  const u8 = bytesOf(e), lim = curOpts.textLimit;
+  let upto = lim > 0 && u8.length > lim ? textCut(u8, Math.floor(lim)) : undefined;
+  if (upto !== undefined) { while (upto > 0 && (u8[upto] & 0xc0) === 0x80) upto--; text = new TextDecoder('utf-8').decode(u8.subarray(0, upto)); }
+  const lines = memo(e, 'code:' + lang + (upto === undefined ? '' : ':' + upto), () => splitHighlighted(FM.highlight(text, lang)));
+  panel.innerHTML = `<div class="bf-tools">${wrapToggle('cd-wrap')}</div>${upto === undefined ? '' : `<div class="bf-info" role="note"><p>This file is ${esc(fmtInt(u8.length))} bytes long, so the Code view colours and lays out only its first ${esc(fmtInt(upto))} bytes. The Bytes view shows every byte.</p>${typeof curOpts.onShowAllText === 'function' ? '<div class="btnrow"><button type="button" class="btn small" id="cd-all">Show all of the code (it may take a while)</button></div>' : ''}</div>`}<div id="cd-host"></div>`;
+  if ($('cd-all')) $('cd-all').addEventListener('click', () => curOpts.onShowAllText('code'));
   const chunks = [];
   for (let a = 0; a < lines.length; a += 3000) chunks.push([a, Math.min(lines.length, a + 3000)]);
   const lb = linesBox($('cd-host'), { label: `The code in ${e.name}`, count: lines.length, chunks, html: (i) => lines[i] });
@@ -4460,8 +4692,14 @@ function renderCode(e, panel) {
 }
 
 /* ---------- the Bytes view ---------- */
+const hexOff = (o) => '0x' + o.toString(16).toUpperCase();
+function rangeText(a, b) { // the bytes from a to b - 1
+  return b - a === 1 ? `Marked: byte ${fmtInt(a)} (${hexOff(a)}).` : `Marked: bytes ${fmtInt(a)}–${fmtInt(b - 1)} (${hexOff(a)}–${hexOff(b - 1)}), ${plural(b - a, 'byte')}.`;
+}
 function renderBytes(e, panel) {
   const u8 = bytesOf(e), N = u8.length, ROWS = 256;
+  const range = pendingRange && pendingRange[0] < N ? pendingRange : null;
+  pendingRange = null;
   if (!N) { panel.innerHTML = '<p class="bf-info">This file is empty: it holds no bytes.</p>'; return; }
   const D = Math.max(4, (N - 1).toString(16).length);
   const pager = (w) => `<div class="bf-pager" data-w="${w}">
@@ -4469,12 +4707,13 @@ function renderBytes(e, panel) {
       <span class="bf-count"${w === 'top' ? ' aria-live="polite"' : ''}></span>
       <button type="button" class="btn small" data-a="next">Next</button><button type="button" class="btn small" data-a="last">Last</button></div>`;
   panel.innerHTML = `<div id="bx-root"><div class="bf-tools"><label for="bx-go">Go to offset</label><span class="grp"><input type="text" id="bx-go" autocomplete="off" spellcheck="false" placeholder="4096 or 0x1000" aria-describedby="bx-err"><button type="button" class="btn small" id="bx-gob">Go</button></span></div>
-    <p class="bf-err" id="bx-err" role="alert"></p>
+    <p class="bf-err" id="bx-err" role="alert"></p>${range ? `
+    <p class="bf-hl" id="bx-hl"><span>${esc(rangeText(range[0], range[1]))}</span> <button type="button" class="btn small" id="bx-hlx">Clear the marking</button></p>` : ''}
     ${pager('top')}
     <div class="bf-hexbox" tabindex="0" role="region" aria-label="The bytes of ${esc(e.name)}"><pre class="bf-hex" id="bx-pre"></pre></div>
     ${pager('bottom')}</div>`;
   const box = panel.querySelector('.bf-hexbox'), pre = $('bx-pre');
-  let per = 16, page = 0, mark = -1;
+  let per = 16, page = 0, mark = range ? range[0] : -1, rs = range ? range[0] : -1, re = range ? range[1] : -1;
   const pages = () => Math.ceil(N / (per * ROWS));
   function chooseWidth() { // 16 bytes a row when they fit, else 8
     const probe = document.createElement('span'); probe.textContent = '0'.repeat(20); pre.appendChild(probe);
@@ -4486,13 +4725,16 @@ function renderBytes(e, panel) {
     const first = page * per * ROWS, last = Math.min(N, first + per * ROWS);
     let h = `<span class="hd">${' '.repeat(D)}  ${Array.from({ length: per }, (_, i) => HEX2[i]).join(' ').replace(per === 16 ? /^((?:\S\S ){8})/ : /^$/, '$1 ')}  Text</span>\n`;
     for (let r = first; r < last; r += per) {
-      let hx = '', tx = '';
+      let hx = '', tx = '', inR = false;
       for (let i = 0; i < per; i++) {
         const o = r + i;
         if (per === 16 && i === 8) hx += ' ';
         if (o >= N) { hx += '   '; continue; }
         const b = u8[o], c = b >= 0x20 && b < 0x7f ? esc(String.fromCharCode(b)) : '<span class="d">·</span>';
-        if (o === mark) { hx += `<span class="at">${HEX2[b]}</span> `; tx += `<span class="at">${c}</span>`; } else { hx += HEX2[b] + ' '; tx += c; }
+        if (!inR && o >= rs && o < re) { hx += '<span class="rg">'; tx += '<span class="rg">'; inR = true; } // a marked range, one run per row
+        if (o === mark) { hx += `<span class="at">${HEX2[b]}</span>`; tx += `<span class="at">${c}</span>`; } else { hx += HEX2[b]; tx += c; }
+        if (inR && !(o + 1 < re && o + 1 < N && i + 1 < per)) { hx += '</span>'; tx += '</span>'; inR = false; }
+        hx += ' ';
       }
       h += `<span class="o">${r.toString(16).toUpperCase().padStart(D, '0')}</span>  ${hx} ${tx}\n`;
     }
@@ -4526,7 +4768,16 @@ function renderBytes(e, panel) {
   }
   $('bx-gob').addEventListener('click', go);
   $('bx-go').addEventListener('keydown', (ev) => { if (ev.key === 'Enter') { ev.preventDefault(); go(); } });
-  per = chooseWidth(); draw();
+  per = chooseWidth();
+  if (range) page = Math.floor(mark / (per * ROWS));
+  draw();
+  if (range) {
+    box.focus({ preventScroll: true });
+    const at = pre.querySelector('.at');
+    if (at) { const ar = at.getBoundingClientRect(); if (ar.top < 0 || ar.bottom > innerHeight) at.scrollIntoView({ block: 'center' }); }
+    announce(rangeText(range[0], range[1]));
+    $('bx-hlx').addEventListener('click', () => { rs = re = mark = -1; $('bx-hl').remove(); draw(); box.focus({ preventScroll: true }); });
+  }
   const ro = new ResizeObserver(() => {
     const p = chooseWidth();
     if (p !== per) { const first = page * per * ROWS, onPage = mark >= first && mark < first + per * ROWS; per = p; page = Math.floor((onPage ? mark : first) / (per * ROWS)); draw(); }
@@ -4536,11 +4787,11 @@ function renderBytes(e, panel) {
 }
 
 /* ---------- the Table view ---------- */
-async function renderTable(e, panel, tok) {
-  const x = extOf(e.name);
+async function renderTable(e, panel, tok, fmt) {
+  const x = fmt;
   if (x === 'csv' || x === 'tsv') {
     let rows;
-    try { rows = memo(e, 'csv', () => FM.csvParse(strictText(e), x === 'tsv' ? '\t' : ',')); } catch (err) { panel.innerHTML = failNote(e, reasonOf(err)); return; }
+    try { rows = memo(e, x === 'tsv' ? 'tsv' : 'csv', () => FM.csvParse(strictText(e), x === 'tsv' ? '\t' : ',')); } catch (err) { panel.innerHTML = failNote(e, reasonOf(err)); return; }
     if (!rows.length) { panel.innerHTML = '<p class="bf-info">The file has no rows.</p>'; return; }
     const width = rows.reduce((m, r) => Math.max(m, r.length), 0);
     const head = rows[0], body = rows.slice(1);
@@ -4601,10 +4852,11 @@ function renderTables(e, panel) {
     <p class="bf-meta">${plural(items.length - 1, 'entry', 'entries')} in the file’s list of tables, views, indexes and triggers, in the order the file lists them, plus that list itself.</p>
     <div id="tb-one"></div>`;
   const pick = $('tb-pick');
-  pick.value = String(e.tablePick !== undefined && e.tablePick < items.length ? e.tablePick : items.length > 1 ? 1 : 0); // the file's own first entry, unless another was chosen
+  const kept = st(e);
+  pick.value = String(kept.tablePick !== undefined && kept.tablePick < items.length ? kept.tablePick : items.length > 1 ? 1 : 0); // the file's own first entry, unless another was chosen
   function show() {
     const s = items[+pick.value];
-    e.tablePick = +pick.value;
+    kept.tablePick = +pick.value;
     const host = $('tb-one');
     const sql = s.builtin ? 'CREATE TABLE sqlite_schema(type text, name text, tbl_name text, rootpage integer, sql text)' : s.sql;
     host.innerHTML = `${sql ? `<details class="bf-sql"><summary>The CREATE statement${s.builtin ? ' (built in: the file doesn’t store one for this list)' : ''}</summary><pre class="bf-pre">${esc(sql)}</pre></details>` : '<p class="bf-meta">The file gives no CREATE statement for this entry.</p>'}
@@ -4660,14 +4912,23 @@ function cleanTree(node) {
 function renderFormatted(e, panel) {
   let text;
   try { text = strictText(e); } catch (err) { panel.innerHTML = failNote(e, reasonOf(err)); return; }
-  const html = memo(e, 'md', () => FM.mdRender(text));
+  // with textLimit, a bigger file is laid out only up to about that much, as in the Text view
+  const u8 = bytesOf(e), lim = curOpts.textLimit;
+  let upto = lim > 0 && u8.length > lim ? textCut(u8, Math.floor(lim)) : undefined;
+  if (upto !== undefined) {
+    while (upto > 0 && (u8[upto] & 0xc0) === 0x80) upto--;
+    text = new TextDecoder('utf-8').decode(u8.subarray(0, upto));
+    panel.innerHTML = `<div class="bf-info" role="note"><p>This file is ${esc(fmtInt(u8.length))} bytes long, so the Formatted view lays out only its first ${esc(fmtInt(upto))} bytes. The Text and Bytes views show the rest.</p>${typeof curOpts.onShowAllText === 'function' ? '<div class="btnrow"><button type="button" class="btn small" id="md-all">Show all of it formatted (it may take a while)</button></div>' : ''}</div>`;
+    if ($('md-all')) $('md-all').addEventListener('click', () => curOpts.onShowAllText('formatted'));
+  }
+  const html = memo(e, 'md' + (upto === undefined ? '' : ':' + upto), () => FM.mdRender(text));
   const t = document.createElement('template'); // a template's content is inert: nothing in it loads or runs
   t.innerHTML = html;
   cleanTree(t.content);
   const art = document.createElement('article');
   art.className = 'bf-md';
   art.setAttribute('aria-label', `${e.name}, formatted`);
-  art.appendChild(t.content);
+  art.appendChild(document.importNode(t.content, true)); // a copy made in this document: moving the template's own nodes over one by one is slow
   panel.appendChild(art);
 }
 
@@ -4706,10 +4967,10 @@ function picZoomer(panel, box, el, natW, natH, onZoom) {
   apply();
   return () => ro.disconnect();
 }
-async function renderPicture(e, panel, tok) {
-  if (isTiff(e)) return renderTiffPicture(e, panel, tok);
-  const type = IMAGE_TYPES[extOf(e.name)];
-  if (!e.url) e.url = URL.createObjectURL(new Blob([bytesOf(e)], { type }));
+async function renderPicture(e, panel, tok, fmt) {
+  if (fmt === 'tiff') return renderTiffPicture(e, panel, tok);
+  const type = IMAGE_TYPES[extOf(e.name)] || '', s = st(e);
+  if (!s.url) s.url = URL.createObjectURL(new Blob([bytesOf(e)], { type }));
   panel.innerHTML = `<div class="bf-tools">${zoomBar()}</div><p class="bf-meta" id="pc-meta">Opening the picture…</p>
     <div class="bf-picbox" id="pc-box" tabindex="0" role="region" aria-label="The picture (scroll or drag to move around it when zoomed)"><img id="pc-img" alt="${esc(`The picture in ${e.name}`)}" draggable="false"></div>`;
   const img = $('pc-img');
@@ -4719,7 +4980,7 @@ async function renderPicture(e, panel, tok) {
     cleanup = picZoomer(panel, $('pc-box'), img, img.naturalWidth, img.naturalHeight);
   };
   img.onerror = () => { if (live(tok)) panel.innerHTML = failNote(e, 'This browser couldn’t open the file as a picture.'); };
-  img.src = e.url;
+  img.src = s.url;
 }
 async function renderTiffPicture(e, panel, tok) {
   panel.innerHTML = '<p class="bf-loading">Reading the file…</p>';
@@ -4897,9 +5158,9 @@ const R_MERC = 6378137;
 const mercToLL = (x, y) => [x / R_MERC * 180 / Math.PI, (2 * Math.atan(Math.exp(y / R_MERC)) - Math.PI / 2) * 180 / Math.PI];
 
 /* ---------- what each map file holds, as layers ---------- */
-function mapSource(e) {
-  return memoAsync(e, 'mapsrc', async () => {
-    if (isGpkg(e)) {
+function mapSource(e, fmt) {
+  return memoAsync(e, 'mapsrc:' + fmt, async () => {
+    if (fmt === 'gpkg') {
       const layers = SQ.gpkgLayers(sqliteDb(e));
       if (!layers.length) throw new Error('The file doesn’t list any tables of map features, so there is nothing to draw.');
       return layers.map((L) => {
@@ -4912,8 +5173,8 @@ function mapSource(e) {
         return { label: L.table, crs, features: L.features.map((f) => ({ props: f.props, geom: f.geom, error: f.error })) };
       });
     }
-    if (isGeojson(e)) { const g = geojsonOf(e); return [{ label: '', crs: g.crs, features: g.features.map((f) => ({ props: f.props, id: f.id, geom: f.geom })) }]; }
-    if (isTiff(e)) {
+    if (fmt === 'geojson') { const g = geojsonOf(e); return [{ label: '', crs: g.crs, features: g.features.map((f) => ({ props: f.props, id: f.id, geom: f.geom })) }]; }
+    if (fmt === 'tiff') {
       const t = await tiffOf(e);
       if (!t.geo || !t.geo.bounds) throw new Error('The picture holds no position on the Earth, so it can’t be placed on a map.');
       return [{ label: '', crs: crsOf(t.geo.epsg, '', t.geo.geographic === true), raster: t }];
@@ -4925,17 +5186,20 @@ function mapSource(e) {
 /* ---------- the Map view, drawn from scratch on a canvas ---------- */
 const COLOURS = ['--m1', '--m2', '--m3', '--m4', '--m5', '--m6'];
 const STEPS_MIN = [0.001, 0.002, 0.005, 0.01, 0.02, 0.05, 0.1, 0.2, 0.5, 1, 2, 5, 10, 15, 30, 60, 120, 300, 600, 900, 1800, 2700, 3600, 5400];
-async function renderMap(e, panel, tok) {
+async function renderMap(e, panel, tok, fmt) {
   panel.innerHTML = '<p class="bf-loading">Reading the file…</p>';
   let main;
-  try { main = await mapSource(e); } catch (err) { if (live(tok)) panel.innerHTML = failNote(e, reasonOf(err)); return; }
+  try { main = await mapSource(e, fmt); } catch (err) { if (live(tok)) panel.innerHTML = failNote(e, reasonOf(err)); return; }
   if (!live(tok)) return;
   const others = [];
-  for (const o of entries) if (o !== e && viewsFor(o).includes('map')) others.push(o); // the other files that have a Map view
+  for (const o of curOpts.otherEntries || []) if (o && o !== e && viewsFor(o.name).includes('map')) others.push(o); // the other files that have a Map view by name
   const first = main[0].crs;
   const disp = first.mode === 'native' ? { mode: 'native', code: first.code, label: first.label, unit: first.unit, unitM: first.unitM } : { mode: 'll', label: first.label };
   const fits = (crs) => (disp.mode === 'll' ? crs.mode !== 'native' : crs.mode === 'native' && crs.code === disp.code && crs.label === disp.label);
-  const isTable = isGpkg(e);
+  const hasTab = (id) => curTabs.some((t) => t.key === id);
+  const seeAlso = fmt === 'tiff' ? (hasTab('picture:tiff') ? 'The picture’s pixel values are in the Picture view.' : '')
+    : fmt === 'gpkg' ? (hasTab('tables:sqlite') ? 'The same features are listed in the Tables view.' : '')
+    : hasTab('table:geojson') ? 'The same features are listed in the Table view.' : '';
   panel.innerHTML = `<div class="bf-tools">
       <span class="grp"><button type="button" class="btn small" id="mp-in" aria-label="Zoom in">+</button><button type="button" class="btn small" id="mp-out" aria-label="Zoom out">−</button><button type="button" class="btn small" id="mp-fit">Fit</button></span>
       <label id="mp-oplab" hidden>Picture opacity <input type="range" class="bf-range" id="mp-op" min="0" max="100" step="5" value="85"></label>
@@ -4943,7 +5207,7 @@ async function renderMap(e, panel, tok) {
     <canvas class="bf-map" id="mp-cv" tabindex="0" role="application" aria-roledescription="map" aria-label="${esc(`Map of ${e.name}`)}" aria-describedby="mp-help"></canvas>
     <p class="bf-read" id="mp-read">Move over the map to see coordinates here.</p>
     <ul class="bf-legend" id="mp-legend" aria-label="Layers on the map"></ul>
-    <p class="help" id="mp-help">Drag to move the map, use the wheel or pinch to zoom, and tap a feature to list its properties (every feature at that spot is listed). Untick a layer above to hide it. With the map selected, the arrow keys move it, + and − zoom, and Enter lists what is at the centre. ${isTiff(e) ? 'The picture’s pixel values are in the Picture view.' : `The same features are listed in the ${isTable ? 'Tables' : 'Table'} view.`}</p>
+    <p class="help" id="mp-help">Drag to move the map, use the wheel or pinch to zoom, and tap a feature to list its properties (every feature at that spot is listed). Untick a layer above to hide it. With the map selected, the arrow keys move it, + and − zoom, and Enter lists what is at the centre.${seeAlso ? ' ' + seeAlso : ''}</p>
     <p class="bf-meta" id="mp-units"></p>
     <div class="bf-ident" id="mp-ident" aria-live="polite"></div>
     ${others.length ? `<fieldset class="bf-over"><legend>Show the other map files too</legend>${others.map((o, i) => `<label><input type="checkbox" data-o="${i}"> <span class="fn">${esc(o.name)}</span></label><span class="why2" id="mp-why-${i}" hidden></span>`).join('')}</fieldset>` : ''}`;
@@ -5285,7 +5549,7 @@ async function renderMap(e, panel, tok) {
     if (mine.length) { mine.forEach((l) => { l.on = true; }); legend(); schedule(); return; }
     why.hidden = false; why.textContent = 'Reading…';
     let src;
-    try { src = await mapSource(o); } catch (err) { if (!live(tok)) return; why.textContent = `Can’t be drawn: ${reasonOf(err)}`; box.checked = false; return; }
+    try { if (curOpts.readEntry) { await curOpts.readEntry(o); if (!live(tok)) return; } src = await mapSource(o, nameReader('map', o.name)); } catch (err) { if (!live(tok)) return; why.textContent = `Can’t be drawn: ${reasonOf(err)}`; box.checked = false; return; }
     if (!live(tok)) return;
     const msgs = [];
     let added = 0;
@@ -5302,10 +5566,71 @@ async function renderMap(e, panel, tok) {
 
 const RENDER = { text: renderText, bytes: renderBytes, table: renderTable, tables: renderTables, map: renderMap, picture: renderPicture, contents: renderContents, code: renderCode, formatted: renderFormatted };
 
-/* ---------- the map follows the light or dark theme ---------- */
-const redraw = () => { if (redrawHook) redrawHook(); };
-try { matchMedia('(prefers-color-scheme: dark)').addEventListener('change', redraw); } catch (err) { /* older browsers */ }
-if (window.MutationObserver) new MutationObserver(redraw).observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
+return {
+  viewsFor, allViews, labelOf, resolve, open, forget,
+  readers: R, helpers: { esc, fmtInt, plural, hex2: HEX2, reasonOf, utf8Len, extOf },
+};
+}
+const FV = fileViewer({ SQ, PQ, FM });
+
+/* ---------- small helpers ---------- */
+const $ = (id) => document.getElementById(id);
+const { esc, plural } = FV.helpers;
+
+/* ---------- the files, decoded only when first opened ---------- */
+const coll = new Intl.Collator('en', { sensitivity: 'base', numeric: true });
+const entries = FILES.map((f) => {
+  const b64 = String(f.b64 || ''), pad = b64.endsWith('==') ? 2 : b64.endsWith('=') ? 1 : 0;
+  return { name: String(f.name), b64, size: b64.length ? b64.length / 4 * 3 - pad : 0, u8: null, get bytes() { return bytesOf(this); } };
+}).sort((a, b) => coll.compare(a.name, b.name) || (a.name < b.name ? -1 : a.name > b.name ? 1 : 0));
+function bytesOf(e) {
+  if (!e.u8) {
+    const bin = atob(e.b64), u = new Uint8Array(bin.length);
+    for (let i = 0; i < bin.length; i++) u[i] = bin.charCodeAt(i);
+    e.u8 = u; e.b64 = '';
+  }
+  return e.u8;
+}
+
+/* ---------- remembering the open file and view ---------- */
+const KEY = 'dot-bison-files:v1';
+let prefs = {};
+try { const p = JSON.parse(localStorage.getItem(KEY) || '{}'); if (p && typeof p === 'object') prefs = p; } catch (err) { /* storage unavailable */ }
+function savePrefs() { try { localStorage.setItem(KEY, JSON.stringify(prefs)); } catch (err) { /* storage unavailable */ } }
+function setHash(e, view) {
+  const h = '#' + encodeURIComponent(e.name) + (view && view !== FV.viewsFor(e.name)[0] ? ':' + view : '');
+  try { if (location.hash !== h) history.replaceState(null, '', h); } catch (err) { /* some frames don't allow it */ }
+}
+function readHash() {
+  const h = location.hash.slice(1);
+  if (!h) return null;
+  const i = h.lastIndexOf(':');
+  try { return { name: decodeURIComponent(i >= 0 ? h.slice(0, i) : h), view: i >= 0 ? h.slice(i + 1) : null }; } catch (err) { return null; }
+}
+
+/* ---------- panel 1: the list of files ---------- */
+const list = $('bf-list');
+if (!entries.length) list.innerHTML = '<li class="help">No files are built into this copy of the page.</li>';
+else list.innerHTML = entries.map((e, i) => `<li><button type="button" class="bf-file" data-i="${i}" aria-current="false"><span class="bf-fn">${esc(e.name)}</span><span class="bf-fs">${esc(plural(e.size, 'byte'))}</span></button></li>`).join('');
+$('bf-files-help').textContent = entries.length ? `${plural(entries.length, 'file')}, listed by name. Choose one to open it in the viewer below.` : '';
+list.addEventListener('click', (ev) => {
+  const b = ev.target.closest('.bf-file'); if (!b) return;
+  const e = entries[+b.dataset.i];
+  openFile(e, e === cur ? curView : null, { focus: true });
+});
+
+/* ---------- panel 2: the viewer, from the shared core ---------- */
+let cur = null, curView = null;
+function openFile(e, view, opts) {
+  cur = e;
+  list.querySelectorAll('.bf-file').forEach((b) => b.setAttribute('aria-current', String(entries[+b.dataset.i] === e)));
+  $('bf-empty').hidden = true; $('bf-open').hidden = false;
+  const focus = !!(opts && opts.focus);
+  FV.open($('bf-open'), e, {
+    initialView: view, otherEntries: entries, settings: prefs, onSettingsChange: savePrefs, focus, scrollTo: focus ? $('viewer') : null,
+    onViewChange: (v) => { curView = v; prefs.file = e.name; prefs.view = v; savePrefs(); setHash(e, v); },
+  });
+}
 
 /* ---------- start: a linked view first, then the one open last time ---------- */
 function fromHash(scroll) {
@@ -5316,7 +5641,7 @@ function fromHash(scroll) {
   if (scroll) $('viewer').scrollIntoView({ block: 'start' });
   return true;
 }
-window.addEventListener('hashchange', () => { const h = readHash(); if (h && (!cur || h.name !== cur.name || (h.view || viewsFor(cur)[0]) !== curView)) fromHash(true); });
+window.addEventListener('hashchange', () => { const h = readHash(); if (h && (!cur || h.name !== cur.name || (h.view || FV.viewsFor(cur.name)[0]) !== curView)) fromHash(true); });
 if (!fromHash(true)) {
   const e = typeof prefs.file === 'string' && entries.find((x) => x.name === prefs.file);
   if (e) openFile(e, prefs.view, {});

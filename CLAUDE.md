@@ -59,6 +59,12 @@ Make puzzles *slightly* more accessible: take the tedium out, never hand solvers
   from a cache, and like the lessons the pages never mention a specific cache. The tools share one
   notepad in `localStorage` (key `aft.polytopes.notes`); its markup, script and CSS are the same in
   every tool, so keep every copy identical.
+- **.bison Files** (`dot-bison-files/`) is the one tool that carries a cache's own released files: a
+  second, view-only copy of the files its cache page links, so solvers can look at them without
+  downloading. That is the only exception to the fictional-example rule. Show every file exactly as
+  released, name included, and never add, guess or explain anything about a file beyond showing it.
+  The viewers are strict readers: a file that doesn't open says why, and its Text and Bytes views
+  still show everything.
 - **Never rename or move a published tool's folder.** Cache pages link to these addresses, and
   GitHub doesn't redirect Pages URLs.
 

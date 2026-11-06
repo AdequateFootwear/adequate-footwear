@@ -59,6 +59,12 @@ Make puzzles *slightly* more accessible: take the tedium out, never hand solvers
   from a cache, and like the lessons the pages never mention a specific cache. The tools share one
   notepad in `localStorage` (key `aft.polytopes.notes`); its markup, script and CSS are the same in
   every tool, so keep every copy identical.
+- **Ruminate** (`ruminate/`) opens any file the solver gives it, on their own device; nothing is
+  uploaded. It shows each file's normal views plus its text and bytes, an "Open as…" menu to try any
+  view, and a Structure view that labels how a format lays out its bytes. It chooses views by the
+  file's name and never guesses or names a file's type itself, and its readers are strict: a file
+  that doesn't open says why, and nothing is repaired or recovered. It shares its viewer and readers
+  with .bison Files, so keep every copy identical. Its built-in example is fictional.
 - **Never rename or move a published tool's folder.** Cache pages link to these addresses, and
   GitHub doesn't redirect Pages URLs.
 

@@ -2,6 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src blob: data:; media-src blob:; base-uri 'none'; form-action 'none'">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="color-scheme" content="light dark">
 <title>.bison Files · Tools of the Trade</title>
@@ -562,6 +563,12 @@ dl.bf-dl dd{margin:0;color:var(--ink);overflow-wrap:anywhere;white-space:pre-wra
 .bf-pxmark[hidden]{display:none}
 .bf-picbox canvas:focus-visible,.bf-picbox:focus-visible{outline:2px solid var(--focus);outline-offset:-2px}
 .bf-probe{font-family:"IBM Plex Mono",monospace;font-size:13.5px;color:var(--ink);min-height:1.5em;margin:6px 0 0;overflow-wrap:anywhere}
+
+/* sound and video: the browser's own player, with its own keyboard controls */
+.bf-media{border:1px solid var(--line);border-radius:8px;background:var(--surface-2);padding:10px;margin:0 0 8px;min-width:0}
+.bf-media audio{display:block;width:100%;max-width:44em}
+.bf-media video{display:block;margin:0 auto;width:auto;height:auto;max-width:100%;max-height:70vh;min-width:min(100%,18rem)}
+.bf-media audio:focus-visible,.bf-media video:focus-visible{outline:2px solid var(--focus);outline-offset:2px}
 
 /* map */
 .bf-mapwrap{position:relative}
@@ -4089,10 +4096,15 @@ return { tiffRead, tiffToRGBA, tiffPixel, pickleLoad, pyRepr, csvParse, mdRender
    the same object again to reuse it.
 
    View ids. A plain id ('map', 'tables', 'table', 'picture', 'formatted', 'code', 'contents',
-   'text', 'bytes') reads the file the way its name says. An id with a reader after a colon
+   'listen', 'watch', 'text', 'bytes') reads the file the way its name says. An id with a reader after a colon
    reads it that way whatever its name: 'map:gpkg', 'map:geojson', 'map:tiff', 'tables:sqlite',
    'table:csv', 'table:tsv', 'table:parquet', 'table:geojson', 'picture:image', 'picture:tiff',
-   'formatted:md', 'code:c', 'code:r', 'contents:pickle'.
+   'formatted:md', 'code:c', 'code:r', 'contents:pickle', 'listen:media', 'watch:media'.
+   'listen' and 'watch' hand the bytes to this browser's own audio or video player (from a blob
+   address made in the page the first time, reused each time the view is shown again, and revoked
+   by FV.forget); nothing in the page decodes or analyses the sound or picture. The name only
+   chooses the media type the bytes are given; Open as… on any other name gives none, and the
+   browser then decides for itself whether it can play them.
 
    FV.viewsFor(name)    -> the plain view ids for a file name, chosen by the ending of the name only.
    FV.allViews()        -> [{ id, label }] for an "Open as…" menu: every way of reading a file,
@@ -4146,12 +4158,12 @@ return { tiffRead, tiffToRGBA, tiffPixel, pickleLoad, pyRepr, csvParse, mdRender
      api.fail(why)             the HTML of a failure note giving a plain reason
      api.tableView(host, spec) the core's paged table (spec as tableView below)
      api.esc, api.fmtInt, api.plural, api.hex2  helpers, as in FV.helpers
-   FV.forget(entry)     drops what was kept for an entry (and its picture address).
+   FV.forget(entry)     drops what was kept for an entry (and its picture and player addresses).
    FV.readers           the readers it was made with. FV.helpers: { esc, fmtInt, plural, hex2, reasonOf, utf8Len,
                         extOf }, where extOf(name) is the ending of a name as the views read it ('' for none).
 
    One viewer at a time per page: the views use fixed element ids (bf-name, bf-tabs, bf-panel,
-   tx-…, bx-…, mp-… and so on). Announcements go to the element with id bf-status, which is
+   tx-…, bx-…, mp-…, av-… and so on). Announcements go to the element with id bf-status, which is
    made inside the container if the page has none. The styles are in fileview.css.
    ========================================================================================== */
 function fileViewer(R) {
@@ -4181,8 +4193,12 @@ function utf8Len(s) { // how many bytes a piece of valid text takes in UTF-8
 
 /* ---------- what is kept for each entry: decoded results, or the reason they failed ---------- */
 const KEPT = new WeakMap();
-function st(e) { let s = KEPT.get(e); if (!s) { s = { memo: new Map(), url: null, tablePick: undefined }; KEPT.set(e, s); } return s; }
-function forget(e) { const s = KEPT.get(e); if (s && s.url) { try { URL.revokeObjectURL(s.url); } catch (err) { /* nothing to free */ } } KEPT.delete(e); }
+function st(e) { let s = KEPT.get(e); if (!s) { s = { memo: new Map(), url: null, mediaUrl: null, tablePick: undefined }; KEPT.set(e, s); } return s; }
+function forget(e) {
+  const s = KEPT.get(e);
+  if (s) for (const u of [s.url, s.mediaUrl]) if (u) { try { URL.revokeObjectURL(u); } catch (err) { /* nothing to free */ } }
+  KEPT.delete(e);
+}
 const bytesOf = (e) => e.bytes;
 /* Work something out once per file and keep the result, or the reason it failed. */
 function memo(e, key, fn) {
@@ -4206,7 +4222,10 @@ const parquetOf = (e) => memoAsync(e, 'parquet', () => PQ.parquetRead(bytesOf(e)
 
 /* ---------- which views a file gets: from the ending of its name only ---------- */
 const IMAGE_TYPES = { png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg', gif: 'image/gif', webp: 'image/webp', bmp: 'image/bmp' };
-const LABELS = { map: 'Map', tables: 'Tables', table: 'Table', picture: 'Picture', text: 'Text', bytes: 'Bytes', contents: 'Contents', code: 'Code', formatted: 'Formatted' };
+/* the media type each audio or video ending implies, given to the browser with the bytes */
+const AUDIO_TYPES = { mp3: 'audio/mpeg', mp2: 'audio/mpeg', mpga: 'audio/mpeg', wav: 'audio/wav', wave: 'audio/wav', bwf: 'audio/wav', rf64: 'audio/wav', ogg: 'audio/ogg', oga: 'audio/ogg', opus: 'audio/ogg', spx: 'audio/ogg', flac: 'audio/flac', m4a: 'audio/mp4', m4b: 'audio/mp4', aac: 'audio/aac', aif: 'audio/aiff', aiff: 'audio/aiff', aifc: 'audio/aiff', weba: 'audio/webm', mka: 'audio/x-matroska' };
+const VIDEO_TYPES = { mp4: 'video/mp4', m4v: 'video/mp4', mov: 'video/quicktime', qt: 'video/quicktime', '3gp': 'video/3gpp', '3g2': 'video/3gpp2', webm: 'video/webm', mkv: 'video/x-matroska', mk3d: 'video/x-matroska', ogv: 'video/ogg' };
+const LABELS = { map: 'Map', tables: 'Tables', table: 'Table', picture: 'Picture', text: 'Text', bytes: 'Bytes', contents: 'Contents', code: 'Code', formatted: 'Formatted', listen: 'Listen', watch: 'Watch' };
 function extOf(name) { name = String(name); const i = name.lastIndexOf('.'); return i > 0 && i < name.length - 1 ? name.slice(i + 1).toLowerCase() : ''; }
 function viewsFor(name) {
   const x = extOf(name);
@@ -4220,6 +4239,8 @@ function viewsFor(name) {
   if (x === 'sqlite' || x === 'sqlite3' || x === 'db') return ['tables', 'text', 'bytes'];
   if (x === 'geotiff') return ['picture', 'map', 'text', 'bytes'];
   if (x === 'tif' || x === 'tiff') return ['picture', 'text', 'bytes'];
+  if (AUDIO_TYPES[x]) return ['listen', 'text', 'bytes'];
+  if (VIDEO_TYPES[x]) return ['watch', 'text', 'bytes'];
   return ['text', 'bytes']; // .json, the plain-text endings, and every other name
 }
 /* Every way of reading a file, for a page that lets the person choose: [id, tab label, menu label]. */
@@ -4238,6 +4259,8 @@ const READERS = [
   ['code:c', 'Code (C)', 'Code, coloured as C'],
   ['code:r', 'Code (R)', 'Code, coloured as R'],
   ['contents:pickle', 'Contents (pickle)', 'Contents, read as a Python pickle (no code from it is run)'],
+  ['listen:media', 'Listen', 'Listen, as this browser plays audio'],
+  ['watch:media', 'Watch', 'Watch, as this browser plays video'],
   ['text', 'Text', 'Text'],
   ['bytes', 'Bytes', 'Bytes'],
 ];
@@ -4254,6 +4277,7 @@ function nameReader(base, name) {
     case 'code': return x === 'r' ? 'r' : 'c';
     case 'formatted': return 'md';
     case 'contents': return 'pickle';
+    case 'listen': case 'watch': return 'media';
     default: return '';
   }
 }
@@ -5564,7 +5588,68 @@ async function renderMap(e, panel, tok, fmt) {
   schedule();
 }
 
-const RENDER = { text: renderText, bytes: renderBytes, table: renderTable, tables: renderTables, map: renderMap, picture: renderPicture, contents: renderContents, code: renderCode, formatted: renderFormatted };
+/* ---------- the Listen and Watch views: this browser's own player ---------- */
+/* What each error code means, as the HTML standard defines it; nothing more is guessed. */
+const MEDIA_ERRORS = {
+  1: ['MEDIA_ERR_ABORTED', 'that reading the file was stopped before it finished'],
+  2: ['MEDIA_ERR_NETWORK', 'an error while reading the file'],
+  3: ['MEDIA_ERR_DECODE', 'an error while decoding it'],
+  4: ['MEDIA_ERR_SRC_NOT_SUPPORTED', 'that the file, or its format, isn’t one it can play'],
+};
+function mediaWhy(err) {
+  if (!err) return 'This browser can’t play the file, and it gives no reason.';
+  const [name, says] = MEDIA_ERRORS[err.code] || ['', ''];
+  const msg = err.message ? String(err.message).trim() : '';
+  return `This browser can’t play the file. It reports ${says || 'an error'} (error code ${String(err.code)}${name ? ', ' + name : ''})${msg ? `, with the message “${msg}”` : ''}.`;
+}
+function lengthText(d) { // '2 min 05 s (125.373 seconds)', from the length the browser reports
+  if (d === Infinity) return 'This browser reports no fixed length for it.';
+  if (!isFinite(d)) return 'This browser reports no length for it.';
+  const exact = d.toLocaleString('en-US', { maximumFractionDigits: 3 }), secs = `${exact} second${exact === '1' ? '' : 's'}`;
+  if (d < 60) return `Length: ${secs}.`;
+  const t = Math.round(d), h = Math.floor(t / 3600), m = Math.floor((t % 3600) / 60), s = t % 60, two = (n) => String(n).padStart(2, '0');
+  return `Length: ${h ? `${fmtInt(h)} h ${two(m)} min` : `${m} min`} ${two(s)} s (${secs}).`;
+}
+function renderMedia(e, panel, tok, video) {
+  const u8 = bytesOf(e);
+  if (!u8.length) { panel.innerHTML = failNote(e, 'The file is empty, so there is nothing to play.'); return; }
+  // one copy of the bytes for the player, made the first time and kept for the file, so going back
+  // to this view doesn't need a second copy of a big file (the name alone gives its media type)
+  const s = st(e);
+  if (!s.mediaUrl) s.mediaUrl = URL.createObjectURL(new Blob([u8], { type: AUDIO_TYPES[extOf(e.name)] || VIDEO_TYPES[extOf(e.name)] || '' }));
+  const url = s.mediaUrl;
+  const tag = video ? 'video' : 'audio';
+  // no autoplay, only the length is read until the person presses play, and it stays on this device
+  panel.innerHTML = `<div class="bf-media${video ? ' vid' : ''}"><${tag} id="av-el" controls preload="metadata"${video ? ' playsinline' : ''} disableremoteplayback aria-label="${esc(`The ${video ? 'video' : 'sound'} in ${e.name}`)}" aria-describedby="av-meta"></${tag}></div>
+    <p class="bf-meta" id="av-meta" aria-live="polite">Reading the length…</p>`;
+  const el = $('av-el'), meta = $('av-meta');
+  let done = false;
+  const stop = () => { // pause and let go of the file; its address is freed by forget
+    if (done) return;
+    done = true;
+    try { el.pause(); el.removeAttribute('src'); el.load(); } catch (err) { /* already stopped */ }
+  };
+  cleanup = stop;
+  const describe = () => {
+    if (!live(tok) || done) return;
+    let t = lengthText(el.duration);
+    if (video) t += el.videoWidth && el.videoHeight ? ` Picture: ${fmtInt(el.videoWidth)} × ${fmtInt(el.videoHeight)} pixels.` : ' This browser reports no picture in it.';
+    if (meta.textContent !== t) meta.textContent = t;
+  };
+  el.addEventListener('loadedmetadata', describe);
+  el.addEventListener('durationchange', () => { if (el.readyState >= 1) describe(); });
+  if (video) el.addEventListener('resize', () => { if (el.readyState >= 1) describe(); });
+  el.addEventListener('error', () => {
+    if (!live(tok) || done) return;
+    const why = mediaWhy(el.error);
+    stop();
+    panel.innerHTML = failNote(e, why);
+  });
+  el.src = url;
+}
+
+const RENDER = { text: renderText, bytes: renderBytes, table: renderTable, tables: renderTables, map: renderMap, picture: renderPicture, contents: renderContents, code: renderCode, formatted: renderFormatted,
+  listen: (e, panel, tok) => renderMedia(e, panel, tok, false), watch: (e, panel, tok) => renderMedia(e, panel, tok, true) };
 
 return {
   viewsFor, allViews, labelOf, resolve, open, forget,

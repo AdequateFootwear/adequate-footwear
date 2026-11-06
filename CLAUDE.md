@@ -65,7 +65,8 @@ Make puzzles *slightly* more accessible: take the tedium out, never hand solvers
   released, name included, and never add, guess or explain anything about a file beyond showing it.
   The viewers are strict readers: a file that doesn't open says why, and its Text and Bytes views
   still show everything. Rule 1 still holds: the files are already public through the cache page,
-  and this page adds nothing beyond them. Its text never mentions the cache, puzzles or answers.
+  and this page adds nothing beyond them. Apart from the owner's own note that the collection isn't needed to solve the puzzle and isn't to
+  be relied upon, its text never mentions the cache, puzzles or answers.
   It isn't a generic helper, so it has its own reviewer note (see "Linking a tool from a cache page"),
   and it is listed apart from the tools, under "Specific cache files" at the bottom of `index.html`
   and `README.md`.

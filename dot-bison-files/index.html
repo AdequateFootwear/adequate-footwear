@@ -580,6 +580,8 @@ dl.bf-dl dd{margin:0;color:var(--ink);overflow-wrap:anywhere;white-space:pre-wra
 .bf-read{font-family:"IBM Plex Mono",monospace;font-size:13px;color:var(--ink-2);min-height:3em;margin:6px 0 0;overflow-wrap:anywhere}
 .bf-legend{list-style:none;padding:0;margin:8px 0;display:flex;flex-wrap:wrap;gap:4px 16px;font-size:14px;color:var(--ink-2)}
 .bf-legend li{display:inline-flex;align-items:center;gap:7px;overflow-wrap:anywhere;min-width:0}
+.bf-legend label{display:inline-flex;align-items:center;gap:7px;cursor:pointer;min-width:0}
+.bf-legend input{width:18px;height:18px;flex:none;accent-color:var(--accent);margin:0}
 .bf-sw{flex:none;width:16px;height:12px;border-radius:3px;border:2px solid currentColor;background:color-mix(in srgb,currentColor 25%,transparent)}
 .bf-sw.img{background:linear-gradient(135deg,var(--surface-3),var(--line-strong));border-color:var(--line-strong)}
 fieldset.bf-over{border:1px solid var(--line);border-radius:8px;padding:6px 12px 10px;margin:10px 0 0;min-width:0}
@@ -636,7 +638,7 @@ input[type=range].bf-range{accent-color:var(--accent);width:9em;max-width:100%}
 </header>
 
 <main class="wrap">
-  <p class="bf-note">An optional helper. It runs entirely in your browser and keeps working once it has loaded, even with no signal.</p>
+  <p class="bf-note">This collection is not needed to solve the puzzle and is provided primarily for your enjoyment. The contents of the files are not to be relied upon. It runs entirely in your browser and keeps working once it has loaded, even with no signal.</p>
 
   <section class="panel" id="files" aria-labelledby="h-files">
     <div class="panel-head"><span class="step">1</span><h2 id="h-files">The files</h2></div>
@@ -4941,7 +4943,7 @@ async function renderMap(e, panel, tok) {
     <canvas class="bf-map" id="mp-cv" tabindex="0" role="application" aria-roledescription="map" aria-label="${esc(`Map of ${e.name}`)}" aria-describedby="mp-help"></canvas>
     <p class="bf-read" id="mp-read">Move over the map to see coordinates here.</p>
     <ul class="bf-legend" id="mp-legend" aria-label="Layers on the map"></ul>
-    <p class="help" id="mp-help">Drag to move the map, use the wheel or pinch to zoom, and tap a feature to list its properties. With the map selected, the arrow keys move it, + and − zoom, and Enter lists what is at the centre. ${isTiff(e) ? 'The picture’s pixel values are in the Picture view.' : `The same features are listed in the ${isTable ? 'Tables' : 'Table'} view.`}</p>
+    <p class="help" id="mp-help">Drag to move the map, use the wheel or pinch to zoom, and tap a feature to list its properties (every feature at that spot is listed). Untick a layer above to hide it. With the map selected, the arrow keys move it, + and − zoom, and Enter lists what is at the centre. ${isTiff(e) ? 'The picture’s pixel values are in the Picture view.' : `The same features are listed in the ${isTable ? 'Tables' : 'Table'} view.`}</p>
     <p class="bf-meta" id="mp-units"></p>
     <div class="bf-ident" id="mp-ident" aria-live="polite"></div>
     ${others.length ? `<fieldset class="bf-over"><legend>Show the other map files too</legend>${others.map((o, i) => `<label><input type="checkbox" data-o="${i}"> <span class="fn">${esc(o.name)}</span></label><span class="why2" id="mp-why-${i}" hidden></span>`).join('')}</fieldset>` : ''}`;
@@ -5061,7 +5063,7 @@ async function renderMap(e, panel, tok) {
     g.fillStyle = C.bg; g.fillRect(0, 0, w, h);
     const op = +$('mp-op').value / 100;
     for (const L of layers) {
-      if (!L.on || !L.raster) continue;
+      if (!L.on || L.off || !L.raster) continue;
       const r = L.raster, x0 = sx(r.w), x1 = sx(r.e), y0 = sy(r.n), y1 = sy(r.s);
       g.globalAlpha = op; g.imageSmoothingEnabled = Math.abs(x1 - x0) < r.img.width;
       g.drawImage(r.img, x0, y0, x1 - x0, y1 - y0);
@@ -5069,11 +5071,11 @@ async function renderMap(e, panel, tok) {
     }
     grid(g, w, h, C);
     for (const L of layers) {
-      if (!L.on || !L.feats.length) continue;
+      if (!L.on || L.off || !L.feats.length) continue;
       const col = cssVar(L.colour);
       for (const f of L.feats) drawFeat(g, f, col, C, false);
     }
-    if (sel && sel.L.on) drawFeat(g, sel.f, C.ink, C, true);
+    if (sel) for (const h of sel) if (h.L.on && !h.L.off) drawFeat(g, h.f, C.ink, C, true);
     if (kbd && document.activeElement === cv) { // the centre, for the keyboard
       g.strokeStyle = C.focus; g.lineWidth = 2;
       g.beginPath(); g.moveTo(w / 2 - 10, h / 2); g.lineTo(w / 2 + 10, h / 2); g.moveTo(w / 2, h / 2 - 10); g.lineTo(w / 2, h / 2 + 10); g.stroke();
@@ -5150,13 +5152,14 @@ async function renderMap(e, panel, tok) {
       label(g, t, x + len + 6, y + 1, C);
     });
   }
-  /* The nearest feature to a screen point, within about 10 pixels. A point or line wins over the inside of a shape. */
+  /* Every feature within about 10 pixels of a screen point, nearest first, so features drawn on top of each other are all
+     listed. A point or line counts as nearer than the inside of a shape. */
   function hit(px, py) {
-    let best = null, bd = 10.5;
+    const found = [], bd = 10.5;
     const segD = (ax, ay, bx, by) => { const dx = bx - ax, dy = by - ay, l = dx * dx + dy * dy, t = l ? Math.max(0, Math.min(1, ((px - ax) * dx + (py - ay) * dy) / l)) : 0; return Math.hypot(px - ax - t * dx, py - ay - t * dy); };
     for (let li = layers.length - 1; li >= 0; li--) {
       const L = layers[li];
-      if (!L.on) continue;
+      if (!L.on || L.off) continue;
       for (let fi = L.feats.length - 1; fi >= 0; fi--) {
         const f = L.feats[fi];
         let d = Infinity;
@@ -5174,23 +5177,25 @@ async function renderMap(e, panel, tok) {
           }
           if (inside) d = Math.min(d, 10);
         }
-        if (d < bd) { bd = d; best = { L, f }; }
+        if (d < bd) found.push({ L, f, d });
       }
     }
-    return best;
+    return found.sort((a, b) => a.d - b.d);
   }
   function identify(px, py) {
     const h = hit(px, py), x = ux(px), y = uy(py);
     let html = '';
     sel = h;
-    if (h) {
-      const props = h.f.props && typeof h.f.props === 'object' ? Object.entries(h.f.props) : [];
-      if (h.f.id !== undefined) props.unshift(['(feature id)', h.f.id]);
-      html += `<h4>From <span class="fn">${esc(h.L.entry.name)}</span>${h.L.label ? `, table <span class="fn">${esc(h.L.label)}</span>` : ''}</h4>`;
+    if (h.length > 1) html += `<p>${h.length} features are drawn within 10 pixels of that spot, nearest first.</p>`;
+    for (const { L, f } of h) {
+      const props = f.props && typeof f.props === 'object' ? Object.entries(f.props) : [];
+      if (f.id !== undefined) props.unshift(['(feature id)', f.id]);
+      html += `<h4>From <span class="fn">${esc(L.entry.name)}</span>${L.label ? `, table <span class="fn">${esc(L.label)}</span>` : ''}</h4>`;
       html += props.length ? `<dl class="bf-dl">${props.map(([k, v]) => `<dt>${esc(k)}</dt><dd>${esc(valueText(v))}</dd>`).join('')}</dl>` : '<p>This feature has no properties.</p>';
-    } else html += '<h4>Nothing is drawn within 10 pixels of that spot.</h4>';
+    }
+    if (!h.length) html += '<h4>Nothing is drawn within 10 pixels of that spot.</h4>';
     for (const L of layers) {
-      if (!L.on || !L.raster) continue;
+      if (!L.on || L.off || !L.raster) continue;
       const r = L.raster;
       if (x < Math.min(r.w, r.e) || x > Math.max(r.w, r.e) || y < Math.min(r.s, r.n) || y > Math.max(r.s, r.n)) continue;
       const ix = Math.min(r.t.width - 1, Math.floor((x - r.w) / (r.e - r.w) * r.t.width)), iy = Math.min(r.t.height - 1, Math.floor((r.n - y) / (r.n - r.s) * r.t.height));
@@ -5202,11 +5207,19 @@ async function renderMap(e, panel, tok) {
     schedule();
   }
   function legend() {
-    $('mp-legend').innerHTML = layers.filter((l) => l.on).map((l) => `<li><span class="bf-sw${l.raster ? ' img' : ''}" style="color:var(${l.colour})" aria-hidden="true"></span><span><span class="fn">${esc(l.entry.name)}</span>${l.label ? `, table <span class="fn">${esc(l.label)}</span>` : ''}${l.raster ? ' (picture)' : ''}</span></li>`).join('');
+    // each layer can be hidden on its own, so one drawn underneath another can be seen
+    $('mp-legend').innerHTML = layers.map((l, i) => l.on ? `<li><label><input type="checkbox" data-layer="${i}"${l.off ? '' : ' checked'}><span class="bf-sw${l.raster ? ' img' : ''}" style="color:var(${l.colour})" aria-hidden="true"></span><span><span class="fn">${esc(l.entry.name)}</span>${l.label ? `, table <span class="fn">${esc(l.label)}</span>` : ''}${l.raster ? ' (picture)' : ''}</span></label></li>` : '').join('');
     $('mp-oplab').hidden = !layers.some((l) => l.on && l.raster);
     const bad = layers.filter((l) => l.on && l.bad).map((l) => `${plural(l.bad, 'feature')} in ${l.label ? `the table “${l.label}” of ` : ''}${l.entry.name} can’t be drawn: ${l.badWhy}`);
     $('mp-units').textContent = [disp.mode === 'll' ? 'Coordinates are latitude and longitude, north up.' : `Coordinates are in ${disp.label}${disp.unit ? `, in units of ${disp.unit}` : ', whose units the file doesn’t state'}, plotted as they are, north up.`, ...skipped, ...bad].join(' ');
   }
+  $('mp-legend').addEventListener('change', (ev) => {
+    const box = ev.target.closest('input[data-layer]'); if (!box) return;
+    const L = layers[+box.dataset.layer]; if (!L) return;
+    L.off = !box.checked;
+    if (sel) sel = sel.filter((h) => h.L !== L || !L.off);
+    schedule();
+  });
   legend();
   // pointer: drag to pan, two fingers to pinch, tap to identify
   const ptrs = new Map();
@@ -5268,7 +5281,7 @@ async function renderMap(e, panel, tok) {
   panel.querySelectorAll('.bf-over input[type=checkbox]').forEach((box) => box.addEventListener('change', async () => {
     const i = +box.dataset.o, o = others[i], why = $(`mp-why-${i}`);
     const mine = layers.filter((l) => l.entry === o);
-    if (!box.checked) { mine.forEach((l) => { l.on = false; }); if (sel && sel.L.entry === o) sel = null; legend(); schedule(); return; }
+    if (!box.checked) { mine.forEach((l) => { l.on = false; }); if (sel) sel = sel.filter((h) => h.L.entry !== o); legend(); schedule(); return; }
     if (mine.length) { mine.forEach((l) => { l.on = true; }); legend(); schedule(); return; }
     why.hidden = false; why.textContent = 'Reading…';
     let src;

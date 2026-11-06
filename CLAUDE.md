@@ -64,7 +64,9 @@ Make puzzles *slightly* more accessible: take the tedium out, never hand solvers
   downloading. That is the only exception to the fictional-example rule. Show every file exactly as
   released, name included, and never add, guess or explain anything about a file beyond showing it.
   The viewers are strict readers: a file that doesn't open says why, and its Text and Bytes views
-  still show everything.
+  still show everything. Rule 1 still holds: the files are already public through the cache page,
+  and this page adds nothing beyond them. Its text never mentions the cache, puzzles or answers.
+  It isn't a generic helper, so it has its own reviewer note (see "Linking a tool from a cache page").
 - **Never rename or move a published tool's folder.** Cache pages link to these addresses, and
   GitHub doesn't redirect Pages URLs.
 
@@ -90,3 +92,7 @@ cryptosystem: TOOL NAME = "Asymmetric Cryptosystems worksheets", TOOL = `asymmet
 
 Reviewer note when submitting: "The linked TOOL NAME page is an optional, generic helper I host
 on GitHub Pages. It contains no solution information and isn't needed to solve."
+
+For .bison Files, use this reviewer note instead: "The linked .bison Files page is an optional,
+view-only second copy of the files this cache page already links, which I host on GitHub Pages.
+It adds nothing to them and isn't needed to solve."

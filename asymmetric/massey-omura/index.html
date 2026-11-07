@@ -240,7 +240,7 @@ footer a{color:inherit}
 .toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
 @media (max-width:520px){ .brand h1{font-size:42px} .panel{padding:16px 14px 18px} }
 
-/* ---------- shared by the Rabin, ElGamal and Diffie–Hellman worksheets ---------- */
+/* ---------- shared by the worksheets ---------- */
 .choice{display:flex;flex-direction:column;gap:8px;margin:8px 0 12px}
 .choice label{display:flex;gap:10px;align-items:flex-start;border:1px solid var(--line-strong);border-radius:8px;padding:10px 12px;cursor:pointer;background:var(--surface);font-size:15px}
 .choice label:has(input:checked){border-color:var(--accent);background:var(--accent-soft)}
@@ -536,7 +536,7 @@ function ntModule(){
     return { F: 4500, M: 131072 };
   }
 
-  function siqs(N, onProgress){
+  function siqs(N, onProgress, attempt = 0){ // a retry (attempt 1, 2, …) picks different polynomials, so it collects different relations
     const k = chooseMultiplier(N), kN = k * N;
     const digits = kN.toString().length;
     const { F: Fwant, M } = siqsParams(digits);
@@ -567,7 +567,7 @@ function ntModule(){
     const sqrtKN = isqrt(2n * kN);
     const targetA = sqrtKN / BigInt(M);
     const logTarget = Math.log(Number(targetA));
-    let rng = 0x9e3779b9 >>> 0;
+    let rng = (0x9e3779b9 + Math.imul(attempt, 0x6d2b79f5)) >>> 0 || 1;
     const rand = () => { rng ^= rng << 13; rng >>>= 0; rng ^= rng >>> 17; rng ^= rng << 5; rng >>>= 0; return rng / 4294967296; };
 
     // pick s and the range of primes that A's factors come from
@@ -927,7 +927,7 @@ function ntModule(){
       if (!d && digits > 50) { d = rho(c, digits > 70 ? Math.round(Math.min(4e6, 1e11 / (digits * digits))) : 2e6, 3n); if (d) notes.push('Pollard rho'); }
       if (!d && digits > SIQS_MAX_DIGITS) throw new Error(`a part with ${digits} digits is left that has no small factors, and the quadratic sieve on this page can’t split a number that size in any reasonable time (from about 70 digits it takes hours). If the puzzle also gives you one of the secret values, enter it and this step isn’t needed.`);
       if (!d) {
-        for (let attempt = 0; attempt < 3 && !d; attempt++) d = siqs(c, onProgress);
+        for (let attempt = 0; attempt < 3 && !d; attempt++) d = siqs(c, onProgress, attempt);
         if (d) notes.push('quadratic sieve');
       }
       if (!d) { for (let cc = 2n; cc < 20n && !d; cc++) d = rho(c, 5e7, cc); if (d) notes.push('Pollard rho'); }
@@ -1053,13 +1053,24 @@ onmessage=function(ev){const m=ev.data;try{
           table: plan.table.map((t) => ({ a: String(t.a), b: String(t.b), M: String(t.M) })) };
         const seen = new Map(); let steps = 0, fast = true, done = false;
         const finish = (x) => { if (done) return; done = true; stopAll(); resolve(x); };
-        const take = (dps) => {
+        const take = (dps, walker) => {
           for (const d of dps) {
             const prev = seen.get(d.key);
-            if (prev) { const x = NT.rhoSolve(plan, prev, d); if (x !== null) return finish(x); }
+            if (prev) { const x = NT.rhoSolve(plan, prev, d); if (x !== null) return finish(x); if (walker) walker.restart(); }
             else seen.set(d.key, d);
           }
         };
+        // no workers: the same walk on the page itself, in short slices so Stop and the rest of the page keep working
+        const inline = () => setTimeout(function slice(){
+          if (cancelled || done) return;
+          try {
+            const walker = slice.w || (slice.w = NT.rhoWalker(plan)), t0 = Date.now();
+            do { const r = walker.run(1 << 14); steps += r.steps; take(r.dps, walker); } while (!done && Date.now() - t0 < 40);
+            if (done) return;
+            onProgress && onProgress({ phase: 'rho', q, steps, expected: plan.expected, workers: 1, fast: walker.fast });
+          } catch (err) { done = true; return reject(err); }
+          setTimeout(slice, 0);
+        }, 30);
         try {
           const k = cores();
           for (let i = 0; i < k; i++) {
@@ -1069,15 +1080,15 @@ onmessage=function(ev){const m=ev.data;try{
               if (m.type === 'error') { done = true; stopAll(); return reject(new Error(m.message)); }
               steps += m.steps; fast = fast && m.fast;
               take(m.dps.map((d) => ({ key: d.key, a: BigInt(d.a), b: BigInt(d.b) })));
-              onProgress && onProgress({ phase: 'rho', q, steps, expected: plan.expected, workers: k, fast });
+              onProgress && onProgress({ phase: 'rho', q, steps, expected: plan.expected, workers: live.length || 1, fast }); // only the workers still running
             };
-            w.onerror = (ev) => { ev.preventDefault(); };
+            w.onerror = (ev) => { // a worker that couldn't start: drop it, and walk on the page if none is left
+              ev.preventDefault(); w.terminate(); live = live.filter((o) => o !== w);
+              if (!live.length && !done && !cancelled) inline();
+            };
             w.postMessage({ cmd: 'rho', plan: wire });
           }
-        } catch (e) { // no workers: same walk on the page itself
-          stopAll();
-          setTimeout(() => { try { resolve(NT.rhoSync(gq, hq, p, q)); } catch (err) { reject(err); } }, 30);
-        }
+        } catch (e) { stopAll(); inline(); }
       });
     }
     const promise = new Promise((resolve, reject) => {
@@ -1127,7 +1138,10 @@ onmessage=function(ev){const m=ev.data;try{
         return cur;
       },
       clear(){ clearTimeout(timer); const j = cur.job; cur = { key: null, status: 'idle' }; if (j) j.cancel(); },
-      stop(){ if (cur.job) cur.job.cancel(); },
+      stop(){
+        if (cur.job) cur.job.cancel();
+        else if (cur.status === 'pending') { clearTimeout(timer); cur = { key: cur.key, status: 'stopped', message: 'cancelled' }; onChange(); } // still waiting to start
+      },
       retry(){ cur = { key: null, status: 'idle' }; }
     };
   }
@@ -1135,9 +1149,27 @@ onmessage=function(ev){const m=ev.data;try{
   function progressBoxHTML(id){
     return `<div class="prog" id="${id}" hidden><progress max="1" value="0"></progress><span class="status" role="status"></span><button class="btn small" type="button" data-stop="${id}">Stop</button></div>`;
   }
+  /* keyboard focus across a redraw: hiding or replacing the button that has focus (Stop, Start again, …) drops focus to the page
+     itself, so refocus(sel, panel) hands it to sel once the redraw is done, or to the step's panel if sel isn't showing */
+  let focusTo = null;
+  const shown = (el) => !!el && el.isConnected && el.getClientRects().length > 0;
+  function refocus(sel, panel){
+    focusTo = { sel, panel };
+    setTimeout(() => {
+      const f = focusTo; focusTo = null; if (!f) return;
+      const a = document.activeElement;
+      if (a && a !== document.body && shown(a)) return; // focus is still on something the solver can see
+      const el = f.sel && $(f.sel), pn = typeof f.panel === 'string' ? $(f.panel) : f.panel;
+      if (shown(el)) el.focus();
+      else if (pn) { if (!pn.hasAttribute('tabindex')) pn.setAttribute('tabindex', '-1'); pn.focus({ preventScroll: true }); }
+    }, 0);
+  }
   function showProgress(id, st, startText){
     const box = $('#' + id); if (!box) return;
-    if (st.status !== 'running' && st.status !== 'pending') { box.hidden = true; return; }
+    if (st.status !== 'running' && st.status !== 'pending') {
+      if (!box.hidden && box.contains(document.activeElement)) refocus('#retry-' + id.replace(/^prog-/, ''), box.closest('.panel'));
+      box.hidden = true; return;
+    }
     box.hidden = false;
     const bar = box.querySelector('progress'), s = box.querySelector('.status'), p = st.progress;
     if (!p) { bar.removeAttribute('value'); s.textContent = startText; return; }
@@ -1150,18 +1182,21 @@ onmessage=function(ev){const m=ev.data;try{
   }
 
   /* ---------- Steps 3 and 4 shared by the discrete-log worksheets ----------
-     run({ p, g, h, ok, why, sym, hSym, lead, known, knownLabel }) renders #s3 and #s4 and returns the exponent (or null). */
+     run({ p, g, h, ok, why, sym, hSym, lead, known, knownLabel, needOrder, pm1Use }) renders #s3 and #s4 and returns the exponent (or null).
+     With a known exponent, p − 1 is factored only if the page asks for the exact order (needOrder) or the solver presses the button;
+     pm1Use says what else on the page the factors would let it check. */
   function dlogFlow(rerender){
     const fs = jobSlot((n, onP) => factorJob(n, onP), rerender, () => showProgress('prog-pm1', fs.state, 'Trying small primes and quick methods…'));
     const ds = jobSlot((a, onP) => dlogJob(a.g, a.h, a.p, a.pm1, onP), rerender, () => showProgress('prog-dl', ds.state, 'Setting up the search…'));
-    let forced = '';
+    let forced = '', forcedF = '';
     document.addEventListener('click', (ev) => {
       const t = ev.target;
       if (t.closest('[data-stop="prog-pm1"]')) fs.stop();
       if (t.closest('[data-stop="prog-dl"]')) ds.stop();
-      if (t.id === 'retry-pm1') { fs.retry(); rerender(); }
-      if (t.id === 'retry-dl') { ds.retry(); rerender(); }
-      if (t.id === 'force-dl') { forced = t.getAttribute('data-key'); rerender(); }
+      if (t.id === 'retry-pm1') { fs.retry(); rerender(); refocus('[data-stop="prog-pm1"]', '#s3'); }
+      if (t.id === 'retry-dl') { ds.retry(); rerender(); refocus('[data-stop="prog-dl"]', '#s4'); }
+      if (t.id === 'force-dl') { forced = t.getAttribute('data-key'); rerender(); refocus('[data-stop="prog-dl"]', '#s4'); }
+      if (t.id === 'run-pm1') { forcedF = t.getAttribute('data-key'); rerender(); refocus('[data-stop="prog-pm1"]', '#s3'); }
     });
     return function run(o){
       const { p, g, h, sym, hSym } = o; const G = o.gSym || 'g';
@@ -1169,10 +1204,14 @@ onmessage=function(ev){const m=ev.data;try{
       $('#lead4').innerHTML = o.lead;
       /* Step 3 */
       const c3 = []; let pm1 = null, order = null;
+      const pKey = o.pOk ? (p - 1n).toString() : '';
       if (!o.pOk) { fs.clear(); waiting('#s3', o.pWhy); $('#pm1-out').innerHTML = ''; }
-      else {
+      else if (o.known !== undefined && !o.needOrder && forcedF !== pKey && !(fs.state.key === pKey && fs.state.status === 'done')) {
+        ready('#s3'); fs.clear(); $('#pm1-out').innerHTML = ''; // nothing on the page needs the factors, so don't start (or keep) a long job
+        c3.push(['info', `Not needed for now: you’ve entered <var>${sym}</var>, and checking it takes one power, not the factors of <var>p − 1</var>.${o.pm1Use ? ' ' + o.pm1Use : ''} <button class="btn small" type="button" id="run-pm1" data-key="${pKey}">Factor p − 1 anyway</button>`]);
+      } else {
         ready('#s3');
-        const s = fs.want((p - 1n).toString(), p - 1n, 150);
+        const s = fs.want(pKey, p - 1n, 150);
         if (s.status === 'done') pm1 = s.result.factors;
         else if (s.status === 'error') c3.push(['bad', 'Factoring stopped: ' + esc(s.message)]);
         else if (s.status === 'stopped') c3.push(['info', 'Stopped. <button class="btn small" type="button" id="retry-pm1">Start again</button>']);
@@ -1189,8 +1228,8 @@ onmessage=function(ev){const m=ev.data;try{
             if (est.worst > 10000000000n) c3.push([est.seconds > 600 ? 'warn' : 'info', `The hardest piece is a search through a group whose size has ${plural(D(est.worst), 'digit')}: about ${fmtCount(est.steps)} steps, so expect ${fmtTime(est.seconds)} on a phone (less on a computer). This page uses ${plural(cores(), 'processor core')}.`]);
           }
         }
-        showProgress('prog-pm1', fs.state, 'Trying small primes and quick methods…');
       }
+      showProgress('prog-pm1', fs.state, 'Trying small primes and quick methods…');
       setChecks('#ck-pm1', c3);
       /* Step 4 */
       const c4 = []; let x = null;
@@ -1215,7 +1254,6 @@ onmessage=function(ev){const m=ev.data;try{
           c4.push(['warn', `<b>This search would take ${fmtTime(est.seconds)}.</b> <var>p − 1</var> has a big prime factor, so Pohlig–Hellman can’t break it into small enough pieces. Puzzles are built to avoid this, so first check <var>p</var> and <var>${G}</var> for a wrong digit. <button class="btn small" type="button" id="force-dl" data-key="${esc(key)}">Run it anyway</button>`]);
         } else {
           const s = ds.want(key, { g, h, p, pm1 }, 150);
-          showProgress('prog-dl', ds.state, 'Setting up the search…');
           if (s.status === 'done' && s.result.noSolution) {
             $('#dl-out').innerHTML = ''; $('#ph-more').hidden = true;
             c4.push(['bad', `<b>No answer exists:</b> <var>${hSym}</var> is not a power of <var>${G}</var> modulo <var>p</var>, so no <var>${sym}</var> gives it. One of <var>p</var>, <var>${G}</var>, or <var>${hSym}</var> has a wrong digit, or two numbers are in each other’s boxes.`]);
@@ -1237,6 +1275,7 @@ onmessage=function(ev){const m=ev.data;try{
           }
         }
       }
+      showProgress('prog-dl', ds.state, 'Setting up the search…'); // after every branch, so a cleared search hides its Stop box too
       setChecks('#ck-dl', c4);
       return { x, order, pm1 };
     };
@@ -1320,7 +1359,7 @@ onmessage=function(ev){const m=ev.data;try{
     const fs = jobSlot((n, onP) => factorJob(n, onP), rerender, () => showProgress('prog-f', fs.state, 'Trying small primes and quick methods…'));
     document.addEventListener('click', (ev) => {
       if (ev.target.closest('[data-stop="prog-f"]')) fs.stop();
-      if (ev.target.id === 'retry-f') { fs.retry(); rerender(); }
+      if (ev.target.id === 'retry-f') { fs.retry(); rerender(); refocus('[data-stop="prog-f"]', '#s2'); }
     });
     /* run({ n, ok, why, known: [p, q], name }) -> { factors, fromUser } ; renders the progress and status, not the result */
     return function run(o){
@@ -1356,10 +1395,10 @@ onmessage=function(ev){const m=ev.data;try{
 
   /* ---------- message reader: renders into a container, keeps its options in state.cv ---------- */
   // 3-digit blocks: ASCII and Latin-1 (ß is 223). 4-digit blocks: any Unicode character (Cyrillic, Greek, …).
-  const printable = (v, size) => size === 3 ? (v >= 32 && v <= 126) || (v >= 160 && v <= 255) : v >= 32 && v <= 0x10FFFF && !(v >= 127 && v < 160) && !(v >= 0xD800 && v <= 0xDFFF);
+  const printable = (v, size) => size === 3 ? (v >= 32 && v <= 126) || (v >= 160 && v <= 255) : v >= 32 && v <= 0x10FFFF && !(v >= 127 && v < 160) && !(v >= 0xD800 && v <= 0xDFFF) && v !== 0xFEFF; // U+FEFF, the byte-order mark, is invisible
   function coordsFrom(s){ // two common layouts of coordinates written as plain digits
     const out = [];
-    const fit = (lat, lm, lon, om) => lat <= 90 && lm < 60 && lon <= 180 && om < 60;
+    const fit = (lat, lm, lon, om) => lm < 60 && om < 60 && (lat < 90 || (lat === 90 && lm === 0)) && (lon < 180 || (lon === 180 && om === 0));
     if (s.length >= 15) { const lat = +s.slice(0, 2), lm = +s.slice(2, 7) / 1000, lon = +s.slice(7, 10), om = +s.slice(10, 15) / 1000;
       out.push({ n: 15, text: `${s.slice(0, 2)}° ${s.slice(2, 4)}.${s.slice(4, 7)}′  ${s.slice(7, 10)}° ${s.slice(10, 12)}.${s.slice(12, 15)}′`, ok: fit(lat, lm, lon, om), rest: s.slice(15), how: '2 + 5 digits, then 3 + 5 digits (longitude written with 3 degree digits, like 077°)' }); }
     if (s.length >= 14) { const lat = +s.slice(0, 2), lm = +s.slice(2, 7) / 1000, lon = +s.slice(7, 9), om = +s.slice(9, 14) / 1000;
@@ -1413,7 +1452,7 @@ onmessage=function(ev){const m=ev.data;try{
       } else if (mode === 'coords') {
         const opts = coordsFrom(body);
         if (!opts.length) checks.push(['warn', `Coordinates need at least 14 digits, and there ${body.length === 1 ? 'is' : 'are'} only ${body.length}.`]);
-        for (const o of opts) checks.push([o.ok ? 'ok' : 'info', `<b>${o.n}-digit layout:</b> <span class="num">${esc(o.text)}</span>. ${o.how}. ${o.ok ? 'The degrees and minutes are in range.' : 'Some part is out of range (minutes must be under 60, latitude at most 90°), so this layout probably isn’t it.'}${o.rest ? ` The ${plural(o.rest.length, 'digit')} after it may be a message: try a block reading with “skip the first ${skip + o.n} digits”.` : ''}`]);
+        for (const o of opts) checks.push([o.ok ? 'ok' : 'info', `<b>${o.n}-digit layout:</b> <span class="num">${esc(o.text)}</span>. ${o.how}. ${o.ok ? 'The degrees and minutes are in range.' : 'Some part is out of range (minutes must be under 60, latitude at most 90° and longitude at most 180°), so this layout probably isn’t it.'}${o.rest ? ` The ${plural(o.rest.length, 'digit')} after it may be a message: try a block reading with “skip the first ${skip + o.n} digits”.` : ''}`]);
         if (opts.length) checks.push(['info', 'Add the hemispheres (N or S, E or W) from where the cache is. If no layout fits, the coordinates may start later in the number, or this may be the wrong reading.']);
         const best = opts.find((o) => o.ok) || opts[0];
         text = best ? best.text : body;
@@ -1422,9 +1461,9 @@ onmessage=function(ev){const m=ev.data;try{
         let h = m.toString(16); if (h.length % 2) h = '0' + h;
         const bytes = new Uint8Array(h.length / 2);
         for (let i = 0; i < bytes.length; i++) bytes[i] = parseInt(h.slice(2 * i, 2 * i + 2), 16);
-        // bytes 128 and up: UTF-8 if they form valid UTF-8 (° is c2 b0), otherwise Latin-1 (° is b0)
+        // bytes 128 and up: UTF-8 if they form valid UTF-8 (° is c2 b0), otherwise Latin-1 (° is b0); ignoreBOM keeps a leading ef bb bf as its own character, so the chips stay lined up
         let utf8 = null;
-        if (bytes.some((b) => b >= 128) && typeof TextDecoder !== 'undefined') { try { utf8 = new TextDecoder('utf-8', { fatal: true }).decode(bytes); } catch (e) { utf8 = null; } }
+        if (bytes.some((b) => b >= 128) && typeof TextDecoder !== 'undefined') { try { utf8 = new TextDecoder('utf-8', { fatal: true, ignoreBOM: true }).decode(bytes); } catch (e) { utf8 = null; } }
         const add = (d, cp) => { const pr = printable(cp, 4), t = pr ? String.fromCodePoint(cp) : '·'; chips.push({ d, t, odd: !pr }); text += t; };
         if (utf8 !== null) {
           let i = 0;
@@ -1466,7 +1505,7 @@ onmessage=function(ev){const m=ev.data;try{
   }
 
   return { $, esc, D, plural, cmp, parseNum, fieldsHTML, li, setChecks, common, valBox, waiting, ready, toast, copy, store,
-    factorJob, dlogJob, dlogEstimate, fmtTime, factorList, reader, cores, jobSlot, progressBoxHTML, showProgress, fmtCount, dlogFlow, parseList, bitReader, modulusChecks, factorFlow, knownPrimeChecks };
+    factorJob, dlogJob, dlogEstimate, fmtTime, factorList, reader, cores, jobSlot, progressBoxHTML, showProgress, refocus, fmtCount, dlogFlow, parseList, bitReader, modulusChecks, factorFlow, knownPrimeChecks };
 }
 </script>
 <script>
@@ -1515,6 +1554,7 @@ onmessage=function(ev){const m=ev.data;try{
     for (const r of document.querySelectorAll('#route input')) r.checked = r.value === st.route;
     const byB = st.route !== 'u';
     const base = byB ? 'c1' : 'c2', target = byB ? 'c2' : 'c3';
+    const known = byB ? v('b') : v('u');
     const res = flow({
       p, g: v(base), h: v(target), sym: byB ? 'b' : 'u', hSym: NAMES[target], gSym: NAMES[base],
       lead: byB ? 'Find Bob’s lock <var>b</var>: the power that turns <var>c<sub>1</sub></var> into <var>c<sub>2</sub></var>. That backwards step is a discrete logarithm, and it’s what Steps 3 and 4 are for.'
@@ -1522,15 +1562,20 @@ onmessage=function(ev){const m=ev.data;try{
       pOk, pWhy: p === undefined ? 'Needs p from Step 1.' : 'Needs a usable p: see the note under p in Step 1.',
       gOk: pOk && ok[base] && v(base) !== p - 1n, gWhy: `Needs a usable ${byB ? 'c₁' : 'c₂'} from Step 1.`,
       hOk: ok[target], hWhy: `Needs ${byB ? 'c₂' : 'c₃'} from Step 1.`,
-      known: byB ? v('b') : v('u'), knownLabel: byB ? 'the b you entered' : 'the u you entered'
+      known, knownLabel: byB ? 'the b you entered' : 'the u you entered',
+      // an exponent that shares a factor with p − 1 can only be judged against the exact order, which needs the factors of p − 1
+      needOrder: known !== undefined && pOk && NT.gcd(known, p - 1n) !== 1n
     });
+    const exact = res.pm1 !== null; // res.order is the exact order of the base (not just p − 1) once p − 1 is factored
 
     let m = null; const mC = [];
     if (res.x !== null && (byB ? ok.c3 : ok.c1)) {
       K.ready('#s5');
+      $('#m-out').innerHTML = '';
       if (byB) {
         const ord = res.order, binv = NT.modInv(res.x % ord, ord);
-        if (binv === null) mC.push(['bad', `<var>b</var> shares a factor with ${ord === p - 1n ? '<var>p − 1</var>' : 'the order of <var>c<sub>1</sub></var>'}, so Bob’s lock can’t be undone with a single power. Real exponents never do this; check <var>c<sub>1</sub></var> and <var>c<sub>2</sub></var>. Breaking the other lock may still work.`]);
+        if (binv === null && !exact) mC.push(['info', '<var>b</var> shares a factor with <var>p − 1</var>, so whether Bob’s lock can be undone depends on the exact order of <var>c<sub>1</sub></var>, which needs the factors of <var>p − 1</var> from Step 3.']);
+        else if (binv === null) mC.push(['bad', `<var>b</var> shares a factor with ${ord === p - 1n ? '<var>p − 1</var>' : 'the order of <var>c<sub>1</sub></var>'}, so Bob’s lock can’t be undone with a single power. Real exponents never do this; check <var>c<sub>1</sub></var> and <var>c<sub>2</sub></var>. Breaking the other lock may still work.`]);
         else {
           m = NT.modPow(v('c3'), binv, p);
           $('#m-out').innerHTML = K.valBox('b<sup>−1</sup>', `= the inverse of b mod ${ord === p - 1n ? '(p − 1)' : 'the order of c<sub>1</sub>'}`, binv) + K.valBox('m', '= c<sub>3</sub><sup>b<sup>−1</sup></sup> mod p', m, { big: true });
@@ -1538,6 +1583,9 @@ onmessage=function(ev){const m=ev.data;try{
           else mC.push(['warn', 'Locking this <var>m</var> with <var>b</var> doesn’t give back <var>c<sub>3</sub></var>, so <var>c<sub>3</sub></var> probably has a wrong digit.']);
           mC.push(['info', 'If this <var>m</var> reads as noise, recheck all three passes: a wrong digit in <var>c<sub>1</sub></var> or <var>c<sub>2</sub></var> gives the wrong <var>b</var>, and a wrong digit in <var>c<sub>3</sub></var> unlocks the wrong number.']);
         }
+      } else if (NT.gcd(res.x, res.order) !== 1n) { // a real unlock undoes a lock, so it shares no factor with the order of c₂
+        if (!exact) mC.push(['info', '<var>u</var> shares a factor with <var>p − 1</var>, so whether it can be an unlocking exponent depends on the exact order of <var>c<sub>2</sub></var>, which needs the factors of <var>p − 1</var> from Step 3.']);
+        else mC.push(['bad', `<var>u</var> shares a factor with ${res.order === p - 1n ? '<var>p − 1</var>' : 'the order of <var>c<sub>2</sub></var>'}, so it can’t be Alice’s unlocking exponent: an unlock undoes a lock, and a power that shares a factor with the order can’t be undone. Real passes never do this; check <var>c<sub>2</sub></var> and <var>c<sub>3</sub></var>. Breaking the other lock may still work.`]);
       } else {
         m = NT.modPow(v('c1'), res.x, p);
         $('#m-out').innerHTML = K.valBox('m', '= c<sub>1</sub><sup>u</sup> mod p', m, { big: true });

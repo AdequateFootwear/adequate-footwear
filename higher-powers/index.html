@@ -570,13 +570,6 @@ table.nums td:last-child{overflow-wrap:anywhere;white-space:normal}
 .hp-seg .btn[aria-pressed="true"]{background:var(--accent);border-color:var(--accent);color:var(--accent-ink)}
 .hp-keys{display:flex;flex-wrap:wrap;gap:6px;margin:12px 0 6px}
 .hp-keys .btn{min-width:40px;min-height:36px;justify-content:center;font-family:"IBM Plex Mono",monospace;font-size:16px;text-transform:none;letter-spacing:0;font-weight:500}
-.hp-consts{margin:4px 0 10px}
-.hp-clist{list-style:none;margin:6px 0 0;padding:0;display:grid;grid-template-columns:repeat(auto-fill,minmax(250px,1fr));gap:6px}
-.hp-clist button{width:100%;text-align:left;display:flex;flex-direction:column;gap:1px;align-items:flex-start;border:1px solid var(--line-strong);border-radius:8px;background:var(--surface);padding:7px 10px;cursor:pointer;color:var(--ink)}
-.hp-clist button:hover{background:var(--surface-2)}
-.hp-clist .cn{font-weight:600;font-size:14.5px}
-.hp-clist .cv{font-family:"IBM Plex Mono",monospace;font-size:12.5px;color:var(--muted)}
-.hp-clist .ct{font-family:"IBM Plex Mono",monospace;font-size:12.5px;color:var(--brass)}
 
 /* expression lines and results */
 .hp-lines{display:flex;flex-direction:column;gap:12px;margin:10px 0 12px}
@@ -660,13 +653,6 @@ ol.hp-steps{margin:6px 0;padding-left:22px;color:var(--ink-2);font-size:14.5px}
 ol.hp-steps li{margin:3px 0;overflow-wrap:anywhere}
 ol.hp-steps code{font-family:"IBM Plex Mono",monospace;color:var(--ink)}
 
-/* reference */
-.hp-ref{padding-left:20px;margin:6px 0}
-.hp-ref li{margin:5px 0}
-.howto-body code{font-family:"IBM Plex Mono",monospace;font-size:14px;color:var(--ink);background:var(--surface-2);border-radius:4px;padding:0 4px;white-space:nowrap}
-dl.hp-fns{margin:6px 0}
-dl.hp-fns dt{font-family:"IBM Plex Mono",monospace;font-size:14px;color:var(--ink);font-weight:600;margin-top:10px;overflow-wrap:anywhere}
-dl.hp-fns dd{margin:2px 0 0 0;font-size:14.5px}
 table.hp-grid .rdel{padding:4px 7px;font-family:"Barlow",sans-serif;font-size:15px;line-height:1}
 @media (max-width:420px){table.hp-grid input{width:5em}table.hp-grid td{padding:3px 3px}}
 .hp-calc .panel-head{flex-wrap:nowrap;align-items:center}
@@ -675,8 +661,48 @@ table.hp-grid .rdel{padding:4px 7px;font-family:"Barlow",sans-serif;font-size:15
 .hp-in .ldel,.hp-var .vdel{padding:5px 9px;font-family:"Barlow",sans-serif;font-size:16px;line-height:1}
 .hp-val sup,.hp-alt sup,.hp-stats sup,.hp-var sup,table.hp-grid sup,.hp-notes sup{font-size:.7em;line-height:0}
 .hp-coord .cp{white-space:nowrap}
-@media (max-width:520px){details.howto > summary .meta{display:none}}
 .hp-calc .help{color:var(--ink-2)}
+
+/* the conventions a line was read with, under "Read as" */
+.hp-conv{list-style:none;margin:2px 0 4px;padding:0;display:flex;flex-direction:column;gap:2px}
+.hp-conv li{font-size:13.5px;color:var(--ink-2);padding-left:14px;position:relative;overflow-wrap:anywhere}
+.hp-conv li::before{content:"";position:absolute;left:2px;top:.55em;width:6px;height:6px;border:1.5px solid var(--brass);border-radius:50%;box-sizing:border-box}
+#tb-read .hp-conv{margin-top:4px}
+
+/* Symbols and functions */
+#dx-q{width:100%;max-width:28em}
+#dx-count:empty{display:none}
+.hp-dput{margin:6px 0 0}
+.hp-dput:empty{display:none}
+.hp-dput p{margin:0 0 4px;font-size:14px;color:var(--ink-2);overflow-wrap:anywhere}
+.hp-dput code{font-family:"IBM Plex Mono",monospace;font-size:13.5px;color:var(--ink)}
+.dx-group{margin:16px 0 0}
+.dx-group[hidden]{display:none}
+.dx-group h3{font-family:"Barlow Condensed",sans-serif;font-weight:600;letter-spacing:.06em;text-transform:uppercase;font-size:14px;color:var(--brass);margin:0 0 4px;padding-bottom:4px;border-bottom:1px solid var(--line)}
+.dx-group ul{list-style:none;margin:0;padding:0;display:grid;grid-template-columns:repeat(auto-fill,minmax(min(100%,320px),1fr));column-gap:18px}
+li.dx{display:grid;grid-template-columns:5.4em minmax(0,1fr);gap:2px 10px;align-items:start;padding:8px 0;border-bottom:1px solid var(--line);min-width:0}
+li.dx[hidden]{display:none}
+.dx-look{font-family:"STIX Two Math","Cambria Math","Latin Modern Math",Georgia,"Times New Roman",serif;font-size:19px;line-height:1.3;color:var(--ink);overflow-wrap:anywhere;padding-top:1px}
+.dx-look sup,.dx-look sub{font-size:.66em;line-height:0}
+.dx-over{text-decoration:overline;text-decoration-thickness:1.5px}
+.dx-frac{display:inline-flex;flex-direction:column;align-items:center;vertical-align:middle;font-size:.8em;line-height:1.1}
+.dx-frac > span:first-child{border-bottom:1.5px solid currentColor;padding:0 .2em}
+.dx-binom{display:inline-flex;flex-direction:column;align-items:center;vertical-align:middle;font-size:.8em;line-height:1.08;padding:0 .4em;border-left:1.5px solid currentColor;border-right:1.5px solid currentColor;border-radius:45% / 50%}
+.dx-body{min-width:0}
+.dx-body p{margin:0}
+.dx-name{font-weight:600;font-size:15px;color:var(--ink)}
+.dx-body .dx-type{display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin:4px 0 2px}
+.dx-ins{font:inherit;cursor:pointer;border:1px solid var(--line-strong);border-left:3px solid var(--accent);border-radius:6px;background:var(--surface);color:var(--ink);padding:4px 9px;min-height:34px;text-align:left;max-width:100%}
+.dx-ins:hover{background:var(--surface-2)}
+.dx-ins code{font-family:"IBM Plex Mono",monospace;font-size:14px;color:var(--ink);white-space:normal;overflow-wrap:anywhere}
+.dx-copy{min-height:34px}
+.dx-also,.dx-note{font-size:13.5px;color:var(--ink-2);overflow-wrap:anywhere}
+.dx-body .dx-also{margin-top:2px}
+.dx-also code{font-family:"IBM Plex Mono",monospace;font-size:13px;color:var(--ink);background:var(--surface-2);border-radius:4px;padding:0 3px}
+@media (max-width:420px){li.dx{grid-template-columns:4.4em minmax(0,1fr)}.dx-look{font-size:17px}}
+#symbols .panel-head{flex-wrap:nowrap;align-items:center}
+#symbols .panel-head h2{flex:1}
+.dx-also code{white-space:nowrap}
 </style>
 </head>
 <body>
@@ -805,6 +831,7 @@ table.hp-grid .rdel{padding:4px 7px;font-family:"Barlow",sans-serif;font-size:15
     </div>
     <p class="hp-omen" id="hp-omen" aria-live="polite"></p>
     <p class="help">Type a calculation; the result appears as you type, along with exactly how it was read. Whole numbers and fractions stay exact, whatever their size. Add as many lines as you like.</p>
+    <p class="help">The usual ways of writing things work too, such as sin⁻¹ x, sin² x, |x|, log₂ 8 and 5C2, and a short note says when one was applied. To find how to type a symbol, see <a href="#symbols">Symbols and functions</a>.</p>
 
     <div class="hp-settings">
       <label class="hp-digits">Digits <input type="number" id="set-digits" min="20" max="200" step="1" value="30" inputmode="numeric" aria-describedby="digits-help"></label>
@@ -829,11 +856,6 @@ table.hp-grid .rdel{padding:4px 7px;font-family:"Barlow",sans-serif;font-size:15
       <button type="button" class="btn small" data-ins=", " aria-label="Insert comma">,</button>
     </div>
 
-    <details class="more hp-consts" id="hp-consts">
-      <summary>Named constants</summary>
-      <p class="help">Choose one to put its name into the box you were last typing in. Only π, e and i are built in under short names; these are written out in full, and every other name is a variable of yours.</p>
-      <ul class="hp-clist" id="hp-clist"></ul>
-    </details>
 
     <div class="hp-lines" id="lines"></div>
     <div class="btnrow">
@@ -917,53 +939,25 @@ table.hp-grid .rdel{padding:4px 7px;font-family:"Barlow",sans-serif;font-size:15
     <div class="hp-out" id="co-out" aria-live="polite"></div>
   </section>
 
-  <details class="howto" id="howto">
-    <summary>How to write things <span class="meta">operators, functions, names</span></summary>
-    <div class="howto-body">
-      <h3>Operators</h3>
-      <ul class="hp-ref">
-        <li><code>+ −</code> add and subtract; <code>× * ·</code> multiply; <code>÷ /</code> divide.</li>
-        <li><code>^</code> or <code>**</code> raise to a power. Powers work from the right, so <code>2^3^2</code> is 2^(3^2) = 512, and they bind tighter than a leading minus, so <code>-2^2</code> is −4. Superscripts work too: <code>x²</code>.</li>
-        <li><code>%</code> the remainder: <code>a % b</code> is a − b × floor(a ÷ b), so it takes the divisor’s sign (<code>-7 % 3</code> is 2, <code>7 % -3</code> is −2). <code>mod(a, b)</code> is the same.</li>
-        <li><code>!</code> factorial, for whole numbers 0 and up. <code>3!!</code> is read as (3!)!, the factorial of 6.</li>
-        <li><code>°</code> marks an angle in degrees, whichever angle setting is on: <code>sin(30°)</code> is ½.</li>
-        <li>Multiplication can be left out: <code>2π</code>, <code>3(4 + 5)</code>, <code>2x</code>, <code>x y</code>. It counts the same as ×, from left to right, so <code>1/2π</code> is (1 ÷ 2) × π. When in doubt, add brackets: “Read as” shows how a line was understood.</li>
-        <li>Numbers are written with a point for decimals. <code>1.5e3</code> is 1500 and <code>2e-4</code> is 0.0002; <code>2e</code> on its own is 2 × e. A number that ends in <code>…</code> (or <code>...</code>), such as <code>1.6180339887…</code>, is taken as correct only to the digits given, so results worked out from it show no more digits than those can vouch for; without it, a decimal you type is exact.</li>
-      </ul>
-      <h3>Names</h3>
-      <p>Only three names are built in: <code>π</code> (or <code>pi</code>), <code>e</code> and <code>i</code> (the imaginary unit, √−1). Every other name, including any Greek letter, is a variable: it waits until you give it a value in the Variables panel. A word is one name, so <code>xy</code> is a variable called xy; write <code>x y</code> or <code>x × y</code> to multiply. A Greek letter is a name of its own, so <code>2πr</code> is 2 × π × r. The named constants are written out in full (<code>golden_ratio</code>, …) and listed under “Named constants”.</p>
-      <h3>Functions</h3>
-      <dl class="hp-fns">
-        <dt>sqrt(x), √x, cbrt(x), root(x, n)</dt><dd>Square root, cube root, n-th root. For a negative number, cbrt and odd roots give the real root (cbrt(−8) = −2); otherwise roots of negative and complex numbers give the principal value. A fractional power of a negative number, such as (−8)^(1/3), is the principal complex value (1 + 1.732…i).</dd>
-        <dt>exp(x), ln(x), log(x), log(x, b), log2(x)</dt><dd>e to the power x, the natural logarithm, the logarithm to base 10, to base b, and to base 2. Logarithms of negative and complex numbers give the principal value.</dd>
-        <dt>sin, cos, tan, asin, acos, atan, atan2(y, x)</dt><dd>Trigonometry in the angle unit you choose above. atan2(y, x) is the angle of the point (x, y), from −180° to 180° (−π to π). In degrees, the angles whose sine, cosine or tangent is 0, ±½ or ±1 (sin 30° = ½, cos 90° = 0, tan 45° = 1) come out exactly.</dd>
-        <dt>sinh, cosh, tanh</dt><dd>Hyperbolic functions.</dd>
-        <dt>abs(x), sign(x)</dt><dd>Size (for a complex number, its distance from 0) and sign (−1, 0 or 1).</dd>
-        <dt>floor(x), ceil(x), trunc(x), frac(x)</dt><dd>Round down, round up, drop the fraction, and keep only the fraction. frac keeps the sign: frac(−3.7) = −0.7.</dd>
-        <dt>round(x), round(x, places)</dt><dd>Round to the nearest whole number, or to that many decimal places (a negative number of places rounds to tens, hundreds, …). Halves round away from zero: round(2.5) = 3, round(−2.5) = −3.</dd>
-        <dt>min, max, sum, mean, median</dt><dd>Of any number of values: max(3, 9, 4).</dd>
-        <dt>gcd, lcm, mod(a, b)</dt><dd>Greatest common divisor and least common multiple of whole numbers; the remainder, as for %.</dd>
-        <dt>nCr(n, k) or choose(n, k), nPr(n, k)</dt><dd>Combinations (ways to choose k of n) and permutations (ordered ways).</dd>
-        <dt>factorial(n), gamma(x)</dt><dd>n!, and the gamma function, Γ(n) = (n − 1)! for whole n, defined for every real number except 0, −1, −2, ….</dd>
-        <dt>isprime(n), nextprime(n), prevprime(n), factor(n)</dt><dd>1 if n is prime and 0 if not; the next prime above n and the last below it; and n written as a product of primes.</dd>
-        <dt>digitsum(n), digitalroot(n)</dt><dd>The sum of the digits, and the single digit you reach by summing again and again. For a negative number or a decimal, they ask what you want.</dd>
-        <dt>reverse(n), concat(a, b, …), digits(n)</dt><dd>The digits backwards (reverse(1230) = 321), numbers joined end to end (concat(12, 345) = 12345), and how many digits a whole number has.</dd>
-        <dt>triangle(n), fib(n)</dt><dd>The n-th triangular number, n(n + 1)/2, and the n-th Fibonacci number, with fib(0) = 0 and fib(1) = 1.</dd>
-        <dt>re, im, arg, conj</dt><dd>The real and imaginary parts of a complex number, its angle, and its conjugate.</dd>
-        <dt>deg(x), rad(x)</dt><dd>Convert radians to degrees and degrees to radians, whatever the angle setting.</dd>
-      </dl>
-    </div>
-  </details>
+  <section class="panel" id="symbols" aria-labelledby="h-symbols">
+    <div class="panel-head"><span class="step">7</span><h2 id="h-symbols">Symbols and functions</h2></div>
+    <p class="help">How to type what you see in print. Search by how it looks (√, sin⁻¹, |x|, ⌊x⌋) or by its name (square root, floor). Tap what to type to put it into the box you were last typing in, or copy it.</p>
+    <label class="lbl" for="dx-q">Find a symbol or function</label>
+    <input type="search" class="hp-text" id="dx-q" autocomplete="off" spellcheck="false" autocapitalize="off" placeholder="e.g. √ or floor" aria-describedby="dx-count" aria-controls="dx-list">
+    <p class="help" id="dx-count" role="status"></p>
+    <div class="hp-dput" id="dx-put" role="status"></div>
+    <div class="hp-dir" id="dx-list"></div>
+  </section>
 
   <section class="panel" id="about" aria-labelledby="h-about">
-    <div class="panel-head"><span class="step">7</span><h2 id="h-about">How it works</h2></div>
+    <div class="panel-head"><span class="step">8</span><h2 id="h-about">How it works</h2></div>
     <div class="explain">
       <p><b>Exact numbers.</b> Whole numbers and fractions are kept exactly, however large: 2<sup>1000</sup> has all 302 of its digits, and 1/3 + 1/6 is exactly 1/2. A decimal you type, such as 0.1, is the exact fraction 1/10, so 0.1 + 0.2 is exactly 0.3. Results that can’t be fractions, such as √2 or π, are decimals.</p>
       <p><b>Decimals.</b> Square roots, powers, logarithms, trigonometry and the rest are worked out with high-precision arithmetic written for this page, at the number of digits you choose plus a dozen or so more, and every decimal carries a bound on its own error. That bound decides how many digits are shown: if a calculation loses precision (subtracting two nearly equal numbers, say), the result shows only the digits that are still right and says so. A difference that cancels completely, such as e<sup>iπ</sup> + 1, is shown as 0, “to within the working precision”. Values tested against an independent high-precision library agreed to every digit shown.</p>
-      <p><b>Complex numbers.</b> Square roots, logarithms and powers of negative and complex numbers give their principal values. When the imaginary part of a result is too small to show at the chosen number of digits, the result is shown as a real number.</p>
+      <p><b>Complex numbers.</b> Square roots, logarithms, powers and the inverse trigonometric and hyperbolic functions of negative and complex numbers give their principal values, with the usual branch cuts. When the imaginary part of a result is too small to show at the chosen number of digits, the result is shown as a real number.</p>
+      <p><b>How lines are read.</b> Besides plain function calls, the calculator understands the usual printed forms: sin⁻¹ x is the inverse sine, not 1/sin x; sin² x is (sin x)²; a function without brackets takes the next number, name or bracket, so sin 2x is sin(2x); log₂ 8 is log(8, 2); |x|, ⌊x⌋ and ⌈x⌉ are abs, floor and ceil; 5C2 and C(5, 2) are combinations; and n!! is the double factorial. “Read as” always shows the result of this, and a note says which convention was used. Where a form could mean more than one thing, such as lg, or bars inside bars, it asks for brackets or another spelling rather than guessing.</p>
       <p><b>Primes.</b> Below 3.3 × 10<sup>24</sup>, isprime is certain. Above that it uses the Baillie–PSW test, which no known composite number passes, and it says “probable prime”. factor finds small factors quickly; if part of a large number can’t be split within a few seconds, it says so.</p>
       <p><b>Limits.</b> Whole numbers stay exact up to 100,000 digits, and decimals reach from about 10<sup>−100000</sup> to 10<sup>100000</sup>.</p>
-      <p><b>Named constants</b> were computed to 220 significant digits; standard gravity (9.80665) and the speed of light (299792458) are exact by definition.</p>
     </div>
   </section>
 
@@ -1942,6 +1936,9 @@ return {
          // with .node = {pos, end} marking the bad part of the line. A number typed with … (or ...)
          // straight after it, such as 1.6180339887…, is taken as correct only to the digits given (a
          // decimal with that error bound), not as the exact fraction a plain decimal is.
+         // The usual printed forms are read too (sin⁻¹x, sin²x, sin 30°, log₂ 8, |x|, ⌊x⌋, 5C2, n!!, 17 mod 5);
+         // ast.notes lists, in plain words, each convention that was applied ([] when none), and the same
+         // notes are given to HPN.note, so a page gathering notes gets them with the result.
      HPC.freeNames(ast)          // Set of the names it needs that aren't built in: here {'x'}.
      const z = HPC.evaluate(ast, { lookup: (name) => name === 'x' ? HPC.parseDecimal('3') : null,
                                    angle: 'rad', ds: { neg: 'ignore', dec: 'all' } });
@@ -1974,8 +1971,9 @@ class HPAsk extends Error { constructor(kind, fn, node) { super('ask'); this.kin
 
 /* ---------- tokens ---------- */
 const SUP = { '⁰': '0', '¹': '1', '²': '2', '³': '3', '⁴': '4', '⁵': '5', '⁶': '6', '⁷': '7', '⁸': '8', '⁹': '9', '⁻': '-' };
+const SUB = { '₀': '0', '₁': '1', '₂': '2', '₃': '3', '₄': '4', '₅': '5', '₆': '6', '₇': '7', '₈': '8', '₉': '9' };
 const isGreek = (ch) => /[Ͱ-Ͽἀ-῿]/.test(ch) && /\p{L}/u.test(ch);
-const OPCH = { '+': '+', '-': '-', '−': '-', '–': '-', '—': '-', '*': '*', '×': '*', '·': '*', '⋅': '*', '∙': '*', '/': '/', '÷': '/', '∕': '/', '^': '^', '%': '%', '!': '!', '(': '(', ')': ')', '[': '(', ']': ')', '{': '(', '}': ')', ',': ',', '√': '√', '°': '°' };
+const OPCH = { '+': '+', '-': '-', '−': '-', '–': '-', '—': '-', '*': '*', '×': '*', '·': '*', '⋅': '*', '∙': '*', '/': '/', '÷': '/', '∕': '/', '^': '^', '%': '%', '!': '!', '(': '(', ')': ')', '[': '(', ']': ')', '{': '(', '}': ')', ',': ',', '√': '√', '∛': '∛', '∜': '∜', '°': '°', '|': '|', '⌊': '⌊', '⌋': '⌋', '⌈': '⌈', '⌉': '⌉' };
 function tokenize(src) {
   const toks = []; let i = 0; const n = src.length;
   while (i < n) {
@@ -1999,18 +1997,31 @@ function tokenize(src) {
       else if (rest.startsWith('...')) mark = 3;
       else if (!m[3] && mant.endsWith('.') && rest.startsWith('..')) { text = text.slice(0, -1); mark = 3; }
       if (!mark && rest[0] === '.') fail('A second decimal point in one number.', { pos: i + text.length, end: i + text.length + 1 });
+      // 0.(6), 0.1(6): the digits in brackets repeat, as results are shown
+      const rp = !mark && !m[3] && mant.includes('.') && /^\d/.test(mant) ? /^\((\d+)\)/.exec(rest) : null;
+      if (rp) {
+        const per = rp[1], scale = N.pow10(fp.length);
+        v = N.radd(Q(BigInt(ip + fp), scale), Q(BigInt(per), scale * (N.pow10(per.length) - 1n)));
+        toks.push({ t: 'num', v, text: text + rp[0], approx: 0, whole: false, rep: [text, per], pos, end: i + text.length + rp[0].length });
+        i += text.length + rp[0].length; continue;
+      }
       let approx = 0;
       if (mark) {
         approx = (ip + fp).replace(/^0+/, '').length;
         if (approx < 2) fail('A value marked “…” needs at least two significant digits before the “…”: one digit says too little about the rest.', { pos, end: i + text.length + mark });
       }
-      toks.push({ t: 'num', v, text: text.replace('−', '-') + (mark ? '…' : ''), approx, pos, end: i + text.length + mark });
+      toks.push({ t: 'num', v, text: text.replace('−', '-') + (mark ? '…' : ''), approx, whole: !mark && !m[3] && !mant.includes('.'), pos, end: i + text.length + mark });
       i += text.length + mark; continue;
     }
     if (SUP[ch]) {
       let j = i, s = ''; while (j < n && SUP[src[j]]) { s += SUP[src[j]]; j++; }
       if (!/^-?\d+$/.test(s)) fail('That superscript isn’t a whole-number power.', { pos, end: j });
       toks.push({ t: 'sup', v: qi(BigInt(s)), text: src.slice(i, j), num: s, pos, end: j });
+      i = j; continue;
+    }
+    if (SUB[ch]) {
+      let j = i, s = ''; while (j < n && SUB[src[j]]) { s += SUB[src[j]]; j++; }
+      toks.push({ t: 'sub', v: qi(BigInt(s)), text: src.slice(i, j), num: s, pos, end: j });
       i = j; continue;
     }
     if (isGreek(ch)) {
@@ -2026,7 +2037,9 @@ function tokenize(src) {
     if (ch === '*' && src[i + 1] === '*') { toks.push({ t: 'op', v: '^', text: '**', pos, end: i + 2 }); i += 2; continue; }
     if (OPCH[ch]) { toks.push({ t: 'op', v: OPCH[ch], text: ch, pos, end: i + 1 }); i++; continue; }
     if (ch === '=') fail('No “=” is needed: type just the expression. Give variables their values in the Variables panel.', { pos, end: pos + 1 });
-    if (ch === '|') fail('Use abs(…) for an absolute value.', { pos, end: pos + 1 });
+    if (ch === '∑' || ch === '∏') fail(`“${ch}” isn’t read here. For ${ch === '∑' ? 'a sum, write sum(…)' : 'a product, write prod(…)'}, with the values separated by commas.`, { pos, end: pos + 1 });
+    if (/[¼-¾⅐-⅞↉]/.test(ch)) fail(`“${ch}” isn’t read here: type it as ${ch.normalize('NFKC').replace('⁄', '/')}.`, { pos, end: pos + 1 });
+    if (ch === '≡') fail('“≡” isn’t worked out here. To see whether a ≡ b (mod n), check that mod(a − b, n) is 0.', { pos, end: pos + 1 });
     fail(`“${ch}” isn’t something this calculator understands.`, { pos, end: pos + 1 });
   }
   return toks;
@@ -2036,16 +2049,47 @@ function tokenize(src) {
 const FN = Object.create(null); // lower-case name -> {name, min, max, f}; no inherited names such as constructor
 function def(names, min, max, f) { const list = names.split(' '); for (const nm of list) FN[nm.toLowerCase()] = { name: nm, min, max, f, main: list[0] }; }
 
-/* ---------- parser ---------- */
+/* ---------- parser ----------
+   Besides plain function calls, it reads the usual ways of writing things: sin²x and sin⁻¹x, a function's
+   argument without brackets (sin 30°, ln x), bases on log (log₂ 8, log_2(8)), |x|, ⌊x⌋, ⌈x⌉, ∛x, ∜x, ³√x,
+   5C2 and C(5, 2), infix mod, and n!!. Each convention it applies adds a short note to the tree's .notes
+   (also given to HPN.note), so a page can say how the line was taken. */
+const POWERABLE = new Set('sin cos tan sec csc cot sinh cosh tanh sech csch coth ln log log2 log10'.split(' '));
+const INVERSE = { sin: 'asin', cos: 'acos', tan: 'atan', sec: 'asec', csc: 'acsc', cot: 'acot', sinh: 'asinh', cosh: 'acosh', tanh: 'atanh', sech: 'asech', csch: 'acsch', coth: 'acoth' };
+const HINT = { pow: 'For a power, write x^y.', fact: 'For a factorial, write n! or factorial(n).', avg: 'For an average, write mean(…).', average: 'For an average, write mean(…).',
+  int: 'To drop the fraction, write trunc(…) or floor(…).', rem: 'For a remainder, write a mod b or mod(a, b).', sqr: 'For a square, write x^2.', binom: 'For combinations, write nCr(n, k).' };
+const GREEK_FN = { 'Γ': ['the gamma function', 'gamma'], 'Σ': ['a sum', 'sum'], 'Π': ['a product', 'prod'] };
+const LOG_BASE = /^log_(\d+|\p{L}[\p{L}\p{Nd}]*)$/u;
 function parse(src, isVar) {
   const toks = tokenize(src);
   if (!toks.length) return null;
-  let k = 0;
+  let k = 0, absOpen = false;
+  const notes = [], say = (s) => { if (!notes.includes(s)) notes.push(s); };
+  const isV = (s) => !!(isVar && isVar(s));
   const at = (t, v) => k < toks.length && toks[k].t === t && (v === undefined || toks[k].v === v);
+  const isOp = (tk, v) => !!tk && tk.t === 'op' && tk.v === v;
   const next = () => toks[k++];
   const endPos = { pos: src.length, end: src.length };
-  const startsOperand = (tk) => tk && (tk.t === 'num' || tk.t === 'id' || (tk.t === 'op' && (tk.v === '(' || tk.v === '√')));
+  const adj = (a, b) => !!(a && b) && a.end === b.pos;
   const span = (a, b) => ({ pos: a.pos, end: b.end });
+  const text = (a, b = a) => src.slice(a.pos, b.end);
+  const fnTok = (tk) => !!tk && tk.t === 'id' && !isV(tk.v) && (!!FN[tk.v.toLowerCase()] || LOG_BASE.test(tk.v.toLowerCase()) || tk.v.toLowerCase() === 'lg');
+  const commaInside = (j) => { // whether the bracket opening at token j has a comma at its own level
+    let d = 0;
+    for (let m = j; m < toks.length; m++) { const t = toks[m]; if (t.t !== 'op') continue; if (t.v === '(') d++; else if (t.v === ')') { if (--d === 0) return false; } else if (t.v === ',' && d === 1) return true; }
+    return false;
+  };
+  const modTok = (j) => { // an infix mod at token j (not mod(a, b), which is the function)
+    const t = toks[j];
+    return !!t && t.t === 'id' && t.v.toLowerCase() === 'mod' && !isV(t.v) && !(isOp(toks[j + 1], '(') && commaInside(j + 1));
+  };
+  const barsAhead = (j) => { let d = 0, c = 0; for (let m = j; m < toks.length; m++) { const t = toks[m]; if (t.t !== 'op') continue; if (t.v === '(') d++; else if (t.v === ')') { if (--d < 0) break; } else if (t.v === '|' && d === 0) c++; } return c; };
+  const opener = (tk) => !!tk && (tk.t === 'num' || tk.t === 'id' || (tk.t === 'op' && '(√∛∜⌊⌈'.includes(tk.v)));
+  const startsOperand = (tk) => opener(tk) || (isOp(tk, '|') && !absOpen);
+  const decComma = (j) => { const a = toks[j - 1], c = toks[j], b = toks[j + 1]; return !!(a && b) && a.t === 'num' && b.t === 'num' && a.whole && b.whole && adj(a, c) && adj(c, b); };
+  const commaMsg = (j) => 'Commas separate the values inside a function’s brackets, as in max(3, 4).' + (decComma(j) ? ` A decimal uses a point: ${toks[j - 1].text}.${toks[j + 1].text}.` : '');
+  const numNode = (tk) => ({ t: 'num', v: tk.v, text: tk.text, approx: tk.approx, pos: tk.pos, end: tk.end });
+  const inBrackets = (fn) => { const save = absOpen; absOpen = false; try { return fn(); } finally { absOpen = save; } };
   function expr() {
     let a = muldiv();
     while (at('op', '+') || at('op', '-')) { const o = next(); if (k >= toks.length) fail(`Something is missing after “${o.text}”.`, o); const b = muldiv(); a = { t: 'bin', op: o.v, a, b, ...span(a, b), op_: o }; }
@@ -2054,14 +2098,24 @@ function parse(src, isVar) {
   function muldiv() {
     let a = unary();
     for (;;) {
-      if (at('op', '*') || at('op', '/') || at('op', '%')) {
+      if (at('op', '*') || at('op', '/') || at('op', '%') || modTok(k)) {
         const o = next(); if (k >= toks.length) fail(`Something is missing after “${o.text}”.`, o);
-        const b = unary(); a = { t: 'bin', op: o.v, a, b, ...span(a, b), op_: o }; continue;
+        const b = unary(); a = { t: 'bin', op: o.t === 'id' ? '%' : o.v, a, b, ...span(a, b), op_: o }; continue;
       }
       const tk = toks[k];
       if (startsOperand(tk)) {
         const prev = toks[k - 1];
         if (tk.t === 'num' && prev && (prev.t === 'num' || prev.t === 'sup')) fail('Two numbers in a row: put an operator between them.', tk);
+        // e^iπ, 2^3x: the power takes only what comes straight after the ^; say so
+        if (tk.t === 'id' && !fnTok(tk) && a.t === 'bin' && a.op === '^' && a.op_ && a.op_.v === '^') {
+          const ex = a.b, simple = ex.t === 'num' || ex.t === 'id' || (ex.t === 'neg' && (ex.a.t === 'num' || ex.a.t === 'id'));
+          let j = k; while (toks[j + 1] && toks[j + 1].t === 'id' && !fnTok(toks[j + 1]) && adj(toks[j], toks[j + 1])) j++; // e^2πi: the whole run of names
+          const run = toks.slice(k, j + 1);
+          if (simple && ex.end === tk.pos) say(`${text(a, toks[j])} is read as (${text(a)}) × ${run.map((t) => t.text).join(' × ')}: a power takes only what comes straight after the ^. If you meant ${text(a.a)}^(${text(ex)}${src.slice(tk.pos, toks[j].end)}), put the power in brackets.`);
+        }
+        if (isOp(tk, '√') && prev && prev.t === 'sup' && adj(prev, tk) && a.t === 'bin' && a.op === '^') {
+          say(`${text(a)}√… is read as ${text(a)} × √…: a superscript after a number or name is its power. For a root, write root(x, ${prev.num.replace('-', '')})${prev.num === '3' ? ' or ∛x' : ''}.`);
+        }
         const b = power(); a = { t: 'bin', op: '*', implicit: true, a, b, ...span(a, b) }; continue;
       }
       return a;
@@ -2083,60 +2137,243 @@ function parse(src, isVar) {
     if (at('sup')) { const s = next(); return { t: 'bin', op: '^', a: base, b: { t: 'num', v: s.v, text: s.num, pos: s.pos, end: s.end }, ...span(base, s) }; }
     return base;
   }
-  function postfix() {
-    let a = primary();
-    while (at('op', '!') || at('op', '°')) { const o = next(); a = { t: o.v === '!' ? 'fact' : 'deg', a, pos: a.pos, end: o.end }; }
+  function postfix() { return postfixOn(primary()); }
+  function postfixOn(a) {
+    while (at('op', '!') || at('op', '°')) {
+      const o = next();
+      if (o.v === '!' && at('op', '!') && adj(o, toks[k])) {
+        const o2 = next();
+        if (at('op', '!') && adj(o2, toks[k])) fail('Three or more “!” in a row could mean several things: use brackets, as in (n!!)! or ((n!)!)!.', { pos: o.pos, end: toks[k].end });
+        a = { t: 'dfact', a, pos: a.pos, end: o2.end };
+        say('n!! is the double factorial, n × (n − 2) × (n − 4) × …. For the factorial of n!, write (n!)!.');
+        continue;
+      }
+      if (o.v === '!' && a.t === 'fact' && toks[k - 2] && isOp(toks[k - 2], '!') && !adj(toks[k - 2], o)) say('n! ! (with a space) is read as (n!)!, the factorial of n!. Written together, n!! is the double factorial.');
+      a = { t: o.v === '!' ? 'fact' : 'deg', a, pos: a.pos, end: o.end };
+    }
     return a;
+  }
+  /** The argument of a function written without brackets: the next number, name or bracket, with its ! or °.
+      name is the function as typed (sin, sin^-1, log₂). */
+  function bareArg(name, ftk) {
+    const t0 = toks[k];
+    if (!t0) fail(`${name} needs something to work on: write ${name}(…), or ${name} x.`, ftk);
+    const brackets = () => fail(`Put what ${name} works on in brackets, as in ${name}(…).`, { pos: t0.pos, end: t0.end });
+    let a;
+    if (t0.t === 'num') {
+      a = primary();
+      const nx = toks[k];
+      if (a.t === 'num' && nx && nx.t === 'id' && adj(a, nx) && !fnTok(nx)) { // sin 2x: the number goes with the name
+        const b = postfixOn(primary());
+        a = { t: 'bin', op: '*', implicit: true, a, b, ...span(a, b) };
+        say(`${name} ${text(a)} is read as ${name}(${text(a)}), the usual convention for a number written against a name.`);
+      } else a = postfixOn(a);
+    } else if ((t0.t === 'id' && !fnTok(t0)) || (t0.t === 'op' && '(⌊⌈|'.includes(t0.v))) a = postfixOn(primary());
+    else brackets();
+    const nx = toks[k];
+    const more = (j) => (j < toks.length ? '…' : '');
+    if (at('op', '^') || at('sup')) {
+      const p = at('sup') ? nx.text : toks[k + 1] ? '^' + toks[k + 1].text : '^…', j = at('sup') ? k + 1 : k + 2;
+      fail(`Use brackets to show what the power applies to: ${name}(${text(a)}${p}${more(j)}) or ${name}(${text(a)})${p}${more(j)}.`, { pos: t0.pos, end: nx.end });
+    }
+    if (at('op', '/')) { // sin 2π/3: the argument could end before or after the /
+      const q = nx.text + (toks[k + 1] ? toks[k + 1].text : '…');
+      fail(`Use brackets to show how much ${name} applies to: ${name}(${text(a)}${q}${more(k + 2)}) or ${name}(${text(a)})${q}${more(k + 2)}.`, { pos: t0.pos, end: nx.end });
+    }
+    if (startsOperand(nx) && !fnTok(nx) && !modTok(k)) fail(`Use brackets to show how much ${name} applies to: ${name}(${text(a)} ${nx.text}${more(k + 1)}) or ${name}(${text(a)}) ${nx.text}${more(k + 1)}.`, { pos: t0.pos, end: nx.end });
+    return a;
+  }
+  /** A function and its arguments; base is a base written on log (log₂, log_2). */
+  function funcCall(tk, fn, base, nameEnd) {
+    let name = fn.name, pw = null;
+    if (at('op', '^') || at('sup')) { // sin²x, sin^2(x), sin^-1(x), sin^(-1)(x)
+      const o = next(); let n = null, last = o;
+      if (o.t === 'sup') n = o.num;
+      else {
+        let j = k, neg = false, paren = false;
+        if (isOp(toks[j], '(')) { paren = true; j++; }
+        if (isOp(toks[j], '-') || isOp(toks[j], '+')) { neg = toks[j].v === '-'; j++; }
+        if (toks[j] && toks[j].t === 'num' && toks[j].whole) { n = (neg ? '-' : '') + toks[j].text; j++; if (paren) { if (isOp(toks[j], ')')) j++; else n = null; } }
+        if (n === null) fail(`A power written straight after ${name} must be a whole number, as in ${name}^2(x) or ${name}^-1(x). For any other power, write ${name}(x)^….`, o);
+        last = toks[j - 1]; k = j;
+      }
+      pw = { n: BigInt(n), text: src.slice(tk.pos, last.end), pos: o.pos, end: last.end };
+      const inv = INVERSE[fn.main];
+      if (pw.n === -1n) {
+        if (!inv) fail(`${pw.text} could mean the inverse of ${name} or 1/${name}(…), so it isn’t guessed here. ${fn.main === 'ln' ? 'For the inverse of ln, write exp(x); for' : 'For'} the reciprocal, write 1/${name}(x).`, pw);
+        say(`${pw.text} means the inverse function, ${inv}, not 1/${name}.`);
+        fn = FN[inv]; name = fn.name; pw = null;
+      } else if (pw.n === 0n) fail(`${pw.text} isn’t read here: write ${name}(x)^0 if that is what you mean.`, pw);
+      else if (pw.n < 0n) fail(`${pw.text} is ambiguous: write ${name}(x)^${pw.n} for a power of ${name}(x)${inv ? `, or ${inv}(x)^${-pw.n} for a power of the inverse` : ''}.`, pw);
+      else if (!POWERABLE.has(fn.main)) fail(`A power straight after a function’s name is read only for trig, hyperbolic and log functions. Write ${name}(x)^${pw.n} instead.`, pw);
+    }
+    const want = (f) => (f.min === f.max ? `${f.min} value${f.min === 1 ? '' : 's'}` : f.max === Infinity ? `at least ${f.min} value${f.min === 1 ? '' : 's'}` : `${f.min} or ${f.max} values`);
+    let args = [], end, commas = [];
+    if (at('op', '(')) {
+      const open = next();
+      inBrackets(() => {
+        if (!at('op', ')')) {
+          if (k >= toks.length) fail(`The “(” after ${name} is never closed.`, open);
+          args.push(expr());
+          while (at('op', ',')) { commas.push(k); next(); args.push(expr()); }
+        }
+      });
+      if (!at('op', ')')) {
+        if (k >= toks.length) fail(`The “(” after ${name} is never closed.`, open);
+        fail(`Expected “,” or “)” here, in ${name}(…).`, toks[k]);
+      }
+      end = next().end;
+    } else {
+      if (fn.min - (base ? 1 : 0) > 1) fail(`${name} takes ${want(fn)}: write them in brackets, as in ${name}(${fn.min === 2 ? 'a, b' : 'a, b, …'}).`, tk);
+      args = [bareArg(src.slice(tk.pos, toks[k - 1].end), tk)]; end = args[0].end;
+    }
+    if (base) {
+      if (args.length !== 1) fail(`The base is already written on log, so put just one value in its brackets: ${src.slice(tk.pos, nameEnd)}(x).`, { pos: tk.pos, end });
+      args.push(base);
+    }
+    let node = { t: 'call', name, args, pos: tk.pos, end, nameEnd };
+    if (args.length < fn.min || args.length > fn.max) {
+      const dec = commas.some(decComma) ? ` A decimal uses a point: ${toks[commas.find(decComma) - 1].text}.${toks[commas.find(decComma) + 1].text}.` : '';
+      fail(`${name} takes ${want(fn)}, but was given ${args.length}.${dec}`, node);
+    }
+    if (pw) {
+      node = { t: 'bin', op: '^', a: node, b: { t: 'num', v: qi(pw.n), text: String(pw.n), pos: pw.pos, end: pw.end }, pos: tk.pos, end };
+      say(`${src.slice(tk.pos, end)} is read as ${show(node)}: the power applies to the result.`);
+    }
+    return node;
   }
   function primary() {
     if (k >= toks.length) fail('The expression ends too soon: something is missing at the end.', endPos);
     const tk = next();
-    if (tk.t === 'num') return { t: 'num', v: tk.v, text: tk.text, approx: tk.approx, pos: tk.pos, end: tk.end };
-    if (tk.t === 'sup') fail('A superscript power needs something before it.', tk);
-    if (tk.t === 'id') {
-      const fn = FN[tk.v.toLowerCase()];
-      if (fn && !(isVar && isVar(tk.v))) {
-        if (!at('op', '(')) fail(`${fn.name} is a function: write ${fn.name}(…), with what it works on inside the brackets.`, tk);
-        const open = next(), args = [];
-        if (!at('op', ')')) {
-          if (k >= toks.length) fail(`The “(” after ${fn.name} is never closed.`, open);
-          args.push(expr());
-          while (at('op', ',')) { next(); args.push(expr()); }
+    if (tk.t === 'num') {
+      const nx = toks[k];
+      if (tk.rep) say(`${tk.text} is read as a repeating decimal (the digits in brackets repeat), which is exactly ${tk.v.d === 1n ? tk.v.n : tk.v.n + '/' + tk.v.d}.` + ` To multiply instead, this calculator needs an operator: write ${tk.rep[0].replace(/\.$/, '')} × ${tk.rep[1]}.`);
+      if (tk.whole && nx && nx.t === 'id' && adj(tk, nx) && /^[CP]\d+$/.test(nx.v)) { // 5C2, 5P2
+        const which = nx.v[0] === 'C' ? 'nCr' : 'nPr', r = nx.v.slice(1);
+        if (!isV(nx.v)) {
+          next();
+          const d = toks[k];
+          if (d && d.t === 'num' && adj(nx, d) && d.text.startsWith('.')) fail(`${tk.text}${nx.v} is followed straight away by ${d.text}, so it isn’t clear what was meant. Put an operator between them, as in ${which}(${tk.text}, ${r}) × ${d.text}.`, { pos: tk.pos, end: d.end });
+          say(`${tk.text}${nx.v} is read as ${which}(${tk.text}, ${r}), the number of ${which === 'nCr' ? 'ways to choose' : 'ordered ways to pick'} ${r} of ${tk.text}.`);
+          return { t: 'call', name: which, args: [numNode(tk), { t: 'num', v: qi(BigInt(r)), text: r, pos: nx.pos + 1, end: nx.end }], pos: tk.pos, end: nx.end, nameEnd: nx.pos + 1 };
         }
-        if (!at('op', ')')) {
-          if (k >= toks.length) fail(`The “(” after ${fn.name} is never closed.`, open);
-          fail(`Expected “,” or “)” here, in ${fn.name}(…).`, toks[k]);
-        }
-        const close = next();
-        const node = { t: 'call', name: fn.name, args, pos: tk.pos, end: close.end, nameEnd: tk.end };
-        const want = fn.min === fn.max ? `${fn.min} value${fn.min === 1 ? '' : 's'}` : fn.max === Infinity ? `at least ${fn.min} value${fn.min === 1 ? '' : 's'}` : `${fn.min} or ${fn.max} values`;
-        if (args.length < fn.min || args.length > fn.max) fail(`${fn.name} takes ${want}, but was given ${args.length}.`, node);
-        return node;
+        say(`${tk.text}${nx.v} is read as ${tk.text} × ${nx.v}, since ${nx.v} is one of your variables. For ${which === 'nCr' ? 'combinations' : 'permutations'}, write ${which}(${tk.text}, ${r}).`);
       }
-      if (at('op', '(') && [...tk.v].length > 1 && !(isVar && isVar(tk.v)) && !isBuiltinName(tk.v))
-        fail(`There’s no function called ${tk.v}. If ${tk.v} is a variable, put × between it and the bracket.`, tk);
-      return { t: 'id', name: tk.v, pos: tk.pos, end: tk.end };
+      return numNode(tk);
+    }
+    if (tk.t === 'sup') {
+      const nx = toks[k];
+      if (isOp(nx, '√') && adj(tk, nx) && /^\d+$/.test(tk.num)) { // ³√x
+        next(); if (k >= toks.length) fail('√ needs something after it.', nx);
+        if (tk.num === '0' || /^0+$/.test(tk.num)) fail('A 0th root is undefined.', tk);
+        const a = power();
+        return { t: 'call', name: 'root', args: [a, { t: 'num', v: tk.v, text: String(tk.v.n), pos: tk.pos, end: tk.end }], sym: true, pos: tk.pos, end: a.end };
+      }
+      const sb = toks[k + 1];
+      if (nx && nx.t === 'id' && (nx.v === 'C' || nx.v === 'P') && adj(tk, nx) && sb && sb.t === 'sub' && adj(nx, sb) && /^\d+$/.test(tk.num)) { // ⁵C₂
+        next(); next();
+        const which = nx.v === 'C' ? 'nCr' : 'nPr';
+        say(`${text(tk, sb)} is read as ${which}(${tk.v.n}, ${sb.v.n}).`);
+        return { t: 'call', name: which, args: [{ t: 'num', v: tk.v, text: String(tk.v.n), pos: tk.pos, end: tk.end }, { t: 'num', v: sb.v, text: String(sb.v.n), pos: sb.pos, end: sb.end }], pos: tk.pos, end: sb.end, nameEnd: nx.end };
+      }
+      fail('A superscript power needs something before it.', tk);
+    }
+    if (tk.t === 'sub') fail('A subscript is read only straight after log, as in log₂(8).', tk);
+    if (tk.t === 'id') {
+      const v = tk.v, low = v.toLowerCase();
+      if (!isV(v)) {
+        if (low === 'log' && FN.log && at('sub') && adj(tk, toks[k])) { // log₂(8)
+          const sb = next();
+          say(`log${sb.text} is read as log(…, ${sb.v.n}), the logarithm to base ${sb.v.n}.`);
+          return funcCall(tk, FN.log, { t: 'num', v: sb.v, text: String(sb.v.n), pos: sb.pos, end: sb.end }, sb.end);
+        }
+        const m = LOG_BASE.exec(low);
+        if (m && !FN[low]) { // log_2(8), log_2 8, log_b x
+          const b = v.slice(4), d = toks[k];
+          if (/^\d/.test(b) && d && d.t === 'num' && adj(tk, d) && d.text.startsWith('.')) fail(`${v} is followed straight away by ${d.text}, so it isn’t clear where the base ends. For a base of ${b}${d.text}, write log(x, ${b}${d.text}); otherwise put a space or brackets after the base.`, { pos: tk.pos, end: d.end });
+          const base = /^\d/.test(b) ? { t: 'num', v: qi(BigInt(b)), text: b, pos: tk.pos + 4, end: tk.end } : { t: 'id', name: b, pos: tk.pos + 4, end: tk.end };
+          say(`${v.slice(0, 3)}_${b} is read as log(…, ${b}), the logarithm to base ${b}.`);
+          return funcCall(tk, FN.log, base, tk.end);
+        }
+        if (low === 'lg') fail('lg means log to base 10 in some books and to base 2 in others, so it isn’t guessed here: write log(x) for base 10, or log2(x) for base 2.', tk);
+        if ((v === 'C' || v === 'P') && at('op', '(') && commaInside(k)) { // C(5, 2), P(5, 2)
+          const which = v === 'C' ? 'nCr' : 'nPr', node = funcCall(tk, FN[which.toLowerCase()], null, tk.end);
+          say(`${v}(n, k) is read as ${which}(n, k).`);
+          return node;
+        }
+      }
+      const fn = FN[low];
+      if (fn && !isV(v)) return funcCall(tk, fn, null, tk.end);
+      if (at('op', '(') && [...v].length > 1 && !isV(v) && !isBuiltinName(v))
+        fail(`There’s no function called ${v}.${HINT[low] ? ' ' + HINT[low] : ''} If ${v} is a variable, put × between it and the bracket.`, tk);
+      if (GREEK_FN[v] && at('op', '(') && !isV(v)) say(`${v}(…) is read as the variable ${v} times a bracket. For ${GREEK_FN[v][0]}, write ${GREEK_FN[v][1]}(…).`);
+      return { t: 'id', name: v, pos: tk.pos, end: tk.end };
     }
     if (tk.v === '(') {
+      const before = toks[k - 2], g = before && before.t === 'id' && adj(before, tk) && !isV(before.v) ? GREEK_FN[before.v] : null;
       if (at('op', ')')) fail('Empty brackets: put something inside them.', toks[k]);
       if (k >= toks.length) fail('This “(” is never closed.', tk);
-      const e = expr();
-      if (!at('op', ')')) { if (k >= toks.length) fail('This “(” is never closed.', tk); fail('Expected “)” here.', toks[k]); }
+      const e = inBrackets(expr);
+      if (!at('op', ')')) {
+        if (k >= toks.length) fail('This “(” is never closed.', tk);
+        if (at('op', ',')) fail(g ? `For ${g[0]}, write ${g[1]}(…), with the values separated by commas.` : commaMsg(k), toks[k]);
+        fail('Expected “)” here.', toks[k]);
+      }
       const close = next();
+      if (tk.text === '{') say('Here { } are read as brackets. For the fractional part, write frac(x).');
       return { t: 'group', a: e, pos: tk.pos, end: close.end };
     }
-    if (tk.v === '√') { if (k >= toks.length) fail('√ needs something after it.', tk); const a = power(); return { t: 'call', name: 'sqrt', args: [a], sym: true, pos: tk.pos, end: a.end }; }
+    if (tk.v === '|') { // |x|
+      if (absOpen) {
+        const nx = toks[k];
+        if (!nx || (nx.t === 'op' && !opener(nx))) fail('Something is missing before this |.', tk);
+        fail('A | inside another pair of bars is ambiguous: write abs(…) for the inner one.', tk);
+      }
+      if (at('op', '|')) fail(barsAhead(k) >= 3 ? 'Bars straight inside bars are ambiguous: write abs(…) for the inner pair.' : 'Empty bars: put something between them.', toks[k]);
+      if (k >= toks.length) fail('This | is never closed: an absolute value needs a | at each end, or write abs(…).', tk);
+      absOpen = true; let e;
+      try { e = expr(); } finally { absOpen = false; }
+      if (!at('op', '|')) {
+        if (k >= toks.length) fail('This | is never closed: an absolute value needs a | at each end, or write abs(…).', tk);
+        if (at('op', ',')) fail(commaMsg(k), toks[k]);
+        fail('Expected a closing | here.', toks[k]);
+      }
+      if (barsAhead(k) >= 3 && opener(toks[k + 1])) fail('These bars could pair up in more than one way. Write abs(…) for at least one of them.', toks[k]);
+      const close = next();
+      return { t: 'call', name: 'abs', args: [e], sym: true, pos: tk.pos, end: close.end };
+    }
+    if (tk.v === '⌊' || tk.v === '⌈') { // ⌊x⌋, ⌈x⌉
+      const shut = tk.v === '⌊' ? '⌋' : '⌉';
+      if (at('op', shut)) fail('Empty brackets: put something inside them.', toks[k]);
+      if (k >= toks.length) fail(`This ${tk.v} is never closed with ${shut}.`, tk);
+      const e = inBrackets(expr);
+      if (!at('op', shut)) { if (k >= toks.length) fail(`This ${tk.v} is never closed with ${shut}.`, tk); fail(`Expected ${shut} here, to close the ${tk.v}.`, toks[k]); }
+      const close = next();
+      return { t: 'call', name: tk.v === '⌊' ? 'floor' : 'ceil', args: [e], sym: true, pos: tk.pos, end: close.end };
+    }
+    if (tk.v === '√' || tk.v === '∛' || tk.v === '∜') {
+      if (k >= toks.length) fail(`${tk.v} needs something after it.`, tk);
+      const a = power();
+      if (tk.v === '∜') return { t: 'call', name: 'root', args: [a, { t: 'num', v: qi(4), text: '4', pos: tk.pos, end: tk.end }], sym: true, pos: tk.pos, end: a.end };
+      return { t: 'call', name: tk.v === '√' ? 'sqrt' : 'cbrt', args: [a], sym: true, pos: tk.pos, end: a.end };
+    }
     if (tk.v === ')') fail('There’s a “)” here with no “(” to match it.', tk);
-    if (tk.v === ',') fail('A comma only separates the values inside a function’s brackets, as in max(3, 4).', tk);
+    if (tk.v === '⌋' || tk.v === '⌉') fail(`There’s a “${tk.v}” here with no “${tk.v === '⌋' ? '⌊' : '⌈'}” to match it.`, tk);
+    if (tk.v === ',') fail(commaMsg(k - 1), tk);
     fail(`Expected a number, a name or “(” here, but found “${tk.text}”.`, tk);
   }
   const e = expr();
   if (k < toks.length) {
     const tk = toks[k];
     if (tk.v === ')') fail('There’s a “)” here with no “(” to match it.', tk);
-    if (tk.v === ',') fail('A comma only separates the values inside a function’s brackets, as in max(3, 4).', tk);
+    if (tk.v === ',') fail(commaMsg(k), tk);
+    if (tk.v === '|') fail('There’s a | here with nothing to pair it with. An absolute value needs a | at each end, or write abs(…).', tk);
+    if (tk.v === '⌋' || tk.v === '⌉') fail(`There’s a “${tk.v}” here with no “${tk.v === '⌋' ? '⌊' : '⌈'}” to match it.`, tk);
+    if (tk.t === 'sub') fail('A subscript is read only straight after log, as in log₂(8).', tk);
     fail(`Unexpected “${tk.text}” here.`, tk);
   }
+  e.notes = notes;
+  for (const s of notes) N.note(s);
   return e;
 }
 
@@ -2198,14 +2435,18 @@ function show(n, vals) {
     case 'group': return show(n.a, vals);
     case 'neg': return '−' + wrap(n.a, vals);
     case 'bin': return wrap(n.a, vals) + ' ' + OPS[n.op] + ' ' + wrap(n.b, vals);
-    case 'fact': return wrap(n.a, vals) + '!';
+    case 'fact': case 'dfact': { // (3!)! and (3!!)! keep their brackets: 3!! is the double factorial
+      const s = wrap(n.a, vals), inner = unGroup(n.a).t;
+      return (inner === 'fact' || inner === 'dfact' ? '(' + s + ')' : s) + (n.t === 'fact' ? '!' : '!!');
+    }
     case 'deg': return wrap(n.a, vals) + '°';
     case 'call': return n.name + '(' + n.args.map((a) => show(a, vals)).join(', ') + ')';
   }
   return '?';
 }
+function unGroup(n) { while (n.t === 'group') n = n.a; return n; }
 function wrap(n, vals) {
-  while (n.t === 'group') n = n.a;
+  n = unGroup(n);
   if (n.t === 'bin' || n.t === 'neg') return '(' + show(n, vals) + ')';
   if (n.t === 'id' && vals && vals.has(n.name)) { const s = vals.get(n.name); return /[\s/−]/.test(s) ? '(' + s + ')' : s; }
   if (n.t === 'num' && /e/i.test(n.text)) return '(' + n.text + ')';
@@ -2352,19 +2593,204 @@ def('root', 2, 2, ([z, n], node) => { const k = intArg(n, 'root', node.args[1], 
 def('exp', 1, 1, ([z]) => N.cexp(z));
 def('ln', 1, 1, ([z], node) => { if (N.isZero(z.re) && N.isZero(z.im)) fail('ln(0) is undefined: the logarithm goes to minus infinity at 0.', node); return N.cln(z); });
 def('log', 1, 2, ([z, b], node) => { if (N.isZero(z.re) && N.isZero(z.im)) fail('log(0) is undefined: the logarithm goes to minus infinity at 0.', node); return logBase(z, b || C(qi(10)), node); });
+def('log10', 1, 1, ([z], node) => { if (N.isZero(z.re) && N.isZero(z.im)) fail('log10(0) is undefined: the logarithm goes to minus infinity at 0.', node); return logBase(z, C(qi(10)), node); });
 def('log2', 1, 1, ([z], node) => { if (N.isZero(z.re) && N.isZero(z.im)) fail('log2(0) is undefined: the logarithm goes to minus infinity at 0.', node); return logBase(z, C(Q2), node); });
 def('sin', 1, 1, ([z], node) => trig(z, 'sin', node));
 def('cos', 1, 1, ([z], node) => trig(z, 'cos', node));
 def('tan', 1, 1, ([z], node) => trig(z, 'tan', node));
-def('asin', 1, 1, ([z], node) => fromRad(N.casin(z), 'asin', node));
-def('acos', 1, 1, ([z], node) => fromRad(N.cacos(z), 'acos', node));
-def('atan', 1, 1, ([z], node) => fromRad(N.catan(z), 'atan', node));
+def('asin arcsin', 1, 1, ([z], node) => fromRad(asinX(z), node.name, node));
+def('acos arccos', 1, 1, ([z], node) => fromRad(acosX(z), node.name, node));
+def('atan arctan', 1, 1, ([z], node) => fromRad(N.catan(z), 'atan', node));
 def('atan2', 2, 2, ([y, x], node) => fromRad(C(N.ratan2(real(y, 'atan2', node.args[0]), real(x, 'atan2', node.args[1]))), 'atan2', node));
 def('sinh', 1, 1, ([z]) => N.csinh(z));
 def('cosh', 1, 1, ([z]) => N.ccosh(z));
 def('tanh', 1, 1, ([z]) => N.ctanh(z));
 def('abs', 1, 1, ([z]) => C(N.cabs(z)));
-def('sign', 1, 1, ([z]) => {
+
+/* the reciprocal trig and hyperbolic functions, and the inverse hyperbolic functions (principal values, with
+   the same branch cuts as the usual references) */
+const zeroC = (z) => N.isZero(z.re) && N.isZero(z.im);
+const exactZeroC = (z) => N.isZeroExact(z.re) && N.isZeroExact(z.im);
+const halfPi = () => N.withPrec(4, () => N.rdiv(N.rpi(), Q2));
+const smallCut = () => -(N.bits / 2 + 8), bigCut = () => N.bits / 2 + 8;
+const plusErr = (x, E) => N.radd(x, N.nz(E)); // x, give or take 2^E: for a term too small to matter that is left out
+const tinyReal = (z) => N.isRealC(z) && !N.isZero(z.re) && N.rmag(z.re) < smallCut();
+const tinyC = (z, k) => { // z(1 + O(|z|²)), each part with its own error, for a function that starts z + k z³
+  const m = Math.max(N.rmag(z.re), N.rmag(z.im)), part = (x) => (N.isZeroExact(x) ? x : plusErr(x, N.rmag(x) + 2 * m + k));
+  return C(part(z.re), part(z.im));
+};
+const HALF_RANGE = 160000; // bits: a part beyond about 10^±48000 can't be squared within the range
+function crecip(w) { // 1/w. A part whose square would leave the range is divided out first (Smith's method), so the reciprocal of a huge or tiny w stays in range.
+  const mr = N.rmag(w.re), mi = N.rmag(w.im), out = (m) => isFinite(m) && Math.abs(m) > HALF_RANGE;
+  if (N.isZeroExact(w.re) || N.isZeroExact(w.im) || !(out(mr) || out(mi))) return N.withPrec(8, () => N.cdiv(N.C1, w));
+  const quot = (x, y) => (N.rmag(x) - N.rmag(y) < -330000 ? N.nz(N.rmag(x) - N.rmag(y) + 2) : N.rdiv(x, y)); // a part below the range is left as zero, give or take its size
+  return N.withPrec(10, () => {
+    const big = N.rcmp(N.rabs(w.re), N.rabs(w.im)) >= 0, p = big ? w.re : w.im, q = big ? w.im : w.re;
+    const r = quot(q, p), m2 = 2 * N.rmag(r); // 1/(p + qi) = (1 − ri)/(p + qr) when |p| >= |q|, with r = q/p
+    const den = m2 < -(N.bits + 40) ? plusErr(p, N.rmag(p) + m2 + 1) : N.radd(p, N.rmul(q, r));
+    const x = quot(Q1, den), y = quot(r, den);
+    return big ? C(x, N.rneg(y)) : C(y, N.rneg(x));
+  });
+}
+function recipOf(z, why, node) { // 1/z, or why there is none ("sec is undefined here: the cosine is zero")
+  if (zeroC(z)) fail(why + (exactZeroC(z) ? '.' : ' to within the working precision.'), node);
+  return crecip(z);
+}
+function inv0(z, fname, node) { // 1/z for an inverse function of 1/z
+  if (exactZeroC(z)) fail(`${fname}(0) is undefined.`, node);
+  if (zeroC(z)) fail(`${fname} is undefined here: the value is zero to within the working precision.`, node);
+  return crecip(z);
+}
+function extraFor(z) { // working bits to add for a complex z: for its size, and for a part much smaller than the other
+  const mr = N.rmag(z.re), mi = N.rmag(z.im), m = Math.max(mr, mi);
+  const spread = mr === -Infinity || mi === -Infinity ? 0 : Math.min(Math.abs(mr - mi), N.bits + 40);
+  return { m, extra: 20 + (isFinite(m) ? Math.min(Math.abs(m), 4 * N.bits) : 0) + spread };
+}
+const withExtra = (z, fn) => (N.isRealC(z) ? fn() : N.withPrec(extraFor(z).extra, fn));
+function asinX(z) { // asin; on the real line beyond ±1 worked out without cancellation
+  if (N.isRealC(z) && !N.isNZ(z.re) && N.rcmp(N.rabs(z.re), Q1) > 0) { const r = acoshR1(N.rabs(z.re)), h = halfPi(); return N.rsign(z.re) > 0 ? C(h, N.rneg(r)) : C(N.rneg(h), r); }
+  return N.casin(z);
+}
+function acosX(z) {
+  if (N.isRealC(z) && !N.isNZ(z.re) && N.rcmp(N.rabs(z.re), Q1) > 0) { const r = acoshR1(N.rabs(z.re)); return N.rsign(z.re) > 0 ? C(Q0, r) : C(N.rpi(), N.rneg(r)); }
+  return N.cacos(z);
+}
+function tooSmall(z, fname, node, part = 're') { if (N.rmag(z[part]) > 17 && Math.abs(N.toNum(z[part])) > 230200) fail(`${fname} of that is smaller than about 10^-100000, beyond what this calculator handles.`, node); }
+function shch(z) { // [sinh z, cosh z], each part to full precision
+  if (N.isZeroExact(z.im)) return [C(N.rsinh(z.re)), C(N.rcosh(z.re))];
+  return N.withPrec(14, () => {
+    const sa = N.rsinh(z.re), ca = N.rcosh(z.re), [sb, cb] = N.sinCosR(z.im);
+    return [C(N.rmul(sa, cb), N.rmul(ca, sb)), C(N.rmul(ca, cb), N.rmul(sa, sb))];
+  });
+}
+function cothC(z, node, fname = 'coth') {
+  if (zeroC(z) || (N.isRealC(z) && N.isZero(z.re))) fail(`${fname} is undefined here: it goes to infinity` + (exactZeroC(z) ? '.' : ', to within the working precision.'), node);
+  if (N.isRealC(z)) return C(N.withPrec(8, () => N.rdiv(Q1, N.rtanh(z.re))));
+  const a = z.re, b = z.im;
+  if (N.rmag(a) > 8 && Math.abs(N.toNum(a)) > (N.bits + 20) * Math.LN2 / 2) { // a large real part
+    if (N.rsign(a) < 0) return N.cneg(cothC(N.cneg(z), node, fname)); // odd
+    // coth z = 1 + 2e^(−2z) + 2e^(−4z) + …, and e^(−2z) = e^(−2a)(cos 2b − i sin 2b): past the precision the real part is 1,
+    // and the imaginary part is −2e^(−2a) sin 2b, give or take the e^(−4a) term (or, below the range, just its size)
+    const L = Math.min(2 * N.toNum(a) / Math.LN2, 4e6); // log2 of e^(2a) (past 4e6 any value does for the bounds below)
+    const im = L > 330000 ? N.nz(2 - L) : N.withPrec(14, () => {
+      const [s2b] = N.sinCosR(N.rmul(Q2, b)), top = N.rmag(s2b) + 2 - L;
+      if (top < -330000) return N.nz(top);
+      return plusErr(N.rneg(N.rmul(Q2, N.rmul(s2b, N.rexp(N.rneg(N.rmul(Q2, a)))))), 2 - 2 * L);
+    });
+    return C(plusErr(Q1, 2 - L), im);
+  }
+  // coth(a + bi) = (sinh 2a − i sin 2b) / (2(sinh² a + sin² b)), with no cancellation in the denominator
+  return N.withPrec(16, () => {
+    const s2a = N.rsinh(N.rmul(Q2, a)), [s2b] = N.sinCosR(N.rmul(Q2, b)), sa = N.rsinh(a), [sb] = N.sinCosR(b);
+    const den = N.rmul(Q2, N.radd(N.rmul(sa, sa), N.rmul(sb, sb)));
+    if (N.isZero(den)) fail(`${fname} is undefined here: it goes to infinity.`, node);
+    return C(N.rdiv(s2a, den), N.rneg(N.rdiv(s2b, den)));
+  });
+}
+function asinhR(x) {
+  if (N.isZeroExact(x) || N.isNZ(x)) return x;
+  const neg = N.rsign(x) < 0, ax = N.rabs(x), m = N.rmag(ax);
+  let r;
+  if (m < smallCut()) r = plusErr(ax, 3 * m); // x − x³/6, and the x³ term is below the precision
+  else if (m > bigCut()) r = N.withPrec(8, () => N.rln(N.rmul(Q2, ax))); // ln 2x: what is left is below the precision
+  else r = N.withPrec(Math.max(0, -m) + 16, () => N.rln(N.radd(ax, N.rsqrt(N.radd(N.rmul(ax, ax), Q1)))));
+  return neg ? N.rneg(r) : r;
+}
+function acoshR1(x) { // x >= 1
+  const d = N.rsub(x, Q1);
+  if (N.isZeroExact(d)) return Q0;
+  if (N.isNZ(d)) return N.nz(d.e / 2 + 1);
+  if (N.rmag(x) > bigCut()) return N.withPrec(8, () => N.rln(N.rmul(Q2, x)));
+  return N.withPrec(Math.max(0, -N.rmag(d) / 2) + 16, () => N.rln(N.radd(x, N.rsqrt(N.rmul(d, N.radd(x, Q1))))));
+}
+function atanhR(x, node, fname = 'atanh') { // fname: the function the reader typed (acoth comes here with 1/x)
+  if (N.isZeroExact(x) || N.isNZ(x)) return C(x);
+  const c = N.rcmp(N.rabs(x), Q1);
+  if (c === 0) fail(`${fname}(${N.rsign(x) > 0 ? '' : '−'}1) is undefined: it goes to infinity.`, node);
+  if (c > 0) { const r = atanhR(N.withPrec(8, () => N.rdiv(Q1, x)), node, fname).re, h = halfPi(); return C(r, N.rsign(x) > 0 ? N.rneg(h) : h); }
+  const m = N.rmag(x);
+  if (m < smallCut()) return C(plusErr(x, 3 * m)); // x + x³/3, and the x³ term is below the precision
+  return C(N.withPrec(Math.max(0, -m) + 16, () => N.rdiv(N.rln(N.rdiv(N.radd(Q1, x), N.rsub(Q1, x))), Q2)));
+}
+function asinhC(z) {
+  if (N.isRealC(z)) return C(asinhR(z.re));
+  const a = z.re, b = z.im;
+  if (N.isZeroExact(a)) { // asinh(iy) = i·asin(y) for |y| <= 1, else ±acosh|y| ± iπ/2
+    if (N.rcmp(N.rabs(b), Q1) <= 0) return C(Q0, N.casin(C(b)).re);
+    const r = acoshR1(N.rabs(b)), h = halfPi();
+    return N.rsign(b) > 0 ? C(r, h) : C(N.rneg(r), N.rneg(h));
+  }
+  if (N.rsign(a) < 0 || (N.isNZ(a) && N.rsign(b) < 0)) return N.cneg(asinhC(N.cneg(z))); // odd
+  const { m, extra } = extraFor(z);
+  if (m < smallCut()) return tinyC(z, 0);
+  if (m > bigCut()) return N.withPrec(8, () => N.cln(N.cmul(C(Q2), z)));
+  return N.withPrec(extra, () => N.cln(N.cadd(z, N.csqrt(N.cadd(N.cmul(z, z), N.C1)))));
+}
+function acoshC(z) {
+  if (N.isRealC(z)) {
+    const x = z.re;
+    if (N.rcmp(x, Q1) >= 0) return C(acoshR1(x));
+    if (N.rcmp(x, qi(-1)) <= 0) return C(acoshR1(N.rneg(x)), N.rpi());
+    return C(Q0, N.cacos(C(x)).re); // −1 < x < 1: i·acos(x)
+  }
+  // acosh z = 2 ln(√((z + 1)/2) + √((z − 1)/2))
+  const d = N.csub(z, N.C1), { extra } = extraFor(z), md = Math.max(N.rmag(d.re), N.rmag(d.im));
+  return N.withPrec(extra + Math.max(0, -md / 2), () => N.cmul(C(Q2), N.cln(N.cadd(N.csqrt(N.cdiv(N.cadd(z, N.C1), C(Q2))), N.csqrt(N.cdiv(d, C(Q2)))))));
+}
+function atanhC(z, node, fname = 'atanh') {
+  if (N.isRealC(z)) return atanhR(z.re, node, fname);
+  if (N.isZeroExact(z.re)) return C(Q0, N.ratan(z.im)); // atanh(iy) = i·atan(y)
+  const { m, extra } = extraFor(z);
+  if (m < smallCut()) return tinyC(z, 0);
+  return N.withPrec(extra, () => N.cdiv(N.csub(N.cln(N.cadd(N.C1, z)), N.cln(N.csub(N.C1, z))), C(Q2)));
+}
+function nearZero(z, node, recip) { // a function of a tiny real angle or value: 1/x or 1, give or take what is below the precision
+  const x = z.re, m = N.rmag(x);
+  return C(recip ? plusErr(N.withPrec(8, () => N.rdiv(Q1, x)), m) : plusErr(Q1, 2 * m));
+}
+const tinyAngle = (z) => { if (!N.isRealC(z)) return null; const w = toRad(z); return tinyReal(w) ? w : null; };
+def('sec', 1, 1, ([z], node) => { const w = tinyAngle(z); if (w) return nearZero(w, node, false); tooSmall(toRad(z), 'sec', node, 'im'); return recipOf(trig(z, 'cos', node), 'sec is undefined here: the cosine is zero', node); });
+def('csc cosec', 1, 1, ([z], node) => { const w = tinyAngle(z); if (w) return nearZero(w, node, true); tooSmall(toRad(z), node.name, node, 'im'); return recipOf(trig(z, 'sin', node), `${node.name} is undefined here: the sine is zero`, node); });
+def('cot', 1, 1, ([z], node) => {
+  const t = tinyAngle(z); if (t) return nearZero(t, node, true);
+  if (N.isRealC(z)) {
+    const s = trig(z, 'sin', node), c = trig(z, 'cos', node);
+    if (zeroC(s)) fail('cot is undefined here: the sine is zero' + (exactZeroC(s) ? '.' : ' to within the working precision.'), node);
+    return N.withPrec(8, () => N.cdiv(c, s));
+  }
+  const w = toRad(z), r = cothC(C(N.rneg(w.im), w.re), node, 'cot'); // cot z = i·coth(iz)
+  return C(N.rneg(r.im), r.re);
+});
+def('asec arcsec', 1, 1, ([z], node) => { const w = inv0(z, node.name, node); return fromRad(withExtra(w, () => acosX(w)), node.name, node); });
+def('acsc arccsc arccosec', 1, 1, ([z], node) => { const w = inv0(z, node.name, node); return fromRad(withExtra(w, () => asinX(w)), node.name, node); });
+def('acot arccot', 1, 1, ([z], node) => {
+  if (exactZeroC(z)) return fromRad(C(halfPi()), node.name, node);
+  if (zeroC(z)) fail(`${node.name} jumps at 0, and this value is zero to within the working precision, so which side it is on can’t be told.`, node);
+  const w = crecip(z);
+  if (N.isZero(w.re) && N.isExactC(w) && N.babs(w.im.n) === w.im.d) fail(`${node.name}(±i) is undefined: it goes to infinity.`, node);
+  if (!N.isRealC(w) && extraFor(w).m < smallCut()) return fromRad(tinyC(w, 0), node.name, node); // atan w = w − w³/3 + …, for the 1/z of a huge z
+  return fromRad(withExtra(w, () => N.catan(w)), node.name, node);
+});
+def('sech', 1, 1, ([z], node) => { if (tinyReal(z)) return nearZero(z, node, false); tooSmall(z, 'sech', node); return recipOf(shch(z)[1], 'sech is undefined here: cosh is zero', node); });
+def('csch cosech', 1, 1, ([z], node) => { if (tinyReal(z)) return nearZero(z, node, true); tooSmall(z, node.name, node); return recipOf(shch(z)[0], `${node.name} is undefined here: sinh is zero`, node); });
+def('coth', 1, 1, ([z], node) => (tinyReal(z) ? nearZero(z, node, true) : cothC(z, node)));
+def('asinh arsinh arcsinh', 1, 1, ([z]) => asinhC(z));
+def('acosh arcosh arccosh', 1, 1, ([z]) => acoshC(z));
+def('atanh artanh arctanh', 1, 1, ([z], node) => atanhC(z, node));
+def('asech arsech arcsech', 1, 1, ([z], node) => acoshC(inv0(z, node.name, node)));
+def('acsch arcsch arccsch', 1, 1, ([z], node) => asinhC(inv0(z, node.name, node)));
+def('acoth arcoth arccoth', 1, 1, ([z], node) => {
+  if (exactZeroC(z)) return C(Q0, halfPi());
+  return atanhC(inv0(z, node.name, node), node, node.name);
+});
+def('cis', 1, 1, ([z], node) => (N.isRealC(z) ? N.cadd(trig(z, 'cos', node), N.cmul(N.CI, trig(z, 'sin', node))) : N.cexp(N.cmul(N.CI, toRad(z)))));
+def('hypot', 2, Infinity, (a, node) => { // scaled by the largest value, so huge or tiny values don't overflow on the way
+  const xs = listReals(a, 'hypot', node).map((x) => N.rabs(x));
+  let m = xs[0]; for (const x of xs) if (N.rcmp(x, m) > 0) m = x;
+  if (N.rsign(m) === 0) return C(Q0);
+  return C(N.withPrec(8, () => N.rmul(m, N.rsqrt(xs.reduce((s, x) => { const r = N.rdiv(x, m); return N.radd(s, N.rmul(r, r)); }, Q0)))));
+});
+def('sign sgn', 1, 1, ([z]) => {
   if (N.isRealC(z)) { if (N.isNZ(z.re)) { N.note('The value is zero to within the working precision, so its sign is taken as 0.'); return N.C0; } return C(qi(N.rsign(z.re))); }
   return N.withPrec(8, () => N.cdiv(z, C(N.cabs(z))));
 });
@@ -2383,6 +2809,7 @@ def('round', 1, 2, ([z, p], node) => {
 def('min', 1, Infinity, (a, node) => C(sortReals(listReals(a, 'min', node))[0]));
 def('max', 1, Infinity, (a, node) => { const s = sortReals(listReals(a, 'max', node)); return C(s[s.length - 1]); });
 def('sum', 1, Infinity, (a) => a.reduce((s, z) => N.cadd(s, z), N.C0));
+def('prod product', 1, Infinity, (a) => a.reduce((p, z) => N.cmul(p, z), N.C1));
 def('mean', 1, Infinity, (a) => N.cdiv(a.reduce((s, z) => N.cadd(s, z), N.C0), C(qi(a.length))));
 def('median', 1, Infinity, (a, node) => { const s = sortReals(listReals(a, 'median', node)), n = s.length; return C(n % 2 ? s[(n - 1) / 2] : N.rdiv(N.radd(s[n / 2 - 1], s[n / 2]), Q2)); });
 def('gcd', 1, Infinity, (a, node) => C(qi(a.reduce((g, z, i) => N.bgcd(g, intArg(z, 'gcd', node.args[i])), 0n))));
@@ -2395,7 +2822,7 @@ function modR(x, y, node) {
   return r;
 }
 def('mod', 2, 2, ([a, b], node) => C(modR(real(a, 'mod', node.args[0]), real(b, 'mod', node.args[1]), node)));
-def('nCr choose', 2, 2, ([a, b], node) => {
+def('nCr choose binomial', 2, 2, ([a, b], node) => {
   let n = intArg(a, node.name, node.args[0]), k = intArg(b, node.name, node.args[1]);
   if (k < 0n) return N.C0;
   let sign = 1n;
@@ -2423,6 +2850,29 @@ function factorialC(z, node, label) {
   return C(N.factorialR(n));
 }
 def('factorial', 1, 1, ([z], node) => factorialC(z, node.args[0], 'factorial'));
+function dfactB(n) { // n!! for a whole n >= 0: the product n × (n − 2) × …, by splitting it in halves
+  const prod = (lo, hi) => {
+    if (hi < lo) return 1n;
+    if (hi - lo < 64n) { let p = 1n; for (let i = lo; i <= hi; i += 2n) p *= i; return p; }
+    let mid = (lo + hi) >> 1n; if ((mid - lo) & 1n) mid -= 1n;
+    return prod(lo, mid) * prod(mid + 2n, hi);
+  };
+  return n < 2n ? 1n : prod(n & 1n ? 1n : 2n, n);
+}
+function lnDfact(n) { n = Number(n); if (n < 2) return 0; return n % 2 === 0 ? (n / 2) * Math.LN2 + lnFact(n / 2) : lnFact(n) - lnDfact(n - 1); }
+function doubleFactorialC(z, node, label) {
+  const n = intArg(z, label, node, 'a whole number');
+  if (n < -1n) { // n = −(2j + 1): n!! = (−1)^j / (2j − 1)!!
+    if (!(n & 1n)) fail(`The double factorial of a negative even number is undefined.`, node);
+    const j = (-n - 1n) / 2n;
+    if (j > 25000n || lnDfact(2n * j - 1n) / Math.LN10 > 100000) fail(`(−${-n})!! is smaller than about 10^-100000, beyond what this calculator handles.`, node);
+    return C(Q(j & 1n ? -1n : 1n, dfactB(2n * j - 1n)));
+  }
+  if (n > 60000n) fail(`${n}!! is larger than about 10^100000, beyond what this calculator handles.`, node);
+  sizeCheck(lnDfact(n) / Math.LN10, `${n}!!`);
+  return C(qi(dfactB(n)));
+}
+def('doublefactorial', 1, 1, ([z], node) => doubleFactorialC(z, node.args[0], 'doublefactorial'));
 def('gamma', 1, 1, ([z], node) => C(N.rgamma(real(z, 'gamma', node))));
 def('isprime', 1, 1, ([z], node) => {
   const x = real(z, 'isprime', node);
@@ -2500,10 +2950,8 @@ function ev(n) {
       return v;
     }
     case 'neg': return N.cneg(ev(n.a));
-    case 'fact': {
-      if (n.a.t === 'fact') N.note('n!! is read as (n!)!, the factorial of a factorial.');
-      return factorialC(ev(n.a), n, '!');
-    }
+    case 'fact': return factorialC(ev(n.a), n, '!');
+    case 'dfact': return doubleFactorialC(ev(n.a), n, '!!');
     case 'deg': return CTX.angle === 'deg' ? ev(n.a) : N.withPrec(12, () => N.cmul(ev(n.a), C(N.rdiv(N.rpi(), qi(180)))));
     case 'bin': {
       const a = ev(n.a), b = ev(n.b);
@@ -2681,9 +3129,10 @@ function errHTML(src, res) {
   }
   return `<p class="hp-err">${esc(res.err)}${shown}</p>`;
 }
-function workLines(res, lookup) { // "Read as" and "With values"
+const convHTML = (ast) => (ast && ast.notes && ast.notes.length ? `<ul class="hp-conv">${ast.notes.map((n) => `<li>${esc(n)}</li>`).join('')}</ul>` : '');
+function workLines(res, lookup) { // "Read as", the conventions it used, and "With values"
   if (!res.ast) return '';
-  let out = `<p class="hp-work"><span class="wl">Read as</span><code>${esc(HPC.show(res.ast))}</code></p>`;
+  let out = `<p class="hp-work"><span class="wl">Read as</span><code>${esc(HPC.show(res.ast))}</code></p>` + convHTML(res.ast);
   const names = [...HPC.freeNames(res.ast)];
   if (names.length && !res.unset) {
     const vals = new Map();
@@ -2764,7 +3213,7 @@ function updateVarOutputs(info) {
 }
 
 /* ---------- lines ---------- */
-let lastField = null; // the box the symbol keys and constants insert into
+let lastField = null; // the box the symbol keys and the directory insert into
 function renderLines() {
   $('lines').innerHTML = st.lines.map((s, i) => `
     <div class="hp-line" id="line-${i}">
@@ -2807,7 +3256,8 @@ function resultHTML(src, res, lookup, i) {
   }
   if (res.err) return h + errHTML(src, res);
   const d = describe(res.value, res.approx);
-  const notes = [...(res.notes || []), ...d.notes];
+  const conv = (res.ast && res.ast.notes) || [];
+  const notes = [...(res.notes || []).filter((n) => !conv.includes(n)), ...d.notes];
   const sig = signsOf(res.value);
   h += `<div class="hp-val"><output>${numHTML(d.main)}</output><button type="button" class="btn quiet small" data-copy="${esc(d.copy)}" aria-label="Copy the result of calculation ${i + 1}">Copy</button></div>`;
   if (d.alt) h += `<p class="hp-alt">${numHTML(d.alt)}</p>`;
@@ -2902,7 +3352,7 @@ function tableInfo(info) {
 function renderTable(info) {
   tableInfo(info);
   const t = st.table;
-  $('tb-read').innerHTML = TB.err ? errHTML(t.formula, TB.err) : TB.ast ? `<span class="hp-work"><span class="wl">Read as</span><code>${esc(HPC.show(TB.ast))}</code></span>` : '';
+  $('tb-read').innerHTML = TB.err ? errHTML(t.formula, TB.err) : TB.ast ? `<span class="hp-work"><span class="wl">Read as</span><code>${esc(HPC.show(TB.ast))}</code></span>${convHTML(TB.ast)}` : '';
   $('tb-cols').innerHTML = TB.names.length ? '<span>Columns:</span>' + TB.names.map((nm) => `<label><input type="checkbox" data-col="${esc(nm)}" ${TB.cols.includes(nm) ? 'checked' : ''}> ${esc(nm)}</label>`).join('') +
     (TB.names.some((nm) => !TB.cols.includes(nm)) ? '<span class="help">Unticked names take their value from Variables.</span>' : '') : '';
   const cols = TB.cols;
@@ -3149,7 +3599,7 @@ document.querySelectorAll('[data-mode]').forEach((b) => b.addEventListener('clic
 $('set-dsneg').addEventListener('change', () => { st.ds.neg = $('set-dsneg').value; recalc(false); });
 $('set-dsdec').addEventListener('change', () => { st.ds.dec = $('set-dsdec').value; recalc(false); });
 
-/* inserting symbols and constants into the last box used */
+/* inserting symbols into the last box used */
 document.addEventListener('focusin', (e) => { const t = e.target; if (t instanceof HTMLInputElement && (t.classList.contains('hp-expr') || t.closest('#tb-grid'))) lastField = t; });
 function insertText(text, wrapSel) {
   let f = lastField && document.body.contains(lastField) ? lastField : document.querySelector('input.line');
@@ -3166,13 +3616,205 @@ document.querySelectorAll('[data-ins]').forEach((b) => {
   b.addEventListener('mousedown', (e) => e.preventDefault()); // keep the caret where it is
   b.addEventListener('click', () => insertText(b.dataset.ins, !!b.dataset.wrap));
 });
-$('hp-clist').innerHTML = HP_CONSTANTS.map((c) => `<li><button type="button" data-const="${esc(c.id)}"><span class="cn">${esc(c.name)}</span><span class="cv">${esc(c.exact ? c.value + ' (exact)' : c.value.slice(0, 22) + '…')}</span><span class="ct">${esc(c.id)}</span></button></li>`).join('');
-$('hp-clist').addEventListener('mousedown', (e) => { if (e.target.closest('[data-const]')) e.preventDefault(); });
-$('hp-clist').addEventListener('click', (e) => {
-  const b = e.target.closest('[data-const]'); if (!b) return;
-  const f = lastField && document.body.contains(lastField) ? lastField : document.querySelector('input.line');
-  const before = f ? f.value.slice(0, f.selectionStart ?? f.value.length) : '';
-  insertText((/[\p{L}\p{Nd}_)]$/u.test(before) ? ' ' : '') + b.dataset.const);
+
+/* ---------- Symbols and functions: from how a thing is printed to how to type it ----------
+   Each entry: g group, l how it looks in print (HTML made here, never from input), n its name, c what to
+   type, t what a tap inserts (@ is where a selection goes, ‸ where the caret ends; without ‸ it ends after
+   the selection; with nothing selected, an @ after the start of t is an empty slot and gets the caret),
+   a other spellings it also accepts, o a one-line note, k extra words to search by, go a panel to point to
+   instead. Only π, e and i are constants here. */
+const DIR_GROUPS = [['num', 'Numbers and constants'], ['ar', 'Arithmetic and powers'], ['rt', 'Roots'], ['lg', 'Logs and exponentials'], ['tr', 'Trigonometry'], ['it', 'Inverse trigonometry'], ['hy', 'Hyperbolic functions'],
+  ['rd', 'Rounding and parts'], ['nt', 'Number theory and counting'], ['dg', 'Digits and letters'], ['ls', 'Lists and statistics'], ['cx', 'Complex numbers'], ['an', 'Angles']];
+const fx = (look, name, f, a = [], o = '', k = '') => ({ l: look, n: name, c: f + '(x)', t: f + '(@)', a, o, k });
+const inv = (f, name, extra = [], k = '') => ({ l: `${f}<sup>−1</sup> x`, n: name, c: `a${f}(x)`, t: `a${f}(@)`, a: [`arc${f}(x)`, ...extra, `${f}^-1(x)`, `${f}⁻¹ x`], o: '', k: `${f}-1 ${f}^-1 arc${f} inverse ${k}` });
+const ainv = (f, name, extra = []) => ({ l: `${f}<sup>−1</sup> x`, n: name, c: `a${f}(x)`, t: `a${f}(@)`, a: [`ar${f}(x)`, `arc${f}(x)`, ...extra, `${f}^-1(x)`, `${f}⁻¹ x`], o: '', k: `${f}-1 ${f}^-1 ar${f} arc${f} area inverse hyperbolic` });
+const DIR = [
+  { g: 'num', l: 'π', n: 'Pi', c: 'π', t: 'π', a: ['pi'], o: '', k: 'pi 3.14159 circle' },
+  { g: 'num', l: 'e', n: 'e, the base of natural logarithms', c: 'e', t: 'e', a: [], o: '2e is 2 × e, but 2e3 is 2000.', k: 'euler number 2.71828' },
+  { g: 'num', l: 'i', n: 'The imaginary unit', c: 'i', t: 'i', a: [], o: 'i² is −1.', k: 'imaginary unit sqrt(-1) j' },
+  { g: 'num', l: '3.14', n: 'Decimal point', c: '3.14', t: '.', a: [], o: 'A point, not a comma: commas separate a function’s values.', k: 'decimal point comma' },
+  { g: 'num', l: '1.5 × 10<sup>3</sup>', n: 'Powers of ten', c: '1.5e3', t: '@e‸', a: ['1.5E3', '1.5 × 10^3'], o: 'The e goes straight after the number.', k: 'scientific notation exponent standard form x10 e notation' },
+  { g: 'num', l: '1.618…', n: 'A value known only to its digits', c: '1.618…', t: '@…‸', a: ['1.618...'], o: 'Results show only the digits it can vouch for.', k: 'approximate ellipsis dots truncated rounded' },
+  { g: 'num', l: '0.<span class="dx-over">3</span>, 0.(3)', n: 'Repeating decimal', c: '0.(3)', t: '@.(‸)', a: ['0.1(6)'], o: 'The digits in brackets repeat, as results show them: 0.(3) is 1/3, and 0.1(6) is 1/6. To multiply a decimal by a bracket, write the ×: 2.5 × (3).', k: 'repeating recurring decimal period bar dot' },
+  { g: 'num', l: '<span class="dx-frac"><span>1</span><span>2</span></span>', n: 'Fraction', c: '1/2', t: '@/‸', a: ['1 ÷ 2'], o: 'Fractions stay exact: 1/3 + 1/6 is 1/2.', k: 'fraction half over ½ 1/2' },
+  { g: 'ar', l: 'a + b', n: 'Add', c: 'a + b', t: ' + ', a: [], o: '', k: 'plus add sum' },
+  { g: 'ar', l: 'a − b', n: 'Subtract', c: 'a - b', t: ' - ', a: ['a − b'], o: '', k: 'minus subtract difference negative' },
+  { g: 'ar', l: 'a × b, ab', n: 'Multiply', c: 'a * b', t: ' * ', a: ['a × b', 'a·b', 'a b', '2x', '3(4 + 5)'], o: 'Left out, it counts the same as ×: 1/2π is (1/2) × π. xy is one name, so write x y.', k: 'times multiply product dot cross' },
+  { g: 'ar', l: 'a ÷ b', n: 'Divide', c: 'a / b', t: ' / ', a: ['a ÷ b'], o: '', k: 'divide division over quotient' },
+  { g: 'ar', l: 'x<sup>n</sup>', n: 'Power', c: 'x^n', t: '@^‸', a: ['x**n', 'x²', 'x³'], o: 'Works from the right: 2^3^2 is 2^9, and −2^2 is −4.', k: 'power exponent squared cubed index raised to' },
+  { g: 'ar', l: 'x<sup>−1</sup>', n: 'Reciprocal', c: 'x^-1', t: '@^-1‸', a: ['1/x', 'x⁻¹'], o: '', k: 'reciprocal inverse one over' },
+  { g: 'ar', l: '( )  [ ]  { }', n: 'Brackets', c: '( )', t: '(@)', a: ['[ ]', '{ }'], o: 'All three kinds work the same.', k: 'parentheses brackets braces' },
+  { g: 'ar', l: 'n!', n: 'Factorial', c: 'n!', t: '@!‸', a: ['factorial(n)'], o: '', k: 'factorial exclamation' },
+  { g: 'ar', l: 'n!!', n: 'Double factorial', c: 'n!!', t: '@!!‸', a: ['doublefactorial(n)'], o: 'n × (n − 2) × (n − 4) × …; for (n!)!, keep the brackets.', k: 'double factorial semifactorial' },
+  { g: 'ar', l: 'Γ(x)', n: 'Gamma function', c: 'gamma(x)', t: 'gamma(@)', a: [], o: 'Γ on its own is a variable’s name here.', k: 'gamma Γ' },
+  { g: 'rt', l: '√x', n: 'Square root', c: 'sqrt(x)', t: 'sqrt(@)', a: ['√x', 'sqrt x', 'x^(1/2)'], o: '√ takes the next number, name or bracket, with its power: √2² is √4.', k: 'square root radical surd' },
+  { g: 'rt', l: '∛x', n: 'Cube root', c: 'cbrt(x)', t: 'cbrt(@)', a: ['∛x', 'root(x, 3)'], o: 'The real cube root: ∛(−8) is −2.', k: 'cube root third' },
+  { g: 'rt', l: '∜x', n: 'Fourth root', c: 'root(x, 4)', t: 'root(@, 4)', a: ['∜x'], o: '', k: 'fourth root' },
+  { g: 'rt', l: '<sup>n</sup>√x', n: 'n-th root', c: 'root(x, n)', t: 'root(@, ‸)', a: ['³√x', 'x^(1/n)'], o: 'For a negative x and odd n, root gives the real root; x^(1/n) the principal complex one.', k: 'nth root radical index' },
+  { g: 'rt', l: '√(a² + b²)', n: 'Hypotenuse', c: 'hypot(a, b)', t: 'hypot(@, ‸)', a: ['sqrt(a^2 + b^2)'], o: 'Takes two or more values.', k: 'hypotenuse pythagoras distance length norm' },
+  { g: 'lg', l: 'e<sup>x</sup>', n: 'Exponential', c: 'exp(x)', t: 'exp(@)', a: ['e^x', 'e^(x + 1)'], o: 'Put a longer power in brackets: e^(iπ).', k: 'exponential exp e to the power' },
+  { g: 'lg', l: 'ln x', n: 'Natural logarithm', c: 'ln(x)', t: 'ln(@)', a: ['ln x', 'log(x, e)'], o: '', k: 'natural log logarithm base e' },
+  { g: 'lg', l: 'log x', n: 'Logarithm to base 10', c: 'log(x)', t: 'log(@)', a: ['log x', 'log10(x)', 'log₁₀ x'], o: '', k: 'common logarithm base 10' },
+  { g: 'lg', l: 'log<sub>2</sub> x', n: 'Logarithm to base 2', c: 'log2(x)', t: 'log2(@)', a: ['log₂ x', 'log_2(x)', 'log_2 x'], o: '', k: 'binary logarithm base 2 lb ld' },
+  { g: 'lg', l: 'log<sub>b</sub> x', n: 'Logarithm to base b', c: 'log(x, b)', t: 'log(@, ‸)', a: ['log_b(x)', 'log₅ x', 'log_5 x'], o: 'A base written on log, as in log_5 x, is read as log(x, 5).', k: 'base logarithm subscript log_' },
+  { g: 'lg', l: 'lg x', n: 'lg', c: 'log(x)', t: 'log(@)', a: [], o: 'lg is base 10 in some books and base 2 in others: type log(x) or log2(x).', k: 'lg' },
+  { g: 'tr', ...fx('sin x', 'Sine', 'sin', ['sin x', 'sin 30°'], 'In the angle unit chosen above; ° makes it degrees.', 'sine') },
+  { g: 'tr', ...fx('cos x', 'Cosine', 'cos', ['cos x'], '', 'cosine') },
+  { g: 'tr', ...fx('tan x', 'Tangent', 'tan', ['tan x'], '', 'tangent') },
+  { g: 'tr', ...fx('sec x', 'Secant', 'sec', ['sec x'], '', 'secant') },
+  { g: 'tr', ...fx('csc x, cosec x', 'Cosecant', 'csc', ['cosec(x)', 'csc x'], '', 'cosecant') },
+  { g: 'tr', ...fx('cot x', 'Cotangent', 'cot', ['cot x'], '', 'cotangent') },
+  { g: 'tr', l: 'sin<sup>2</sup> x', n: 'Power of a function', c: 'sin(x)^2', t: 'sin(@)^2', a: ['sin^2(x)', 'sin²x'], o: 'Also for cos, tan and the rest, the hyperbolic functions, ln and log.', k: 'squared power sin^2 sin2' },
+  { g: 'tr', l: 'sin 2x', n: 'A function without brackets', c: 'sin(2x)', t: 'sin(@)', a: ['sin 2x'], o: 'Without brackets, a function takes the next number, name or bracket, so sin 2x is sin(2x). Before a power or a /, brackets are needed: sin(x/2) or sin(x)/2.', k: 'no brackets bare argument coefficient' },
+  { g: 'it', ...inv('sin', 'Inverse sine', [], 'arcsine'), o: 'sin⁻¹ is the inverse function, not 1/sin.' },
+  { g: 'it', ...inv('cos', 'Inverse cosine', [], 'arccosine') },
+  { g: 'it', ...inv('tan', 'Inverse tangent', [], 'arctangent') },
+  { g: 'it', ...inv('sec', 'Inverse secant', [], 'arcsecant') },
+  { g: 'it', ...inv('csc', 'Inverse cosecant', ['arccosec(x)'], 'arccosecant cosec') },
+  { g: 'it', ...inv('cot', 'Inverse cotangent', [], 'arccotangent') },
+  { g: 'it', l: 'atan2(y, x)', n: 'Angle of the point (x, y)', c: 'atan2(y, x)', t: 'atan2(@, ‸)', a: [], o: 'From −180° to 180° (−π to π).', k: 'arctan2 angle bearing polar direction' },
+  { g: 'hy', ...fx('sinh x', 'Hyperbolic sine', 'sinh', ['sinh x'], '', 'hyperbolic') },
+  { g: 'hy', ...fx('cosh x', 'Hyperbolic cosine', 'cosh', ['cosh x'], '', 'hyperbolic') },
+  { g: 'hy', ...fx('tanh x', 'Hyperbolic tangent', 'tanh', ['tanh x'], '', 'hyperbolic') },
+  { g: 'hy', ...fx('sech x', 'Hyperbolic secant', 'sech', ['sech x'], '', 'hyperbolic') },
+  { g: 'hy', ...fx('csch x, cosech x', 'Hyperbolic cosecant', 'csch', ['cosech(x)', 'csch x'], '', 'hyperbolic') },
+  { g: 'hy', ...fx('coth x', 'Hyperbolic cotangent', 'coth', ['coth x'], '', 'hyperbolic') },
+  { g: 'hy', ...ainv('sinh', 'Inverse hyperbolic sine') },
+  { g: 'hy', ...ainv('cosh', 'Inverse hyperbolic cosine') },
+  { g: 'hy', ...ainv('tanh', 'Inverse hyperbolic tangent') },
+  { g: 'hy', ...ainv('sech', 'Inverse hyperbolic secant') },
+  { g: 'hy', ...ainv('csch', 'Inverse hyperbolic cosecant') },
+  { g: 'hy', ...ainv('coth', 'Inverse hyperbolic cotangent') },
+  { g: 'rd', l: '|x|', n: 'Absolute value', c: 'abs(x)', t: 'abs(@)', a: ['|x|'], o: 'For a complex number, its distance from 0.', k: 'absolute value modulus magnitude size bars' },
+  { g: 'rd', l: '⌊x⌋', n: 'Floor', c: 'floor(x)', t: 'floor(@)', a: ['⌊x⌋'], o: 'Rounds down: ⌊−3.5⌋ is −4.', k: 'round down floor greatest integer' },
+  { g: 'rd', l: '⌈x⌉', n: 'Ceiling', c: 'ceil(x)', t: 'ceil(@)', a: ['⌈x⌉'], o: 'Rounds up.', k: 'round up ceiling least integer' },
+  { g: 'rd', l: 'round x', n: 'Round', c: 'round(x)', t: 'round(@)', a: ['round(x, places)'], o: 'Halves round away from zero: round(2.5) is 3.', k: 'round nearest places decimal' },
+  { g: 'rd', l: 'trunc x', n: 'Whole-number part', c: 'trunc(x)', t: 'trunc(@)', a: [], o: 'Drops the fraction: trunc(−3.7) is −3.', k: 'truncate integer part int' },
+  { g: 'rd', l: 'frac x, {x}', n: 'Fractional part', c: 'frac(x)', t: 'frac(@)', a: [], o: 'Keeps the sign: frac(−3.7) is −0.7. Here { } are brackets, so type frac(x), not {x}.', k: 'fractional part decimal part' },
+  { g: 'rd', l: 'sgn x', n: 'Sign', c: 'sign(x)', t: 'sign(@)', a: ['sgn(x)'], o: '−1, 0 or 1.', k: 'sign signum' },
+  { g: 'nt', l: 'x mod n', n: 'Remainder', c: 'x mod n', t: '@ mod ‸', a: ['x % n', 'mod(x, n)'], o: 'Takes the sign of n: −7 mod 3 is 2.', k: 'modulo remainder modulus %' },
+  { g: 'nt', l: 'a ≡ b (mod n)', n: 'Congruence', c: 'mod(a - b, n)', t: 'mod(@ - ‸, )', a: [], o: 'Not worked out directly: it holds when this is 0.', k: 'congruent congruence modulo ≡' },
+  { g: 'nt', l: 'gcd(a, b)', n: 'Greatest common divisor', c: 'gcd(a, b)', t: 'gcd(@, ‸)', a: ['gcd(a, b, c, …)'], o: '', k: 'gcd hcf highest greatest common factor divisor' },
+  { g: 'nt', l: 'lcm(a, b)', n: 'Least common multiple', c: 'lcm(a, b)', t: 'lcm(@, ‸)', a: ['lcm(a, b, c, …)'], o: '', k: 'lcm lowest least common multiple' },
+  { g: 'nt', l: '<sub class="dx-pre">n</sub>C<sub>r</sub>, <sup class="dx-pre">n</sup>C<sub>r</sub>, <span class="dx-binom" aria-hidden="true"><span>n</span><span>k</span></span><span class="sr">(n over k)</span>', n: 'Combinations', c: 'nCr(n, k)', t: 'nCr(@, ‸)', a: ['5C2', 'C(n, k)', 'choose(n, k)', 'binomial(n, k)', '⁵C₂'], o: '', k: 'combinations choose binomial coefficient ncr ⁿcᵣ (n k)' },
+  { g: 'nt', l: '<sub class="dx-pre">n</sub>P<sub>r</sub>, <sup class="dx-pre">n</sup>P<sub>r</sub>', n: 'Permutations', c: 'nPr(n, k)', t: 'nPr(@, ‸)', a: ['5P2', 'P(n, k)', '⁵P₂'], o: '', k: 'permutations arrangements npr ⁿpᵣ' },
+  { g: 'nt', l: 'isprime n', n: 'Is it prime?', c: 'isprime(n)', t: 'isprime(@)', a: [], o: '1 if it is, 0 if not.', k: 'prime test primality' },
+  { g: 'nt', l: 'factor n', n: 'Prime factors', c: 'factor(n)', t: 'factor(@)', a: [], o: '', k: 'factorise factorize factorisation decomposition primes' },
+  { g: 'nt', l: 'nextprime n', n: 'Next prime', c: 'nextprime(n)', t: 'nextprime(@)', a: [], o: '', k: 'next prime after' },
+  { g: 'nt', l: 'prevprime n', n: 'Previous prime', c: 'prevprime(n)', t: 'prevprime(@)', a: [], o: '', k: 'previous prime before' },
+  { g: 'nt', l: 'T<sub>n</sub>', n: 'Triangle number', c: 'triangle(n)', t: 'triangle(@)', a: [], o: 'triangle(4) is 10.', k: 'triangle triangular number' },
+  { g: 'nt', l: 'F<sub>n</sub>', n: 'Fibonacci number', c: 'fib(n)', t: 'fib(@)', a: [], o: 'fib(0) is 0 and fib(1) is 1.', k: 'fibonacci' },
+  { g: 'dg', l: 'digit sum', n: 'Digit sum', c: 'digitsum(n)', t: 'digitsum(@)', a: [], o: 'It asks first what to do with a negative number or a decimal.', k: 'digit sum cross sum' },
+  { g: 'dg', l: 'digital root', n: 'Digital root', c: 'digitalroot(n)', t: 'digitalroot(@)', a: [], o: '', k: 'digital root repeated digit sum' },
+  { g: 'dg', l: 'reverse', n: 'Digits backwards', c: 'reverse(n)', t: 'reverse(@)', a: [], o: 'reverse(1230) is 321.', k: 'reverse backwards mirror' },
+  { g: 'dg', l: 'concat', n: 'Numbers joined end to end', c: 'concat(a, b)', t: 'concat(@, ‸)', a: [], o: 'concat(12, 345) is 12345.', k: 'concatenate join append' },
+  { g: 'dg', l: 'digits', n: 'Number of digits', c: 'digits(n)', t: 'digits(@)', a: [], o: '', k: 'how many digits length count' },
+  { g: 'dg', l: 'A = 1 … Z = 26', n: 'Letter values', go: ['letters', 'Letter values'], k: 'letter values alphabet a1z26 word value' },
+  { g: 'ls', l: 'Σ', n: 'Sum', c: 'sum(a, b, c)', t: 'sum(@)', a: [], o: 'Σ on its own is a variable’s name here.', k: 'sigma sum total add up' },
+  { g: 'ls', l: 'Π', n: 'Product', c: 'prod(a, b, c)', t: 'prod(@)', a: ['product(a, b, c)'], o: 'Π on its own is a variable’s name here.', k: 'pi product multiply all' },
+  { g: 'ls', l: '<span class="dx-over">x</span>', n: 'Mean', c: 'mean(a, b, c)', t: 'mean(@)', a: [], o: '', k: 'mean average x bar x̄' },
+  { g: 'ls', l: 'median', n: 'Median', c: 'median(a, b, c)', t: 'median(@)', a: [], o: '', k: 'median middle' },
+  { g: 'ls', l: 'max', n: 'Largest', c: 'max(a, b, c)', t: 'max(@)', a: [], o: '', k: 'maximum largest biggest' },
+  { g: 'ls', l: 'min', n: 'Smallest', c: 'min(a, b, c)', t: 'min(@)', a: [], o: '', k: 'minimum smallest least' },
+  { g: 'ls', l: 'a … b', n: 'A range’s midpoint, or a long list', go: ['ranges', 'Ranges and lists'], k: 'midpoint range middle width list paste count' },
+  { g: 'cx', l: 'a + bi', n: 'A complex number', c: '3 + 4i', t: 'i', a: [], o: 'i straight after a number multiplies it.', k: 'complex imaginary' },
+  { g: 'cx', l: 'Re z', n: 'Real part', c: 're(z)', t: 're(@)', a: ['Re(z)'], o: '', k: 'real part re ℜ' },
+  { g: 'cx', l: 'Im z', n: 'Imaginary part', c: 'im(z)', t: 'im(@)', a: ['Im(z)'], o: '', k: 'imaginary part im ℑ' },
+  { g: 'cx', l: '|z|', n: 'Modulus', c: 'abs(z)', t: 'abs(@)', a: ['|z|'], o: '', k: 'modulus absolute value magnitude' },
+  { g: 'cx', l: 'arg z', n: 'Argument (angle)', c: 'arg(z)', t: 'arg(@)', a: [], o: 'In the angle unit chosen above.', k: 'argument angle phase' },
+  { g: 'cx', l: '<span class="dx-over">z</span>', n: 'Conjugate', c: 'conj(z)', t: 'conj(@)', a: [], o: '', k: 'conjugate z bar z̄ z*' },
+  { g: 'cx', l: 'cis x', n: 'cos x + i sin x', c: 'cis(x)', t: 'cis(@)', a: ['e^(i x)'], o: 'In the angle unit chosen above, while e^(i x) is always in radians; r cis x is r × cis(x).', k: 'cis polar form euler' },
+  { g: 'an', l: '30°', n: 'Degrees', c: '30°', t: '@°‸', a: [], o: 'Marks degrees, whichever angle setting is on.', k: 'degree sign deg' },
+  { g: 'an', l: 'rad', n: 'Degrees to radians', c: 'rad(x)', t: 'rad(@)', a: [], o: '', k: 'radians convert' },
+  { g: 'an', l: 'deg', n: 'Radians to degrees', c: 'deg(x)', t: 'deg(@)', a: [], o: '', k: 'degrees convert' },
+  { g: 'an', l: 'N 45° 12.345′', n: 'A coordinate, moved by an offset', go: ['offset', 'Coordinate offset'], k: 'coordinate minutes offset latitude longitude' },
+];
+const dxNormC = (s) => String(s).normalize('NFKC').replace(/∑/g, 'Σ').replace(/∏/g, 'Π').replace(/\u0305/g, '\u0304').replace(/[−–—]/g, '-').replace(/[×⋅∙]/g, '*').replace(/÷/g, '/').replace(/\^/g, '').replace(/\s+/g, ' ').trim();
+const dxNorm = (s) => dxNormC(s).toLowerCase();
+const dxText = (h) => h.replace(/<[^>]*>/g, ' ');
+const dxBare = (f) => f.replace(/^(\p{L}[\p{L}\p{Nd}_]*)\(.*\)$/u, '$1'); // sqrt(x) -> sqrt
+// each field is searched on its own, with and without its spaces, so a search never matches across two fields
+DIR.forEach((d) => {
+  const main = [dxText(d.l), d.n, d.c || '', ...(d.a || []), d.go ? d.go[1] : ''];
+  d.main = main.map(dxNorm).filter(Boolean);
+  d.mainC = main.map(dxNormC).flatMap((f) => [f, f.replace(/ /g, ''), dxBare(f)]);
+  d.hay = [...d.main.map((f) => f + ' ' + f.replace(/ /g, '')), dxNorm(d.k || '')].join('\n'); // the search words (k) are separate words
+});
+function dxRank(d, q, qC) { // −1: the look or a typed form is the search, capitals and all; 0: the same in any case; 1: one starts with it; 2: a word starts with it; 3: anything else
+  if (d.mainC.includes(qC) || d.mainC.includes(qC.replace(/ /g, ''))) return -1;
+  const fs = d.main.flatMap((f) => [f, f.replace(/ /g, ''), dxBare(f)]);
+  if (fs.includes(q)) return 0;
+  if (fs.some((f) => f.startsWith(q))) return 1;
+  if (d.hay.split(/[\n ]/).some((w) => w.startsWith(q))) return 2;
+  return 3;
+}
+const dxCode = (s) => `<code>${esc(s)}</code>`;
+const dxTap = (d) => d.t.replace('‸', '').replace('@', '').trim(); // what a tap inserts with nothing selected
+const dxInsLabel = (d) => (dxTap(d) === d.c ? `Insert ${d.c}` : `Insert ${dxTap(d)}, as in ${d.c}`);
+function renderDir() {
+  $('dx-list').innerHTML = DIR_GROUPS.map(([g, title]) => `<section class="dx-group" data-g="${g}" aria-labelledby="dxg-${g}"><h3 id="dxg-${g}">${esc(title)}</h3><ul>` +
+    DIR.map((d, i) => (d.g !== g ? '' : `<li class="dx" data-i="${i}"><span class="dx-look">${d.l}</span><div class="dx-body"><p class="dx-name">${esc(d.n)}</p>` +
+      (d.go ? `<p class="dx-type"><button type="button" class="btn small dx-go" data-go="${esc(d.go[0])}">Go to ${esc(d.go[1])}</button></p>`
+        : `<p class="dx-type"><button type="button" class="dx-ins" data-dx="${i}" aria-label="${esc(dxInsLabel(d))}">${dxCode(d.c)}</button><button type="button" class="btn quiet small dx-copy" data-dxc="${i}" aria-label="Copy ${esc(d.c)}">Copy</button></p>`) +
+      (d.a && d.a.length ? `<p class="dx-also">Also ${d.a.map(dxCode).join(', ')}</p>` : '') +
+      (d.o ? `<p class="dx-note">${esc(d.o)}</p>` : '') + '</div></li>')).join('') + '</ul></section>').join('');
+}
+function filterDir() {
+  const q = $('dx-q').value, words = dxNorm(q).split(' ').filter(Boolean);
+  let shown = 0;
+  const full = words.join(' '), qC = dxNormC(q), rank = new Map();
+  document.querySelectorAll('#dx-list li.dx').forEach((li) => { const d = DIR[+li.dataset.i], ok = words.every((w) => d.hay.includes(w)); li.hidden = !ok; if (ok) { shown++; rank.set(li, words.length ? Math.min(dxRank(d, full, qC), dxRank(d, full.replace(/ /g, ''), qC)) : 0); } });
+  // the best matches first, within each group and among the groups (in the directory's own order when there is no search)
+  const byRank = (a, b) => (rank.get(a) ?? 9) - (rank.get(b) ?? 9) || +a.dataset.i - +b.dataset.i;
+  const groups = [...document.querySelectorAll('#dx-list .dx-group')];
+  for (const sec of groups) { const ul = sec.querySelector('ul'); [...ul.children].sort(byRank).forEach((li) => ul.appendChild(li)); sec.hidden = !sec.querySelector('li.dx:not([hidden])'); }
+  const best = (sec) => Math.min(9, ...[...sec.querySelectorAll('li.dx:not([hidden])')].map((li) => rank.get(li)));
+  groups.map((sec) => [sec, best(sec), DIR_GROUPS.findIndex((g) => g[0] === sec.dataset.g)]).sort((a, b) => a[1] - b[1] || a[2] - b[2]).forEach(([sec]) => $('dx-list').appendChild(sec));
+  $('dx-count').textContent = !words.length ? '' : shown ? `${shown} match${shown === 1 ? '' : 'es'}.` : `Nothing matches “${q.trim()}”. Try a name, such as square root, or a symbol, such as √.`;
+}
+const fieldName = (f) => { const l = f.getAttribute('aria-label') || (f.labels && f.labels[0] ? f.labels[0].textContent.trim() : '') || 'the box'; return l.charAt(0).toLowerCase() + l.slice(1); };
+let dxField = null;
+function putFromDir(d) { // into the box last typed in, without moving the page; the caret stays there for next time
+  let f = lastField && document.body.contains(lastField) ? lastField : document.querySelector('input.line');
+  if (!f) return;
+  const a = f.selectionStart ?? f.value.length, b = f.selectionEnd ?? f.value.length, sel = f.value.slice(a, b);
+  const t = d.t, raw = t.replace('‸', ''), si = raw.indexOf('@'), ci = t.indexOf('‸'); // a plain symbol (no @) replaces a selection
+  const ins = si < 0 ? raw : raw.slice(0, si) + sel + raw.slice(si + 1);
+  // with nothing selected, an empty slot inside the insert (hypot(@, ‸)) gets the caret; one at the start (@^‸) acts on what is before it
+  const caret = a + (si > 0 && !sel ? si : ci >= 0 ? ci + (si >= 0 && t.indexOf('@') < ci ? sel.length - 1 : 0) : si >= 0 ? si + sel.length : ins.length);
+  f.value = f.value.slice(0, a) + ins + f.value.slice(b);
+  try { f.setSelectionRange(caret, caret); } catch (e) { /* some inputs can't */ }
+  f.dispatchEvent(new Event('input', { bubbles: true }));
+  lastField = f; dxField = f;
+  const shownVal = f.value.length > 60 ? f.value.slice(0, 57) + '…' : f.value;
+  const put = ins.trim() || ins;
+  $('dx-put').innerHTML = `<p>Put ${dxCode(put.length > 60 ? put.slice(0, 57) + '…' : put)} into ${esc(fieldName(f))}, which now reads ${dxCode(shownVal)}.</p><div class="btnrow"><button type="button" class="btn small" id="dx-goto">Go to ${esc(fieldName(f))}</button></div>`;
+}
+renderDir(); filterDir();
+$('dx-q').addEventListener('input', filterDir);
+$('dx-q').addEventListener('keydown', (e) => {
+  if (e.key === 'Escape' && $('dx-q').value) { e.preventDefault(); $('dx-q').value = ''; filterDir(); }
+  else if (e.key === 'ArrowDown') { const first = document.querySelector('#dx-list li.dx:not([hidden]) :is(.dx-ins, .dx-go)'); if (first) { e.preventDefault(); first.focus(); } }
+});
+$('dx-list').addEventListener('mousedown', (e) => { if (e.target.closest('.dx-ins')) e.preventDefault(); }); // keep the caret where it is
+$('dx-list').addEventListener('click', (e) => {
+  const b = e.target.closest('button'); if (!b) return;
+  if (b.dataset.dx !== undefined) putFromDir(DIR[+b.dataset.dx]);
+  else if (b.dataset.dxc !== undefined) copyText(DIR[+b.dataset.dxc].c);
+  else if (b.dataset.go) { const el = $(b.dataset.go), f = el && el.querySelector('input, textarea'); if (el) el.scrollIntoView({ block: 'start', behavior: reduced() ? 'auto' : 'smooth' }); if (f) f.focus({ preventScroll: true }); }
+});
+$('dx-list').addEventListener('keydown', (e) => { // up and down between entries
+  if (e.key !== 'ArrowDown' && e.key !== 'ArrowUp') return;
+  const btns = [...document.querySelectorAll('#dx-list li.dx:not([hidden]) :is(.dx-ins, .dx-go)')];
+  const cur = e.target.closest('li.dx'); if (!cur) return;
+  const i = btns.findIndex((x) => cur.contains(x)); if (i < 0) return;
+  e.preventDefault();
+  if (e.key === 'ArrowDown') { if (btns[i + 1]) btns[i + 1].focus(); }
+  else if (i > 0) btns[i - 1].focus(); else $('dx-q').focus();
+});
+$('dx-put').addEventListener('click', (e) => {
+  if (!e.target.closest('#dx-goto') || !dxField || !document.body.contains(dxField)) return;
+  const c = dxField.selectionStart; dxField.focus(); dxField.scrollIntoView({ block: 'center', behavior: reduced() ? 'auto' : 'smooth' }); try { dxField.setSelectionRange(c, c); } catch (e2) { /* fine */ }
 });
 
 /* lines */

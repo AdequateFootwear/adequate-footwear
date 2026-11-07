@@ -1,0 +1,836 @@
+<!-- Review copy: lines 2714-3548 of constant-companion/index.html, split so Copilot can review it. Not served. -->
+const ALL = (DB && Array.isArray(DB.c)) ? DB.c : [];
+const META = (DB && DB.meta) || {};
+const CATS = [
+  { k: 'all', label: 'All' },
+  { k: 'm', label: 'Mathematical' },
+  { k: 'p', label: 'Physical (CODATA 2022)' },
+  { k: 'a', label: 'Astronomical and Earth' },
+  { k: 'x', label: 'Chemistry and everyday' },
+];
+const CATNAME = { m: 'Mathematical', p: 'Physical', a: 'Astronomical', x: 'Everyday' };
+const BYID = new Map(ALL.map((c) => [c.id, c]));
+
+/* ---------- text helpers ---------- */
+const SUBS = { '₀': '0', '₁': '1', '₂': '2', '₃': '3', '₄': '4', '₅': '5', '₆': '6', '₇': '7', '₈': '8', '₉': '9', '₋': '-', '₊': '+',
+  '⁰': '0', '¹': '1', '²': '2', '³': '3', '⁴': '4', '⁵': '5', '⁶': '6', '⁷': '7', '⁸': '8', '⁹': '9', '⁻': '-', '⁺': '+', 'ⁱ': 'i' };
+/** A symbol reduced to what matters when matching one: no _ ^ { } or spaces, plain digits and minus, φ and ϕ alike. */
+function symKey(s) {
+  return String(s).replace(/[₀-₉₋₊⁰-⁹⁻⁺¹²³ⁱ]/g, (c) => SUBS[c] || c).replace(/[−–]/g, '-').replace(/ϕ/g, 'φ').replace(/ϵ/g, 'ε').replace(/ℏ/g, 'ħ')
+    .replace(/[_^{}\s]/g, '');
+}
+/** Text folded for matching names: lower case, no accents, punctuation as spaces. */
+function fold(s) {
+  return String(s).replace(/ϖ/g, 'varpi').replace(/ϕ/g, 'φ').normalize('NFKD').replace(/[̀-ͯ]/g, '').toLowerCase()
+    .replace(/[’'`]/g, '').replace(/[^\p{L}\p{N}]+/gu, ' ').trim();
+}
+/** A symbol written with _x or ^x (or _{xy}, ^{xy}) for sub- and superscripts, as HTML. */
+function symHTML(s) {
+  let out = ''; const t = String(s);
+  for (let i = 0; i < t.length; i++) {
+    const ch = t[i];
+    if ((ch === '_' || ch === '^') && i + 1 < t.length) {
+      let part;
+      if (t[i + 1] === '{') { const j = t.indexOf('}', i + 2); part = t.slice(i + 2, j < 0 ? t.length : j); i = j < 0 ? t.length : j; }
+      else if (t[i + 1] === '(') { const j = t.indexOf(')', i + 2); part = t.slice(i + 1, j < 0 ? t.length : j + 1); i = j < 0 ? t.length : j; }
+      else { const cp = t.codePointAt(i + 1); part = String.fromCodePoint(cp); i += part.length; }
+      out += ch === '_' ? `<sub>${esc(part)}</sub>` : `<sup>${esc(part)}</sup>`;
+    } else out += esc(ch);
+  }
+  return out;
+}
+/** A symbol as plain text, for screen readers and searching: K_{−1} → K−1. */
+const symPlain = (s) => String(s).replace(/[_^{}]/g, '');
+const SUP = { '0': '⁰', '1': '¹', '2': '²', '3': '³', '4': '⁴', '5': '⁵', '6': '⁶', '7': '⁷', '8': '⁸', '9': '⁹', '-': '⁻' };
+const supText = (n) => String(n).replace(/[0-9-]/g, (c) => SUP[c]);
+
+/* ---------- the digits of every value ---------- */
+// For each constant: its significant digits (no sign, point or leading zeros), the power of ten of the first one,
+// and whether the value is exact and complete (so further digits are all zeros).
+function digitInfo(c) {
+  const isMath = c.cat[0] === 'm';
+  const plain = isMath ? c.v : (c.full || c.v);
+  const neg = plain.startsWith('-');
+  const body = plain.replace(/^-/, '');
+  const [ip, fp = ''] = body.split('.');
+  const all = ip + fp;
+  const lead = all.search(/[1-9]/);
+  if (lead < 0) return { s: '0', e: 0, neg, complete: true };
+  const s = all.slice(lead);
+  const e = ip.length - 1 - lead + (isMath ? 0 : (c.x || 0));
+  // a CODATA value cut short, or a mathematical constant, continues past its last digit; an exact decimal does not
+  const complete = !isMath && c.exact && (c.cut ? !!c.fullExact : !c.calc);
+  return { s, e, neg, complete };
+}
+const INFO = new Map(ALL.map((c) => [c.id, digitInfo(c)]));
+
+/** A plain decimal string with its point moved x places (x > 0 to the right): no power of ten left. */
+function shiftPoint(s, x) {
+  const neg = s.startsWith('-'); let [ip, fp = ''] = s.replace(/^[-+]/, '').split('.');
+  if (x > 0) { fp = fp.padEnd(x, '0'); ip += fp.slice(0, x); fp = fp.slice(x); }
+  else if (x < 0) { ip = ip.padStart(1 - x, '0'); fp = ip.slice(ip.length + x) + fp; ip = ip.slice(0, ip.length + x); }
+  ip = ip.replace(/^0+(?=\d)/, '');
+  return (neg ? '-' : '') + ip + (fp ? '.' + fp : '');
+}
+/** Every digit known for a constant, as a plain decimal with no power of ten. */
+const plainOf = (c) => (c.cat[0] === 'm' ? c.v : shiftPoint(c.full || c.v, c.x || 0));
+/** Every digit known, as a decimal string another program reads back: 6.62607015e-34. */
+const machineOf = (c) => (c.cat[0] === 'm' ? c.v : (c.x ? `${c.full || c.v}e${c.x}` : (c.full || c.v)));
+/** Two plain decimals added exactly (for nudging a value by its uncertainty). */
+function decAdd(a, b) {
+  const dp = (t) => (t.split('.')[1] || '').length; const d = Math.max(dp(a), dp(b));
+  const toI = (t) => { const neg = t.startsWith('-'); const [ip, fp = ''] = t.replace(/^[-+]/, '').split('.'); const v = BigInt((ip || '0') + fp.padEnd(d, '0')); return neg ? -v : v; };
+  let n = toI(a) + toI(b); const neg = n < 0n; if (neg) n = -n;
+  let t = n.toString().padStart(d + 1, '0'); if (d) t = t.slice(0, t.length - d) + '.' + t.slice(t.length - d);
+  return (neg ? '-' : '') + t;
+}
+
+/* ---------- names for the calculator, and for sending to Higher Powers ---------- */
+const GREEK_WORD = {};
+'alpha beta gamma delta epsilon zeta eta theta iota kappa lambda mu nu xi omicron pi rho sigma tau upsilon phi chi psi omega'.split(' ')
+  .forEach((w, i) => { GREEK_WORD['αβγδεζηθικλμνξοπρστυφχψω'[i]] = w; });
+/** A name as a calculator-friendly slug: plain letters, digits and underscores (Feigenbaum constant δ → feigenbaum_constant_delta). */
+function slugOf(name) {
+  let t = String(name).normalize('NFKD').replace(/[̀-ͯ]/g, '').replace(/ħ/g, ' hbar ').replace(/ƛ/g, ' lambdabar ').replace(/ϖ/g, ' varpi ')
+    .replace(/[ϕ]/g, 'φ').replace(/ς/g, 'σ').replace(/⊙/g, ' sun ').replace(/∞/g, ' infinity ');
+  t = t.replace(/[Ͱ-Ͽ]/g, (ch) => { const lo = ch.toLowerCase(); const w = GREEK_WORD[lo]; return w ? ` ${ch === lo ? '' : 'capital_'}${w} ` : ' '; });
+  t = t.toLowerCase().replace(/[’']s\b/g, '').replace(/[’']/g, '').replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '');
+  if (!t) t = 'constant';
+  if (/^[0-9]/.test(t)) t = 'c_' + t;
+  return t;
+}
+const RESERVED = new Set(['pi', 'π', 'e', 'i']);
+const TOKEN = new Map(); const BYTOKEN = new Map();
+for (const c of ALL) {
+  let t;
+  if (c.id === 'pi' || c.id === 'e') t = c.id; // Higher Powers has these two built in, worked out to any precision
+  else {
+    const base = slugOf(c.name); t = base;
+    for (let k = 2; BYTOKEN.has(t) || RESERVED.has(t) || HPC.FN[t]; k++) t = `${base}_${k}`;
+  }
+  TOKEN.set(c.id, t); BYTOKEN.set(t, c);
+}
+/** The named constants for the calculator; with exactAll, every value is taken as exact (for nudging by uncertainties). */
+function constList(exactAll, swap) {
+  const out = [];
+  for (const c of ALL) {
+    if (c.id === 'pi' || c.id === 'e') continue;
+    const value = swap && swap.id === c.id ? swap.value : plainOf(c);
+    out.push({ id: TOKEN.get(c.id), name: c.name, value, exact: exactAll || INFO.get(c.id).complete });
+  }
+  return out;
+}
+const CONSTS_NORMAL = constList(false);
+HPC.setConstants(CONSTS_NORMAL);
+
+/** Why a name can't be a Higher Powers variable, or '' when it can (its rules: Latin or Greek letters, digits and
+    underscores, not starting with a digit, a Greek letter only followed by digits; not pi, e, i, a function's name
+    or one of its own named constants). */
+function hpNameProblem(s) {
+  if (!s) return 'Give the variable a name.';
+  if (/^[0-9]/.test(s)) return 'A name can’t start with a digit.';
+  if (/\s/.test(s)) return 'A name can’t have spaces; use _ instead.';
+  if (!/^[A-Za-z0-9_À-ÖØ-öø-ɏͰ-Ͽἀ-῿]+$/.test(s)) return 'A name uses only letters (Latin or Greek), digits and _.';
+  if (s === 'pi' || s === 'π' || s === 'e' || s === 'i') return `${s} is built into Higher Powers; choose another name.`;
+  let toks = null; try { toks = HPC.tokenize(s); } catch (e) { toks = null; }
+  if (!toks || toks.length !== 1 || toks[0].t !== 'id' || toks[0].text !== s) {
+    return /[Ͱ-Ͽἀ-῿]/.test(s) ? 'A Greek-letter name is one Greek letter, followed only by digits or _ (φ, φ2), and Latin and Greek letters can’t be mixed.'
+      : 'A name uses only letters, digits and _, and can’t start with a digit.';
+  }
+  if (HPC.FN[s.toLowerCase()]) return `${s} is the name of one of Higher Powers’ functions; choose another name.`;
+  if (HP_NAMED.has(s)) return `${s} is already one of Higher Powers’ named constants; choose another name.`;
+  return '';
+}
+const hpDefault = (c) => { const t = TOKEN.get(c.id); return hpNameProblem(t) ? `${slugOf(c.name)}_value` : t; };
+/** The value as sent: every digit known, ending in … when the digits go on (Higher Powers then counts it as correct
+    only to those digits, as this page's calculator does), or plain when they are the whole value. */
+const hpValue = (c) => machineOf(c) + (INFO.get(c.id).complete ? '' : '…');
+const hpLink = (name, c) => `../higher-powers/#set=${encodeURIComponent(name)}=${encodeURIComponent(hpValue(c))}`;
+
+/* ---------- search ---------- */
+const GREEK = { alpha: 'α', beta: 'β', gamma: 'γ', delta: 'δ', epsilon: 'ε', zeta: 'ζ', eta: 'η', theta: 'θ', iota: 'ι', kappa: 'κ', lambda: 'λ',
+  mu: 'μ', nu: 'ν', xi: 'ξ', omicron: 'ο', pi: 'π', rho: 'ρ', sigma: 'σ', tau: 'τ', upsilon: 'υ', phi: 'φ', chi: 'χ', psi: 'ψ', omega: 'ω',
+  varpi: 'ϖ', hbar: 'ħ' };
+const PREP = ALL.map((c) => ({
+  c,
+  names: [c.name].concat(c.aka || []).map(fold),
+  syms: (c.sym || []).map(symKey),
+  symsLower: (c.sym || []).map((s) => symKey(s).toLowerCase()),
+  words: fold([c.name].concat(c.aka || [], c.dfn || '', c.unit || '').join(' ')).split(' '),
+}));
+const ORDER = new Map(ALL.map((c, i) => [c.id, i]));
+
+/** Reads what was typed: digits (with an optional power of ten), or words and symbols. */
+function readQuery(raw) {
+  const q = raw.trim();
+  if (!q) return { kind: 'none' };
+  const d = q.replace(/[\s   ,_']/g, '').replace(/…|\.\.\.$/g, '').replace(/[−–]/g, '-');
+  const m = d.match(/^[-+]?(\d*\.?\d*)(?:(?:[eE]|[x×·*]10\^?)([-+]?\d+))?$/);
+  if (m && /\d/.test(m[1])) {
+    const mant = m[1]; const hasPoint = mant.includes('.') || m[2] !== undefined;
+    const all = mant.replace('.', ''); const lead = all.search(/[1-9]/);
+    if (lead < 0) return { kind: 'zero' };
+    const ip = mant.split('.')[0];
+    const digits = all.slice(lead);
+    const e = ip.length - 1 - lead + (m[2] ? parseInt(m[2], 10) : 0);
+    return { kind: 'digits', digits, e, sized: hasPoint, text: q };
+  }
+  return { kind: 'text', text: q, f: fold(q), k: symKey(q) };
+}
+
+function roundTo(s, n) { // the first n digits of s, rounded on digit n + 1
+  if (s.length <= n) return null;
+  let head = s.slice(0, n).split('').map(Number);
+  if (s.charCodeAt(n) - 48 >= 5) {
+    let i = n - 1;
+    while (i >= 0) { if (head[i] === 9) { head[i] = 0; i--; } else { head[i]++; break; } }
+    if (i < 0) head = [1].concat(head).slice(0, n);
+  }
+  return head.join('');
+}
+
+/** How a constant's digits match a digit search, or null. Lower tier is better. */
+function digitMatch(c, q) {
+  const inf = INFO.get(c.id); const s = inf.s; const qd = q.digits;
+  const sameSize = !q.sized || inf.e === q.e;
+  if (s.startsWith(qd)) return { tier: 0, pos: 0, len: qd.length, sameSize, how: 'starts' };
+  if (inf.complete && qd.startsWith(s) && /^0*$/.test(qd.slice(s.length))) return { tier: 0, pos: 0, len: s.length, sameSize, how: 'starts' };
+  const r = roundTo(s, qd.length);
+  if (r !== null && r === qd) return { tier: 1, pos: 0, len: qd.length, sameSize, how: 'rounds' };
+  if (qd.length >= 4) {
+    const i = s.indexOf(qd, 1);
+    if (i > 0) return { tier: 2, pos: i, len: qd.length, sameSize, how: 'inside' };
+  }
+  return null;
+}
+
+/** How a constant matches a text search, or null. Lower score is better. */
+function textMatch(p, q) {
+  const k = q.k; const f = q.f; const words = f ? f.split(' ') : [];
+  let best = null; let how = '';
+  const take = (score, why) => { if (best === null || score < best) { best = score; how = why; } };
+  const si = p.syms.indexOf(k);
+  if (k && si >= 0) take(si === 0 ? 0 : 0.5, 'symbol');
+  const g = GREEK[q.text.toLowerCase()];
+  if (g) {
+    const cap = q.text[0] !== q.text[0].toLowerCase() && g !== 'ϖ' && g !== 'ħ' ? g.toUpperCase() : g;
+    const gi = p.syms.findIndex((s) => s === cap || s.startsWith(cap));
+    if (gi >= 0) take(p.syms[gi] === cap ? 2 : 2.5, 'symbol');
+  }
+  if (f) {
+    if (p.names.includes(f)) take(1, 'name');
+    else if (p.names.some((n) => n.startsWith(f))) take(3, 'name');
+    else if (words.length && words.every((w) => p.names.some((n) => (' ' + n).includes(' ' + w)))) take(4, 'name');
+    else if (f.length >= 3 && p.names.some((n) => n.includes(f))) take(6, 'name');
+    else if (f.length >= 3 && words.every((w) => w.length >= 2 && p.words.some((x) => x.startsWith(w)))) take(7, 'description');
+  }
+  if (k && best === null) {
+    const kl = k.toLowerCase(); const li = p.symsLower.indexOf(kl);
+    if (li >= 0) take(5, 'symbol');
+    else if (k.length >= 2 && p.syms.some((s) => s.startsWith(k))) take(5.5, 'symbol');
+  }
+  return best === null ? null : { score: best, how };
+}
+
+const state = { q: '', cat: 'all', shown: 20, pin: null, open: new Set(), hpNames: new Map(), expr: '', digits: 20 };
+const inCat = (c) => state.cat === 'all' || c.cat.includes(state.cat);
+
+function search() {
+  const q = readQuery(state.q);
+  let list = [];
+  if (q.kind === 'none' || q.kind === 'zero') {
+    list = PREP.filter((p) => inCat(p.c)).map((p) => ({ c: p.c, m: null }));
+  } else if (q.kind === 'digits') {
+    for (const p of PREP) {
+      if (!inCat(p.c)) continue;
+      const m = digitMatch(p.c, q);
+      if (m) list.push({ c: p.c, m });
+    }
+    list.sort((a, b) => a.m.tier - b.m.tier || (a.m.sameSize ? 0 : 1) - (b.m.sameSize ? 0 : 1) || a.m.pos - b.m.pos || ORDER.get(a.c.id) - ORDER.get(b.c.id));
+  } else {
+    for (const p of PREP) {
+      if (!inCat(p.c)) continue;
+      const m = textMatch(p, q);
+      if (m) list.push({ c: p.c, m });
+    }
+    list.sort((a, b) => a.m.score - b.m.score || ORDER.get(a.c.id) - ORDER.get(b.c.id));
+  }
+  if (state.pin) {
+    const i = list.findIndex((r) => r.c.id === state.pin);
+    const pinned = i >= 0 ? list.splice(i, 1)[0] : { c: BYID.get(state.pin), m: null };
+    if (pinned.c) list.unshift(pinned);
+  }
+  return { q, list };
+}
+
+/* ---------- showing values ---------- */
+/** A plain decimal as HTML, digits grouped, with the significant digits from..to (0-based) marked. */
+function groupedHTML(plain, mark, group, groupInt) {
+  const neg = plain.startsWith('-'); const body = plain.replace(/^-/, '');
+  const [ip, fp] = body.split('.');
+  let sig = -1; let started = false; const pieces = [];
+  const allDigits = ip + (fp || '');
+  // significant-digit index of every digit, -1 for leading zeros
+  const idx = []; for (const ch of allDigits) { if (!started && ch !== '0') started = true; idx.push(started ? ++sig : -1); }
+  const lead = (k) => idx[k];
+  let html = neg ? '−' : '';
+  let inMark = false;
+  const put = (k, ch) => {
+    const si = lead(k);
+    const want = mark && si >= mark[0] && si < mark[1];
+    if (want && !inMark) { html += '<mark>'; inMark = true; }
+    if (!want && inMark) { html += '</mark>'; inMark = false; }
+    html += ch;
+  };
+  const sep = (cls) => { if (inMark) { html += '</mark>'; } html += cls; if (inMark) html += '<mark>'; };
+  for (let k = 0; k < ip.length; k++) {
+    if (groupInt && k > 0 && (ip.length - k) % 3 === 0) sep(' ');
+    put(k, ip[k]);
+  }
+  if (fp !== undefined) {
+    if (inMark) { html += '</mark>'; inMark = false; }
+    html += '.';
+    for (let j = 0; j < fp.length; j++) {
+      if (j > 0 && j % group === 0) sep(' ');
+      put(ip.length + j, fp[j]);
+    }
+  }
+  if (inMark) html += '</mark>';
+  void pieces;
+  return html;
+}
+
+/** The first n significant digits of a plain decimal, still as a plain decimal. */
+function cutSig(plain, n) {
+  let seen = 0; let started = false; let out = '';
+  for (const ch of plain) {
+    if (ch >= '0' && ch <= '9') {
+      if (!started && ch !== '0') started = true;
+      if (started) { if (seen >= n) break; seen++; }
+    }
+    out += ch;
+  }
+  return out.replace(/\.$/, '');
+}
+
+const SHORT = 31; // significant digits shown before "more digits"
+
+function mathValueHTML(c, match, open) {
+  const inf = INFO.get(c.id);
+  const need = match ? match.pos + match.len : 0;
+  const show = showsAll(c, match, open) ? c.v : cutSig(c.v, SHORT);
+  const mark = match ? [match.pos, match.pos + match.len] : null;
+  const more = show.length < c.v.length;
+  return `<p class="cc-num">${groupedHTML(show, mark, 5, true)}${more ? '…' : ''}</p>` +
+    `<p class="cc-unc">${showsAll(c, match, open) ? `All ${inf.s.length} significant digits shown, cut off (not rounded) after the last.` : `Showing ${SHORT} of ${inf.s.length} significant digits.`}</p>`;
+}
+
+function concise(v, u) { // 6.67430 and 0.00015 → 6.674 30(15)
+  const dec = (v.split('.')[1] || '').length; const udec = (u.split('.')[1] || '').length;
+  if (udec > dec) return null;
+  const uDigits = String(Math.round(parseFloat(u) * Math.pow(10, dec)));
+  return uDigits;
+}
+
+function sciHTML(mant, x, mark, open) {
+  let h = groupedHTML(mant, mark, 3, true);
+  if (x) h += ` × 10<sup>${esc(String(x).replace('-', '−'))}</sup>`;
+  void open;
+  return h;
+}
+
+/** Does a card show a constant's worked-out further digits? */
+const showsFull = (c, match, open) => !!c.full && (open || !!(match && match.pos + match.len > sigCount(c.v)));
+/** Does a mathematical constant's card show all its digits? */
+const showsAll = (c, match, open) => open || !!(match && match.pos + match.len > SHORT);
+function otherValueHTML(c, match, open) {
+  const useFull = showsFull(c, match, open);
+  const mant = useFull ? c.full : c.v;
+  const mark = match ? [match.pos, match.pos + match.len] : null;
+  let h = '<p class="cc-num">';
+  let body = groupedHTML(mant, mark, 3, true);
+  if (c.u) { const cu = concise(c.v, c.u); if (cu) body += `(${esc(cu)})`; }
+  if (c.cut && !useFull) body += '…';
+  if (useFull && !c.fullExact) body += '…';
+  if (c.x) body += ` × 10<sup>${esc(String(c.x).replace('-', '−'))}</sup>`;
+  h += body;
+  if (c.unit) h += `<span class="unit">${esc(c.unit)}</span>`;
+  h += '</p>';
+  const notes = [];
+  if (c.u) {
+    const ru = parseFloat(c.u) / Math.abs(parseFloat(c.v));
+    notes.push(`Standard uncertainty <span class="mono">${esc(groupPlain(c.u))}${c.x ? ` × 10<sup>${esc(String(c.x).replace('-', '−'))}</sup>` : ''}</span> (relative ${relHTML(ru)}).`);
+  } else if (c.cat[0] === 'p' && c.exact) notes.push(c.cut ? (useFull ? 'Exact. CODATA prints it cut short; these further digits are worked out from the exact defining constants.' : 'Exact, though CODATA prints it cut short.') : 'Exact.');
+  else if (c.exact) notes.push(c.calc ? 'Exact by definition; shown to the digits worked out here.' : 'Exact by definition.');
+  return h + (notes.length ? `<p class="cc-unc">${notes.join(' ')}</p>` : '');
+}
+const sigCount = (v) => { const d = v.replace(/[^0-9]/g, ''); const i = d.search(/[1-9]/); return i < 0 ? 0 : d.length - i; };
+const groupPlain = (u) => { const [a, b] = u.split('.'); return b === undefined ? a : a + '.' + b.replace(/(\d{3})(?=\d)/g, '$1 '); };
+function relHTML(r) {
+  if (!isFinite(r) || r <= 0) return '—';
+  const e = Math.floor(Math.log10(r)); const m = r / Math.pow(10, e);
+  return `${m.toFixed(1)} × 10<sup>${String(e).replace('-', '−')}</sup>`;
+}
+
+/** The value as text for copying: the digits the card shows, or (all) every digit known. */
+function copyText(c, match, open, all) {
+  if (c.cat[0] === 'm') return all || showsAll(c, match, open) ? c.v : cutSig(c.v, SHORT);
+  const mant = all || showsFull(c, match, open) ? (c.full || c.v) : c.v;
+  return c.x ? `${mant}e${c.x}` : mant;
+}
+
+function catTags(c) {
+  let t = c.cat.map((k) => `<span class="cc-tag">${esc(CATNAME[k])}</span>`).join('');
+  if (c.cat[0] !== 'm') {
+    if (c.exact) t += '<span class="cc-tag brass">Exact</span>';
+    else if (c.u) t += '<span class="cc-tag">Measured</span>';
+  }
+  if (/nominal/i.test(c.src || '')) t += '<span class="cc-tag brass">Nominal</span>';
+  return t;
+}
+
+function whyHTML(r, q) {
+  if (!r.m) return r.c.id === state.pin ? '<p class="cc-why">Chosen from a link</p>' : '';
+  const m = r.m;
+  if (q.kind === 'digits') {
+    const n = m.len;
+    if (m.how === 'starts') return `<p class="cc-why">Starts with your ${n} digit${n === 1 ? '' : 's'}${m.sameSize ? '' : ', at a different power of ten'}</p>`;
+    if (m.how === 'rounds') return `<p class="cc-why">Rounds to your ${n} digits${m.sameSize ? '' : ', at a different power of ten'}</p>`;
+    return `<p class="cc-why">Your digits appear from significant digit ${m.pos + 1}</p>`;
+  }
+  return `<p class="cc-why">Matches by ${esc(m.how)}</p>`;
+}
+
+function cardHTML(r, q) {
+  const c = r.c; const open = state.open.has(c.id);
+  const match = q.kind === 'digits' ? r.m : null;
+  let h = `<article class="cc-card${c.id === state.pin ? ' pinned' : ''}" id="card-${esc(c.id)}" aria-labelledby="t-${esc(c.id)}">`;
+  h += `<div class="cc-head"><h3 id="t-${esc(c.id)}" tabindex="-1">${esc(c.name)}</h3><span class="cc-tags">${catTags(c)}</span></div>`;
+  h += whyHTML(r, q);
+  if (c.sym && c.sym.length) h += `<div class="cc-syms" aria-label="Symbols">${c.sym.map((s) => `<span class="cc-sym" title="${esc(symPlain(s))}">${symHTML(s)}</span>`).join('')}</div>`;
+  if (c.aka && c.aka.length) h += `<p class="cc-aka">Also: ${c.aka.map(esc).join(' · ')}</p>`;
+  h += `<div class="cc-val">${c.cat[0] === 'm' ? mathValueHTML(c, match, open) : otherValueHTML(c, match, open)}</div>`;
+  if (c.dfn) h += `<p class="cc-dfn">${esc(c.dfn)}</p>`;
+  if (c.cf && c.cf.length > 1) h += `<p class="cc-cf">Continued fraction: <span class="mono">[${esc(c.cf[0])}; ${c.cf.slice(1).map(esc).join(', ')}${c.cf.length >= 20 ? ', …' : ''}]</span></p>`;
+  if (c.cat[0] === 'p') h += `<p class="cc-src">${esc(META.codata || 'CODATA 2022')} recommended value.</p>`;
+  else if (c.src) h += `<p class="cc-src">Source: ${esc(c.src)}.</p>`;
+  const rel = (c.rel || []).map((id) => BYID.get(id)).filter(Boolean);
+  if (rel.length) h += `<div class="cc-rel"><span>Related:</span>${rel.map((x) => `<button type="button" class="cc-link" data-go="${esc(x.id)}">${esc(x.name)}</button>`).join('<span aria-hidden="true">·</span>')}</div>`;
+  h += '<div class="cc-acts">';
+  const isM = c.cat[0] === 'm'; const nd = INFO.get(c.id).s.length;
+  const expandable = isM ? nd > SHORT : !!c.full;
+  if (expandable) h += `<button type="button" class="btn small" data-more="${esc(c.id)}" aria-expanded="${open}" aria-controls="card-${esc(c.id)}">${open ? 'Fewer digits' : 'More digits'}</button>`;
+  const copyBtn = (text, label) => `<button type="button" class="btn small" data-copytext="${esc(text)}">${label}</button>`;
+  if (isM) {
+    if (!showsAll(c, match, open)) h += copyBtn(copyText(c, match, open, false), 'Copy shown digits');
+    h += copyBtn(c.v, `Copy all ${nd} digits`);
+  } else {
+    const t = copyText(c, match, open, false);
+    h += copyBtn(t, showsFull(c, match, open) || !c.full ? 'Copy value' : 'Copy shown digits');
+    if (c.unit) h += copyBtn(`${t} ${c.unit}`, 'Copy with units');
+  }
+  h += `<button type="button" class="btn small" data-calc="${esc(c.id)}">Add to calculator</button>`;
+  h += '</div>';
+  const tok = TOKEN.get(c.id);
+  h += `<p class="cc-token">In the calculator: <code>${esc(tok)}</code></p>`;
+  const nm = state.hpNames.has(c.id) ? state.hpNames.get(c.id) : hpDefault(c);
+  h += `<div class="cc-send">${sendHTML(c, nm)}</div>`;
+  h += '</article>';
+  return h;
+}
+
+/** The "Send to Higher Powers" row of a card: a name field and a link that carries the value in its address. */
+function sendHTML(c, nm) {
+  const id = esc(c.id); const bad = hpNameProblem(nm);
+  const nd = c.cat[0] === 'm' ? `all ${INFO.get(c.id).s.length} digits` : (c.full ? 'every digit worked out here' : 'the value as shown');
+  return `<label class="cc-send-lbl" for="hp-${id}">Send to Higher Powers as</label>` +
+    `<span class="cc-send-row"><input type="text" class="cc-hpname" id="hp-${id}" data-hpname="${id}" value="${esc(nm)}" autocomplete="off" autocapitalize="off" spellcheck="false" aria-describedby="hpn-${id}"${bad ? ' aria-invalid="true"' : ''}>` +
+    `<a class="btn small" id="hpl-${id}" ${bad ? 'aria-disabled="true"' : `href="${esc(hpLink(nm, c))}"`}>Open in Higher Powers</a></span>` +
+    `<span class="cc-send-note${bad ? ' bad' : ''}" id="hpn-${id}">${bad ? esc(bad) : `Opens Higher Powers in this tab with <code>${esc(nm)}</code> set to ${nd}${INFO.get(c.id).complete ? '' : ', ending in … because the digits go on'}. Nothing is sent anywhere: the value travels only in the page’s address.`}</span>`;
+}
+
+function render(keepFocus) {
+  const { q, list } = search();
+  const box = $('cc-results');
+  const n = list.length; const shown = Math.min(n, state.shown);
+  const what = state.cat === 'all' ? 'constants' : `${CATS.find((x) => x.k === state.cat).label.toLowerCase()} constants`;
+  let sum;
+  if (q.kind === 'none') sum = `All ${n} ${what}${n > shown ? `, the first ${shown} shown` : ''}.`;
+  else if (q.kind === 'zero') sum = 'Type at least one digit from 1 to 9 to search by digits.';
+  else if (q.kind === 'digits') sum = n ? `${n} ${n === 1 ? 'value has' : 'values have'} the digits <span class="q">${esc(q.digits)}</span>${n > shown ? `; the first ${shown} are shown` : ''}.` : `No value here has the digits <span class="q">${esc(q.digits)}</span>${q.digits.length < 4 ? ' at its start (searches inside a value need four digits or more)' : ''}.`;
+  else sum = n ? `${n} ${n === 1 ? 'constant matches' : 'constants match'} <span class="q">${esc(q.text)}</span>${n > shown ? `; the first ${shown} are shown` : ''}.` : `Nothing matches <span class="q">${esc(q.text)}</span>${state.cat !== 'all' ? ' in this group; try All' : ''}.`;
+  $('cc-summary').innerHTML = sum;
+  box.innerHTML = list.slice(0, shown).map((r) => cardHTML(r, q)).join('') || '';
+  const more = $('cc-more');
+  more.hidden = n <= shown;
+  more.textContent = `Show ${Math.min(20, n - shown)} more`;
+  if (keepFocus) { const el = document.querySelector(keepFocus); if (el) el.focus(); }
+}
+
+/* ---------- the symbol index ---------- */
+/* A symbol is filed under the first letter it is built from (1/π and 2π under π, √e under e). Symbols with no
+   Greek or plain Latin letter, such as √2, ∛3, ° or the specially drawn ħ and ƛ, go with the numerical ones. */
+function mainLetter(k) { const m = String(k).match(/\p{L}/u); return m ? m[0] : ''; }
+function symbolGroup(k) {
+  const L = mainLetter(k);
+  if (!L) return 2;
+  const ch = L.codePointAt(0);
+  if (ch >= 0x370 && ch <= 0x3ff) return 0;
+  if (/[A-Za-z]/.test(L)) return 1;
+  return 2;
+}
+const GREEK_ORDER = 'αΑβΒγΓδΔεΕζΖηΗθΘιΙκΚλΛμΜνΝξΞοΟπΠϖρΡσΣτΤυΥφϕΦχΧψΨωΩ';
+function buildIndex() {
+  const map = new Map();
+  for (const c of ALL) {
+    if (!inCat(c)) continue;
+    for (const s of c.sym || []) {
+      const k = symKey(s);
+      if (!map.has(k)) map.set(k, { k, show: s, list: [] });
+      const e = map.get(k);
+      if (!e.list.includes(c)) e.list.push(c);
+    }
+  }
+  const rows = [...map.values()];
+  const gkey = (e) => { const g = symbolGroup(e.k); const L = mainLetter(e.k); const i = GREEK_ORDER.indexOf(L); return [g, g === 0 ? (i < 0 ? 99 : i) : 0, g === 1 ? L : ''] ; };
+  rows.sort((a, b) => {
+    const [ga, ia, la] = gkey(a); const [gb, ib, lb] = gkey(b);
+    return ga - gb || ia - ib || la.localeCompare(lb, 'en', { sensitivity: 'base' }) || (la < lb ? -1 : la > lb ? 1 : 0)
+      || (ga === 2 ? (mainLetter(a.k) ? 1 : 0) - (mainLetter(b.k) ? 1 : 0) : 0) // in the third group, the numerical symbols, then the other ones (ħ, ƛC) together
+      || (a.k === mainLetter(a.k) ? 0 : 1) - (b.k === mainLetter(b.k) ? 0 : 1) // the bare letter first, then what is built from it
+      || a.k.localeCompare(b.k, 'en', { sensitivity: 'base' }) || (a.k < b.k ? -1 : a.k > b.k ? 1 : 0);
+  });
+  const heads = ['Greek letters', 'Latin letters', 'Numerical and other symbols'];
+  let h = ''; let last = -1;
+  for (const e of rows) {
+    const g = symbolGroup(e.k);
+    if (g !== last) { h += `<h3 class="cc-idx-h">${heads[g]}</h3>`; last = g; }
+    h += `<div class="cc-irow"><button type="button" class="cc-isym" data-sym="${esc(symPlain(e.show))}" aria-label="Search for the symbol ${esc(symPlain(e.show))}">${symHTML(e.show)}</button>` +
+      `<span class="cc-inames">${e.list.map((c) => `<button type="button" class="cc-link" data-go="${esc(c.id)}">${esc(c.name)}</button>`).join('')}</span></div>`;
+  }
+  $('cc-idx').innerHTML = h;
+  $('cc-idx-count').textContent = `${rows.length} symbols.`;
+}
+
+/* ---------- controls ---------- */
+const KEY = 'aft.constant-companion';
+function save() { try { localStorage.setItem(KEY, JSON.stringify({ q: state.q, cat: state.cat, expr: state.expr, digits: state.digits })); } catch (e) { /* storage unavailable */ } }
+function load() {
+  try {
+    const o = JSON.parse(localStorage.getItem(KEY) || '{}');
+    if (o && typeof o.q === 'string') state.q = o.q.slice(0, 200);
+    if (o && CATS.some((x) => x.k === o.cat)) state.cat = o.cat;
+    if (o && typeof o.expr === 'string') state.expr = o.expr.slice(0, 2000);
+    if (o && Number.isInteger(o.digits) && o.digits >= 1 && o.digits <= 100) state.digits = o.digits;
+  } catch (e) { /* storage unavailable */ }
+}
+
+function drawCats() {
+  $('cc-cats').innerHTML = CATS.map((x) => {
+    const n = x.k === 'all' ? ALL.length : ALL.filter((c) => c.cat.includes(x.k)).length;
+    return `<button type="button" class="cc-cat" data-cat="${x.k}" aria-pressed="${state.cat === x.k}">${esc(x.label)}<span class="n">${n}</span></button>`;
+  }).join('');
+}
+
+const KEYS = ['α', 'β', 'γ', 'δ', 'ε', 'ζ', 'η', 'θ', 'κ', 'λ', 'μ', 'ν', 'ξ', 'π', 'ρ', 'σ', 'τ', 'φ', 'χ', 'ψ', 'ω',
+  'Γ', 'Δ', 'Θ', 'Λ', 'Π', 'Σ', 'Φ', 'Ψ', 'Ω', 'ϖ', 'ħ', 'ƛ', '∞', '⊙', '√', '′', '°'];
+const KEYNAMES = { 'α': 'alpha', 'β': 'beta', 'γ': 'gamma', 'δ': 'delta', 'ε': 'epsilon', 'ζ': 'zeta', 'η': 'eta', 'θ': 'theta', 'κ': 'kappa', 'λ': 'lambda',
+  'μ': 'mu', 'ν': 'nu', 'ξ': 'xi', 'π': 'pi', 'ρ': 'rho', 'σ': 'sigma', 'τ': 'tau', 'φ': 'phi', 'χ': 'chi', 'ψ': 'psi', 'ω': 'omega', 'Γ': 'capital gamma',
+  'Δ': 'capital delta', 'Θ': 'capital theta', 'Λ': 'capital lambda', 'Π': 'capital pi', 'Σ': 'capital sigma', 'Φ': 'capital phi', 'Ψ': 'capital psi',
+  'Ω': 'capital omega', 'ϖ': 'varpi (pi with a bar)', 'ħ': 'h-bar', 'ƛ': 'lambda-bar', '∞': 'infinity', '⊙': 'sun (circled dot)', '√': 'square root', '′': 'prime', '°': 'degree' };
+function drawKeys() {
+  $('cc-keypad').innerHTML = KEYS.map((k) => `<button type="button" data-key="${esc(k)}" aria-label="${esc(KEYNAMES[k] || k)}" title="${esc(KEYNAMES[k] || k)}">${esc(k)}</button>`).join('');
+}
+
+let typing = 0;
+function setQuery(v, opts) {
+  state.q = v; state.shown = 20; state.pin = (opts && opts.pin) || null;
+  if ($('cc-q').value !== v) $('cc-q').value = v;
+  save(); render(opts && opts.focus);
+}
+
+$('cc-q').addEventListener('input', () => {
+  clearTimeout(typing);
+  typing = setTimeout(() => { state.q = $('cc-q').value; state.shown = 20; state.pin = null; save(); render(); }, 120);
+});
+$('cc-q').addEventListener('keydown', (ev) => { if (ev.key === 'Enter') { ev.preventDefault(); clearTimeout(typing); state.q = $('cc-q').value; state.pin = null; save(); render(); } });
+$('cc-clear').addEventListener('click', () => { setQuery(''); $('cc-q').focus(); });
+$('cc-keypad').addEventListener('click', (ev) => {
+  const b = ev.target.closest('button[data-key]'); if (!b) return;
+  const inp = $('cc-q'); const k = b.getAttribute('data-key');
+  const a = inp.selectionStart ?? inp.value.length; const z = inp.selectionEnd ?? inp.value.length;
+  const v = inp.value.slice(0, a) + k + inp.value.slice(z);
+  setQuery(v);
+  try { inp.setSelectionRange(a + k.length, a + k.length); } catch (e) { /* not focused */ }
+});
+$('cc-cats').addEventListener('click', (ev) => {
+  const b = ev.target.closest('button[data-cat]'); if (!b) return;
+  state.cat = b.getAttribute('data-cat'); state.shown = 20;
+  drawCats(); save(); render(); buildIndex();
+  const nb = document.querySelector(`#cc-cats button[data-cat="${state.cat}"]`); if (nb) nb.focus();
+});
+$('cc-more').addEventListener('click', () => {
+  const before = state.shown; state.shown += 20; render();
+  const cards = document.querySelectorAll('#cc-results .cc-card h3');
+  if (cards[before]) cards[before].focus();
+});
+
+function goTo(id) {
+  const c = BYID.get(id); if (!c) return;
+  if (!inCat(c)) { state.cat = 'all'; drawCats(); buildIndex(); }
+  setQuery(c.name, { pin: id, focus: `#t-${CSS.escape(id)}` });
+  const card = $('card-' + id);
+  if (card) card.scrollIntoView({ behavior: reduced() ? 'auto' : 'smooth', block: 'start' });
+}
+
+async function copy(text, btn) {
+  let ok = false;
+  try { if (navigator.clipboard && window.isSecureContext) { await navigator.clipboard.writeText(text); ok = true; } } catch (e) { ok = false; }
+  if (!ok) {
+    const t = document.createElement('textarea'); t.value = text; t.setAttribute('readonly', ''); t.style.position = 'fixed'; t.style.opacity = '0';
+    document.body.appendChild(t); t.select();
+    try { ok = document.execCommand('copy'); } catch (e) { ok = false; }
+    t.remove(); btn.focus();
+  }
+  const old = btn.textContent;
+  btn.textContent = ok ? 'Copied' : 'Copy failed';
+  $('cc-copied').textContent = ok ? `Copied ${text.length > 40 ? text.slice(0, 40) + '…' : text}` : 'Your browser did not allow copying. Select the digits and copy them instead.';
+  setTimeout(() => { if (btn.isConnected) btn.textContent = old; }, 1600);
+}
+
+function onClick(ev) {
+  const go = ev.target.closest('[data-go]');
+  if (go) { goTo(go.getAttribute('data-go')); return; }
+  const sym = ev.target.closest('[data-sym]');
+  if (sym) {
+    setQuery(sym.getAttribute('data-sym'));
+    $('find').scrollIntoView({ behavior: reduced() ? 'auto' : 'smooth', block: 'start' });
+    $('cc-q').focus({ preventScroll: true });
+    return;
+  }
+  const more = ev.target.closest('[data-more]');
+  if (more) {
+    const id = more.getAttribute('data-more');
+    if (state.open.has(id)) state.open.delete(id); else state.open.add(id);
+    render(`button[data-more="${CSS.escape(id)}"]`);
+    return;
+  }
+  const cp = ev.target.closest('[data-copytext]');
+  if (cp) { copy(cp.getAttribute('data-copytext'), cp); return; }
+  const ad = ev.target.closest('[data-calc]');
+  if (ad) addToCalc(ad.getAttribute('data-calc'), ad);
+}
+// the Higher Powers name on a card: update its link as it is typed, without redrawing the card
+$('cc-results').addEventListener('input', (ev) => {
+  const inp = ev.target.closest('input[data-hpname]'); if (!inp) return;
+  const id = inp.getAttribute('data-hpname'); const c = BYID.get(id); if (!c) return;
+  const nm = inp.value.trim(); state.hpNames.set(id, inp.value);
+  const bad = hpNameProblem(nm); const a = $('hpl-' + id); const note = $('hpn-' + id);
+  if (bad) { a.removeAttribute('href'); a.setAttribute('aria-disabled', 'true'); inp.setAttribute('aria-invalid', 'true'); }
+  else { a.setAttribute('href', hpLink(nm, c)); a.removeAttribute('aria-disabled'); inp.removeAttribute('aria-invalid'); }
+  const tmp = document.createElement('div'); tmp.innerHTML = sendHTML(c, nm);
+  note.className = tmp.querySelector('.cc-send-note').className; note.innerHTML = tmp.querySelector('.cc-send-note').innerHTML;
+});
+$('cc-results').addEventListener('keydown', (ev) => {
+  const inp = ev.target.closest('input[data-hpname]'); if (!inp || ev.key !== 'Enter') return;
+  ev.preventDefault(); const a = $('hpl-' + inp.getAttribute('data-hpname')); if (a && a.hasAttribute('href')) a.click();
+});
+$('cc-results').addEventListener('click', onClick);
+$('cc-idx').addEventListener('click', onClick);
+
+/* ---------- the calculator ---------- */
+const OPS = [['+', 'plus'], ['−', 'minus'], ['×', 'times'], ['÷', 'divided by'], ['^', 'to the power'], ['²', 'squared'], ['(', 'open bracket'], [')', 'close bracket'], ['√', 'square root']];
+let calcCaret = null; // where the next inserted constant or operator goes in the sum
+const supHTML = (t) => esc(t).replace(/ × 10\^(-?\d+)/g, (m0, ex) => ` × 10<sup>${ex.replace('-', '−')}</sup>`);
+const machineText = (t) => t.replace(/−/g, '-').replace(/ × 10\^/g, 'e');
+function relText(r) { // 2.2 × 10⁻⁵, as plain text
+  if (!isFinite(r) || r <= 0) return '0';
+  const e = Math.floor(Math.log10(r)); let m = r / Math.pow(10, e); if (m >= 9.95) { m /= 10; return `${(m).toFixed(1)} × 10${supText(e + 1)}`; }
+  return `${m.toFixed(1)} × 10${supText(e)}`;
+}
+/** The names an expression uses, in order of first use. */
+function namesIn(ast, out = []) {
+  if (!ast) return out;
+  if (ast.t === 'id' && !out.includes(ast.name)) out.push(ast.name);
+  for (const k of [ast.a, ast.b, ...(ast.args || [])]) if (k) namesIn(k, out);
+  return out;
+}
+function insertInExpr(text, sepIfNeeded) {
+  const inp = $('cc-expr'); const v = inp.value;
+  const a = calcCaret === null ? v.length : Math.min(calcCaret.a, v.length); const z = calcCaret === null ? v.length : Math.min(calcCaret.z, v.length);
+  let before = v.slice(0, a); const after = v.slice(z);
+  let ins = text;
+  if (sepIfNeeded && /[\p{L}\p{N}_)!°²³]\s*$/u.test(before)) ins = (before.endsWith(' ') ? '' : ' ') + '× ' + ins;
+  if (sepIfNeeded && /^\s*[\p{L}\p{N}_(]/u.test(after)) ins += ' × ';
+  inp.value = before + ins + after;
+  calcCaret = { a: a + ins.length, z: a + ins.length };
+  state.expr = inp.value; save(); runCalc();
+}
+function addToCalc(id, btn) {
+  const c = BYID.get(id); if (!c) return;
+  const tok = TOKEN.get(id);
+  insertInExpr(tok, true);
+  const old = btn.textContent; btn.textContent = 'Added';
+  setTimeout(() => { if (btn.isConnected) btn.textContent = old; }, 1600);
+  const out = lastResult ? ` It now reads ${state.expr} = ${lastResult}.` : '';
+  $('cc-copied').textContent = `Added ${tok} to the calculator.${out}`;
+}
+let lastResult = '';
+/** Works out f with the constants taken as exact, optionally one of them nudged to another value. */
+function evalExact(ast, swap) {
+  HPC.setConstants(constList(true, swap));
+  try { return HPC.evaluate(ast, { lookup: () => null, angle: 'rad', ds: { neg: 'ignore', dec: 'all' } }); } finally { HPC.setConstants(CONSTS_NORMAL); }
+}
+function sigOf(text) { const m = text.replace(/ × 10\^.*$/, '').replace(/[^0-9]/g, '').replace(/^0+/, ''); return m.length; }
+function runCalc() {
+  const src = $('cc-expr').value; const out = $('cc-out'); const err = $('cc-calc-err');
+  const n = Math.max(1, Math.min(100, Math.round(Number($('cc-digits').value)) || 20));
+  state.digits = n; lastResult = ''; err.textContent = ''; err.classList.remove('on'); $('cc-expr').removeAttribute('aria-invalid');
+  if (!src.trim()) { out.innerHTML = '<p class="cc-out-empty">The result appears here as you type.</p>'; $('cc-calc-status').textContent = ''; return; }
+  const fail = (msg, node) => {
+    out.innerHTML = node ? `<p class="cc-read mono">${esc(src.slice(0, node.pos))}<mark class="bad">${esc(src.slice(node.pos, Math.max(node.end, node.pos + 1)) || ' ')}</mark>${esc(src.slice(Math.max(node.end, node.pos + 1)))}</p>` : '';
+    err.innerHTML = msg; err.classList.add('on'); $('cc-expr').setAttribute('aria-invalid', 'true');
+    $('cc-calc-status').textContent = '';
+  };
+  HPN.setDigits(Math.min(200, Math.max(20, n + 10)));
+  HPN.setBudget(2000);
+  try {
+    HPN.startNotes();
+    const ast = HPC.parse(src, () => false);
+    if (!ast) { out.innerHTML = ''; return; }
+    const free = [...HPC.freeNames(ast)];
+    if (free.length) {
+      const nm = free[0]; const k = symKey(nm);
+      const CO = { p: 0, m: 1, a: 2, x: 3 };
+      const bySym = ALL.filter((c) => (c.sym || []).some((x) => symKey(x) === k))
+        .sort((a2, b2) => CO[a2.cat[0]] - CO[b2.cat[0]] || ORDER.get(a2.id) - ORDER.get(b2.id)).slice(0, 6);
+      const hint = bySym.length ? ` ${esc(nm)} is the symbol of ${bySym.map((c) => `${esc(c.name)} (<code>${esc(TOKEN.get(c.id))}</code>)`).join(', ')}.` : ' Use “Add to calculator” on a card, or type the name shown on its card.';
+      const node = (function find(a) { if (!a) return null; if (a.t === 'id' && a.name === nm) return a; for (const k2 of [a.a, a.b, ...(a.args || [])]) { const f = find(k2); if (f) return f; } return null; })(ast);
+      fail(`“${esc(nm)}” isn’t the name of a constant here.${hint}`, node);
+      HPN.takeNotes(); return;
+    }
+    const z = HPC.evaluate(ast, { lookup: () => null, angle: 'rad', ds: { neg: 'ignore', dec: 'all' } });
+    const notes = HPN.takeNotes();
+    const f = HPN.fmtC(z, 'dec', n); const text = f.text; lastResult = text;
+    const exact = HPN.isExactC(z); const sig = sigOf(text);
+    const used = namesIn(ast).filter((t) => BYTOKEN.has(t)).map((t) => BYTOKEN.get(t));
+    let h = `<p class="cc-res"><span class="eq" aria-hidden="true">=</span> <span class="cc-res-v mono" id="cc-res-v">${supHTML(text)}</span></p>`;
+    h += `<div class="cc-acts"><button type="button" class="btn small" id="cc-res-copy" data-copytext="${esc(machineText(text))}">Copy result</button></div>`;
+    const lines = [];
+    const et = exact ? HPN.fmtC(z, 'exact').text : '';
+    if (exact && et === text) lines.push('Exact.');
+    else if (exact) lines.push(et.length <= 60 ? `Exactly ${esc(et)}; shown to ${n} significant digit${n === 1 ? '' : 's'}.` : `Exact; shown to ${n} significant digit${n === 1 ? '' : 's'}.`);
+    else {
+      const rd = Math.min(HPN.reliableDigits(z.re), HPN.isZero(z.im) ? Infinity : HPN.reliableDigits(z.im)); const k = Math.min(n, rd);
+      const zeros = sig < k ? ' (zeros at the end are not shown)' : '';
+      if (rd < n) lines.push(`Correct to ${k} significant digit${k === 1 ? '' : 's'}${zeros}: the inputs vouch for no more${used.some((c) => c.u) ? ', since a measured constant goes in with only the digits CODATA gives' : ''}.`);
+      else lines.push(`Rounded to ${k} significant digit${k === 1 ? '' : 's'}${zeros}.`);
+    }
+    if (f.dropped) lines.push(`A${f.dropped === 'im' ? 'n imaginary' : ' real'} part too small to show at this many digits was left out.`);
+    for (const nt of notes) lines.push(esc(nt));
+    h += `<p class="cc-unc">${lines.join(' ')}</p>`;
+    h += `<p class="cc-read">Read as <span class="mono">${esc(HPC.show(ast))}</span></p>`;
+    if (used.length) {
+      h += '<ul class="cc-used">' + used.map((c) => {
+        const inf = INFO.get(c.id);
+        const what = c.cat[0] === 'm' ? (c.id === 'pi' || c.id === 'e' ? 'built in, to any number of digits' : `${inf.s.length} digits`)
+          : inf.complete ? 'exact' : c.u ? `measured; relative standard uncertainty ${relText(parseFloat(c.u) / Math.abs(parseFloat(c.v)))}`
+            : c.exact ? `exact, to the ${inf.s.length} digits worked out here` : 'as given';
+        return `<li><code>${esc(TOKEN.get(c.id))}</code> <button type="button" class="cc-link" data-go="${esc(c.id)}">${esc(c.name)}</button>: ${esc(what)}</li>`;
+      }).join('') + '</ul>';
+    }
+    // a rough combined uncertainty: nudge each measured input by its own uncertainty, add the effects in quadrature
+    const measured = used.filter((c) => c.u);
+    if (measured.length && HPN.isRealC(z) && !HPN.isZero(z.re)) {
+      let tot = 0; let okAll = true;
+      const base = evalExact(ast, null);
+      const b0 = HPN.toNum(base.re);
+      for (const c of measured) {
+        const nudged = evalExact(ast, { id: c.id, value: shiftPoint(decAdd(c.v, c.u), c.x || 0) });
+        if (!HPN.isRealC(nudged)) { okAll = false; break; }
+        const d = HPN.toNum(HPN.rsub(nudged.re, base.re));
+        const r = Math.abs(d / b0); if (!isFinite(r)) { okAll = false; break; }
+        tot += r * r;
+      }
+      if (okAll) {
+        const rel = Math.sqrt(tot);
+        h += `<p class="cc-unc">Uncertainty, roughly: ${measured.length === 1 ? 'with its one measured input' : `combining the ${measured.length} measured inputs as if independent`}, about ${esc(relText(rel))} of the result${rel > 0 ? ` (± ${esc(relText(rel * Math.abs(b0)))})` : ''}. Digits past that are not meaningful. CODATA’s values are partly correlated, so treat this as a guide.</p>`;
+      }
+    }
+    out.innerHTML = h;
+    $('cc-calc-status').textContent = `Result: ${text}`;
+  } catch (e) {
+    HPN.takeNotes();
+    if (e instanceof HPC.HPAsk) fail(`${esc(e.fn)} of a negative number or a decimal needs a choice that Higher Powers asks about; work it out there.`, e.node);
+    else if (e instanceof HPN.HPError) fail(esc(e.message), e.node);
+    else fail('That couldn’t be worked out here. Try a simpler sum, or use Higher Powers.', null);
+  } finally { HPN.clearBudget(); }
+}
+function drawOps() {
+  $('cc-ops').innerHTML = OPS.map(([k, nm]) => `<button type="button" data-op="${esc(k)}" aria-label="${esc(nm)}" title="${esc(nm)}">${esc(k)}</button>`).join('');
+}
+let calcTimer = 0;
+$('cc-expr').addEventListener('input', () => {
+  state.expr = $('cc-expr').value; calcCaret = null; save();
+  clearTimeout(calcTimer); calcTimer = setTimeout(runCalc, 150);
+});
+const keepCaret = () => { const i = $('cc-expr'); calcCaret = { a: i.selectionStart ?? i.value.length, z: i.selectionEnd ?? i.value.length }; };
+['keyup', 'click', 'select', 'blur'].forEach((t) => $('cc-expr').addEventListener(t, keepCaret));
+$('cc-expr').addEventListener('keydown', (ev) => { if (ev.key === 'Enter') { ev.preventDefault(); clearTimeout(calcTimer); runCalc(); } });
+$('cc-digits').addEventListener('input', () => { clearTimeout(calcTimer); calcTimer = setTimeout(() => { runCalc(); save(); }, 150); });
+$('cc-calc-clear').addEventListener('click', () => { $('cc-expr').value = ''; state.expr = ''; calcCaret = null; save(); runCalc(); $('cc-expr').focus(); });
+$('cc-ops').addEventListener('click', (ev) => {
+  const b = ev.target.closest('button[data-op]'); if (!b) return;
+  const k = b.getAttribute('data-op');
+  insertInExpr(k === '√' ? '√' : k === '²' ? '²' : k === '(' || k === ')' ? k : ` ${k} `, false);
+});
+$('cc-out').addEventListener('click', (ev) => {
+  const cp = ev.target.closest('[data-copytext]'); if (cp) { copy(cp.getAttribute('data-copytext'), cp); return; }
+  onClick(ev);
+});
+
+/* ---------- the lighthouse ---------- */
+const LINES = [
+  'A fixed light shines steadily, all night long. So do these numbers.',
+  'On a nautical chart, a light marked F is a fixed light: steady, not flashing.',
+  'Since 2019, seven exact constants define the SI units, among them c, h, e, k and N_A.',
+  'The speed of light is exactly 299 792 458 metres per second, because the metre is defined by it.',
+  'The fine-structure constant α is a pure number, close to 1/137, with no units at all.',
+  'No one yet knows whether Euler’s constant γ is a fraction.',
+  'Apéry proved ζ(3) irrational in 1978. Whether ζ(5) is irrational is still unknown.',
+  'Lindemann proved π transcendental in 1882, so no ruler-and-compass construction squares the circle.',
+  'Of the best-known physical constants, G is the least precisely known: CODATA 2022 gives it to about 22 parts per million.',
+  'The golden ratio’s continued fraction is all ones, which makes it among the hardest numbers to approximate by fractions.',
+];
+let lineI = 0;
+const light = document.querySelector('.cc-light');
+$('cc-lh').addEventListener('click', () => {
+  lineI = (lineI + 1) % LINES.length;
+  $('cc-says').textContent = LINES[lineI];
+  if (reduced()) { light.classList.toggle('flip'); return; }
+  light.classList.remove('sweep'); void light.offsetWidth; light.classList.add('sweep');
+});
+light.addEventListener('animationend', (ev) => { if (ev.animationName === 'cc-sweep') light.classList.remove('sweep'); });
+
+/* ---------- example ---------- */
+$('btn-example').addEventListener('click', () => {
+  state.cat = 'all'; drawCats(); buildIndex();
+  setQuery('1.6180');
+  if (!$('cc-expr').value.trim()) { $('cc-expr').value = 'golden_ratio^2 − golden_ratio'; state.expr = $('cc-expr').value; calcCaret = null; save(); runCalc(); }
+  $('cc-says').textContent = 'Example: the digits 1.6180. The golden ratio starts with them; the cards below show where each match was found.';
+  if (!reduced()) { light.classList.remove('sweep'); void light.offsetWidth; light.classList.add('sweep'); }
+  $('find').scrollIntoView({ behavior: reduced() ? 'auto' : 'smooth', block: 'start' });
+});
+
+/* ---------- start ---------- */
+if (META.codata) $('cc-codata').textContent = META.codata;
+load();
+drawCats(); drawKeys();
+$('cc-q').value = state.q;
+render(); buildIndex();
+drawOps(); $('cc-expr').value = state.expr; $('cc-digits').value = String(state.digits); runCalc();
+})();
+</script>
+</body>
+</html>
+

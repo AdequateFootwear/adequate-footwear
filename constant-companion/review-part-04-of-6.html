@@ -1,0 +1,175 @@
+<!-- Review copy: lines 2539-2712 of constant-companion/index.html, split so Copilot can review it. Not served. -->
+def('lcm', 1, Infinity, (a, node) => C(qi(a.reduce((l, z, i) => { const v = N.babs(intArg(z, 'lcm', node.args[i])); if (l === 0n || v === 0n) return 0n; return l / N.bgcd(l, v) * v; }, 1n))));
+function modR(x, y, node) {
+  if (N.isZero(y)) fail('mod by zero is undefined.', node);
+  const q = N.withPrec(16, () => N.rdiv(x, y));
+  const f = floorR(q);
+  const r = N.rsub(x, N.rmul(y, qi(f)));
+  return r;
+}
+def('mod', 2, 2, ([a, b], node) => C(modR(real(a, 'mod', node.args[0]), real(b, 'mod', node.args[1]), node)));
+def('nCr choose binomial', 2, 2, ([a, b], node) => {
+  let n = intArg(a, node.name, node.args[0]), k = intArg(b, node.name, node.args[1]);
+  if (k < 0n) return N.C0;
+  let sign = 1n;
+  if (n < 0n) { n = k - n - 1n; if (k & 1n) sign = -1n; }
+  if (k > n) return N.C0;
+  if (n - k < k) k = n - k;
+  if (k > 3000000n) fail('That is too large to work out here.', node);
+  sizeCheck((lnFact(n) - lnFact(k) - lnFact(n - k)) / Math.LN10, 'The result');
+  let r = 1n; for (let j = 1n; j <= k; j++) r = r * (n - k + j) / j;
+  return C(qi(sign * r));
+});
+def('nPr', 2, 2, ([a, b], node) => {
+  const n = intArg(a, 'nPr', node.args[0]), k = intArg(b, 'nPr', node.args[1]);
+  if (n < 0n || k < 0n) fail('nPr needs whole numbers that are 0 or more.', node);
+  if (k > n) return N.C0;
+  if (k > 3000000n) fail('That is too large to work out here.', node);
+  sizeCheck((lnFact(n) - lnFact(n - k)) / Math.LN10, 'The result');
+  const prod = (lo, hi) => { if (hi - lo < 16n) { let p = 1n; for (let i = lo; i <= hi; i++) p *= i; return p; } const m = (lo + hi) >> 1n; return prod(lo, m) * prod(m + 1n, hi); };
+  return C(qi(k === 0n ? 1n : prod(n - k + 1n, n)));
+});
+function factorialC(z, node, label) {
+  const n = intArg(z, label, node, 'a whole number that is 0 or more');
+  if (n < 0n) fail(`${label} needs a whole number that is 0 or more.`, node);
+  if (n > 30000n) fail(`${n}! is larger than about 10^100000, beyond what this calculator handles.`, node);
+  return C(N.factorialR(n));
+}
+def('factorial', 1, 1, ([z], node) => factorialC(z, node.args[0], 'factorial'));
+function dfactB(n) { // n!! for a whole n >= 0: the product n × (n − 2) × …, by splitting it in halves
+  const prod = (lo, hi) => {
+    if (hi < lo) return 1n;
+    if (hi - lo < 64n) { let p = 1n; for (let i = lo; i <= hi; i += 2n) p *= i; return p; }
+    let mid = (lo + hi) >> 1n; if ((mid - lo) & 1n) mid -= 1n;
+    return prod(lo, mid) * prod(mid + 2n, hi);
+  };
+  return n < 2n ? 1n : prod(n & 1n ? 1n : 2n, n);
+}
+function lnDfact(n) { n = Number(n); if (n < 2) return 0; return n % 2 === 0 ? (n / 2) * Math.LN2 + lnFact(n / 2) : lnFact(n) - lnDfact(n - 1); }
+function doubleFactorialC(z, node, label) {
+  const n = intArg(z, label, node, 'a whole number');
+  if (n < -1n) { // n = −(2j + 1): n!! = (−1)^j / (2j − 1)!!
+    if (!(n & 1n)) fail(`The double factorial of a negative even number is undefined.`, node);
+    const j = (-n - 1n) / 2n;
+    if (j > 25000n || lnDfact(2n * j - 1n) / Math.LN10 > 100000) fail(`(−${-n})!! is smaller than about 10^-100000, beyond what this calculator handles.`, node);
+    return C(Q(j & 1n ? -1n : 1n, dfactB(2n * j - 1n)));
+  }
+  if (n > 60000n) fail(`${n}!! is larger than about 10^100000, beyond what this calculator handles.`, node);
+  sizeCheck(lnDfact(n) / Math.LN10, `${n}!!`);
+  return C(qi(dfactB(n)));
+}
+def('doublefactorial', 1, 1, ([z], node) => doubleFactorialC(z, node.args[0], 'doublefactorial'));
+def('gamma', 1, 1, ([z], node) => C(N.rgamma(real(z, 'gamma', node))));
+def('isprime', 1, 1, ([z], node) => {
+  const x = real(z, 'isprime', node);
+  if (x.k === 'q' && x.d !== 1n) return N.C0;
+  const n = intArg(z, 'isprime', node);
+  const r = N.isPrimeB(n);
+  if (r === 2) N.note('Probable prime: it passes the Baillie–PSW test, which no known composite number passes, but that isn’t a proof.');
+  return r ? N.C1 : N.C0;
+});
+function nextPrime(n, node) {
+  if (n < 2n) return 2n;
+  let m = n + 1n; if (m === 2n) return 2n; if (!(m & 1n)) m += 1n;
+  for (;;) { const r = N.isPrimeB(m); if (r) { if (r === 2) N.note('Probable prime: it passes the Baillie–PSW test, which no known composite number passes, but that isn’t a proof.'); return m; } m += 2n; if (timeUp()) fail('That took too long to search.', node); }
+}
+let T_END = Infinity; const timeUp = () => Date.now() > T_END;
+def('nextprime', 1, 1, ([z], node) => { const x = real(z, 'nextprime', node); T_END = Date.now() + 4000; return C(qi(nextPrime(floorR(x), node))); });
+def('prevprime', 1, 1, ([z], node) => {
+  const x = real(z, 'prevprime', node); let n = ceilR(x);
+  if (n <= 2n) fail('There is no prime below 2.', node);
+  T_END = Date.now() + 4000;
+  let m = n - 1n; if (m > 2n && !(m & 1n)) m -= 1n;
+  for (;;) { const r = N.isPrimeB(m); if (r) { if (r === 2) N.note('Probable prime: it passes the Baillie–PSW test, which no known composite number passes, but that isn’t a proof.'); return C(qi(m)); } m -= m === 3n ? 1n : 2n; if (timeUp()) fail('That took too long to search.', node); }
+});
+def('factor', 1, 1, ([z], node) => {
+  const n = intArg(z, 'factor', node);
+  if (N.blen(n) > 3400) fail('That number is too large to factor here (over 1,000 digits).', node);
+  const res = C(qi(n));
+  if (N.babs(n) < 2n) { res.fac = { sign: n < 0n, list: [], rest: [], one: n !== 0n, zero: n === 0n }; return res; }
+  N.setBudget(3000);
+  let f; try { f = N.factorB(n); } finally { N.clearBudget(); }
+  const list = [...f.fs.entries()].sort((a, b) => (a[0] < b[0] ? -1 : 1));
+  if (f.probable) N.note('Some factors are probable primes: they pass the Baillie–PSW test, which no known composite number passes, but that isn’t a proof.');
+  if (f.rest.length) N.note('Part of the number couldn’t be split in the time allowed. That part is composite (it has smaller factors), but they are too large to find quickly.');
+  res.fac = { sign: n < 0n, list, rest: f.rest.sort((a, b) => (a < b ? -1 : 1)) };
+  return res;
+});
+def('digitsum', 1, 1, (a, node) => { const d = digitInfo(a[0], 'digitsum', node); let s = 0n; for (const ch of d.digits) s += BigInt(ch); return C(qi(d.neg ? -s : s)); });
+def('digitalroot', 1, 1, (a, node) => { const d = digitInfo(a[0], 'digitalroot', node); let s = 0n; for (const ch of d.digits) s += BigInt(ch); const r = s === 0n ? 0n : 1n + (s - 1n) % 9n; return C(qi(d.neg ? -r : r)); });
+def('reverse', 1, 1, ([z], node) => {
+  const n = intArg(z, 'reverse', node);
+  const s = N.babs(n).toString(), r = [...s].reverse().join('');
+  if (/0$/.test(s)) N.note('Reversing moves the trailing zeros to the front, where they drop away.');
+  const v = BigInt(r); return C(qi(n < 0n ? -v : v));
+});
+def('concat', 1, Infinity, (a, node) => {
+  let s = '';
+  a.forEach((z, i) => { const v = intArg(z, 'concat', node.args[i]); if (v < 0n) fail('concat joins whole numbers that are 0 or more.', node.args[i]); s += v.toString(); });
+  if (s.length > 100000) fail('That would have more than 100,000 digits.', node);
+  return C(qi(BigInt(s)));
+});
+def('digits', 1, 1, ([z], node) => { const n = intArg(z, 'digits', node); return C(qi(N.babs(n).toString().length)); });
+def('triangle', 1, 1, ([z], node) => { const n = intArg(z, 'triangle', node); return C(qi(n * (n + 1n) / 2n)); });
+def('fib', 1, 1, ([z], node) => {
+  const n = intArg(z, 'fib', node);
+  if (N.babs(n) > 478000n) fail('That Fibonacci number would have more than 100,000 digits.', node);
+  const k = Number(N.babs(n)), [f] = N.fibB(k);
+  return C(qi(n < 0n && k % 2 === 0 ? -f : f));
+});
+def('re', 1, 1, ([z]) => C(z.re));
+def('im', 1, 1, ([z]) => C(z.im));
+def('arg', 1, 1, ([z], node) => fromRad(C(N.carg(z)), 'arg', node));
+def('conj', 1, 1, ([z]) => C(z.re, N.rneg(z.im)));
+def('deg', 1, 1, ([z]) => N.withPrec(12, () => N.cmul(z, C(N.rdiv(qi(180), N.rpi())))));
+def('rad', 1, 1, ([z]) => N.withPrec(12, () => N.cmul(z, C(N.rdiv(N.rpi(), qi(180))))));
+
+/* ---------- evaluation ---------- */
+function ev(n) {
+  switch (n.t) {
+    case 'num': return n.approx ? approxValue(n.v, n.approx) : C(n.v);
+    case 'group': return ev(n.a);
+    case 'id': {
+      if (isBuiltinName(n.name)) return constValue(n.name);
+      const v = CTX.lookup(n.name);
+      if (!v) fail(`${n.name} has no value yet.`, n);
+      return v;
+    }
+    case 'neg': return N.cneg(ev(n.a));
+    case 'fact': return factorialC(ev(n.a), n, '!');
+    case 'dfact': return doubleFactorialC(ev(n.a), n, '!!');
+    case 'deg': return CTX.angle === 'deg' ? ev(n.a) : N.withPrec(12, () => N.cmul(ev(n.a), C(N.rdiv(N.rpi(), qi(180)))));
+    case 'bin': {
+      const a = ev(n.a), b = ev(n.b);
+      try {
+        switch (n.op) {
+          case '+': return N.cadd(a, b);
+          case '-': return N.csub(a, b);
+          case '*': return N.cmul(a, b);
+          case '/': if (N.isZero(b.re) && N.isZero(b.im)) fail('Division by zero' + (N.isZeroExact(b.re) && N.isZeroExact(b.im) ? '.' : ': the divisor is zero to within the working precision.'), n); return N.cdiv(a, b);
+          case '%': return C(modR(real(a, 'The remainder (%)', n.a), real(b, 'The remainder (%)', n.b), n));
+          case '^': return N.cpow(a, b);
+        }
+      } catch (e) { if (e instanceof HPError && !e.node) e.node = n; throw e; }
+      break;
+    }
+    case 'call': {
+      const fn = FN[n.name.toLowerCase()], args = n.args.map(ev);
+      try { return fn.f(args, n); } catch (e) { if (e instanceof HPError && !e.node) e.node = n; throw e; }
+    }
+  }
+  fail('Something went wrong reading that.', n);
+}
+function evaluate(ast, ctx) {
+  const save = CTX; CTX = ctx;
+  try { return ev(ast); } finally { CTX = save; }
+}
+
+return { tokenize, parse, show, evaluate, freeNames, validName, setConstants, isBuiltinName, HPAsk, FN, constValue, snapInt, parseDecimal };
+})();
+/* Higher Powers' own named constants, only so a name sent there never clashes with one of them */
+/* Higher Powers: the Constants picker. Generated by higherpowers/make-constants.py with mpmath; do not edit by hand. */
+const HP_CONSTANTS = [{"id":"golden_ratio","name":"Golden ratio","value":"1.618033988749894848204586834365638117720309179805762862135448622705260462818902449707207204189391137484754088075386891752126633862223536931793180060766726354433389086595939582905638322661319928290267880675208766892501712"},{"id":"golden_conjugate","name":"Golden ratio conjugate (1 ÷ golden ratio, also golden ratio − 1)","value":"0.6180339887498948482045868343656381177203091798057628621354486227052604628189024497072072041893911374847540880753868917521266338622235369317931800607667263544333890865959395829056383226613199282902678806752087668925017117"},{"id":"silver_ratio","name":"Silver ratio (1 + square root of 2)","value":"2.414213562373095048801688724209698078569671875376948073176679737990732478462107038850387534327641572735013846230912297024924836055850737212644121497099935831413222665927505592755799950501152782060571470109559971605970275"},{"id":"plastic_ratio","name":"Plastic ratio (the real root of x³ = x + 1)","value":"1.324717957244746025960908854478097340734404056901733364534015050302827851245547594054699347981787280329910920994742207425108902639045897795594314757096723471754166839038867418751736931584253549908246622354533727350458988"},{"id":"sqrt_2","name":"Square root of 2","value":"1.414213562373095048801688724209698078569671875376948073176679737990732478462107038850387534327641572735013846230912297024924836055850737212644121497099935831413222665927505592755799950501152782060571470109559971605970275"},{"id":"sqrt_3","name":"Square root of 3","value":"1.732050807568877293527446341505872366942805253810380628055806979451933016908800037081146186757248575675626141415406703029969945094998952478811655512094373648528093231902305582067974820101084674923265015312343266903322887"},{"id":"sqrt_5","name":"Square root of 5","value":"2.236067977499789696409173668731276235440618359611525724270897245410520925637804899414414408378782274969508176150773783504253267724447073863586360121533452708866778173191879165811276645322639856580535761350417533785003423"},{"id":"ln_2","name":"Natural logarithm of 2","value":"0.6931471805599453094172321214581765680755001343602552541206800094933936219696947156058633269964186875420014810205706857336855202357581305570326707516350759619307275708283714351903070386238916734711233501153644979552391205"},{"id":"ln_10","name":"Natural logarithm of 10","value":"2.302585092994045684017991454684364207601101488628772976033327900967572609677352480235997205089598298341967784042286248633409525465082806756666287369098781689482907208325554680843799894826233198528393505308965377732628846"},{"id":"euler_mascheroni","name":"Euler–Mascheroni constant","value":"0.5772156649015328606065120900824024310421593359399235988057672348848677267776646709369470632917467495146314472498070824809605040144865428362241739976449235362535003337429373377376739427925952582470949160087352039481656709"},{"id":"catalan","name":"Catalan’s constant","value":"0.9159655941772190150546035149323841107741493742816721342664981196217630197762547694793565129261151062485744226191961995790358988033258590594315947374811584069953320287733194605190387274781640878659090247064841521630002287"},{"id":"apery","name":"Apéry’s constant (the zeta function at 3)","value":"1.202056903159594285399738161511449990764986292340498881792271555341838205786313090186455873609335258146199157795260719418491995998673283213776396837207900161453941782949360066719191575522242494243961563909664103291159096"},{"id":"khinchin","name":"Khinchin’s constant","value":"2.685452001065306445309714835481795693820382293994462953051152345557218859537152002801141174931847697995153465905288090082897677716410963051792533483259668381852315421332119499626039328522044819409618068664166428930847788"},{"id":"glaisher_kinkelin","name":"Glaisher–Kinkelin constant","value":"1.282427129100622636875342568869791727767688927325001192063740021740406308858826461129736491958202374394206461203990007489331577913627752804041590725738617275221433432714343978733506791525736685690787656114668644999778496"},{"id":"twin_prime","name":"Twin prime constant","value":"0.6601618158468695739278121100145557784326233602847334133194484233354056423044952771437600314138398679117790052266933040029658477551233662277471657132139869687410976206302141537354348531315960978036699321352552997671993025"},{"id":"feigenbaum_delta","name":"First Feigenbaum constant","value":"4.669201609102990671853203820466201617258185577475768632745651343004134330211314737138689744023948013817165984855189815134408627142027932522312442988890890859944935463236713411532481714219947455644365823793202009561058331"},{"id":"feigenbaum_alpha","name":"Second Feigenbaum constant","value":"2.502907875095892822283902873218215786381271376727149977336192056779235463179590206703299649746433834129595231869995854723942182377785445179272863314993372578112163594879503744781260997380598671239711737328927665404401031"},{"id":"standard_gravity","name":"Standard gravity, in metres per second squared (exact by definition)","value":"9.80665","exact":true},{"id":"speed_of_light","name":"Speed of light in vacuum, in metres per second (exact by definition)","value":"299792458","exact":true}];
+const HP_NAMED = new Set(HP_CONSTANTS.map((c) => c.id));
+
+/* ---------- the data (built in from consts/constants.json) ---------- */

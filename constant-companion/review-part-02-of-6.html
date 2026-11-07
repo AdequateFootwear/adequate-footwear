@@ -1,0 +1,1036 @@
+<!-- Review copy: lines 655-1689 of constant-companion/index.html, split so Copilot can review it. Not served. -->
+      <span class="help" id="cc-digits-help">1 to 100. A result never shows more digits than its inputs vouch for.</span>
+    </div>
+    <div class="cc-out" id="cc-out"></div>
+    <p class="cc-calc-err" id="cc-calc-err"></p>
+    <p class="sr" id="cc-calc-status" role="status" aria-live="polite"></p>
+  </section>
+
+  <section class="panel" id="symbols" aria-labelledby="h-symbols">
+    <div class="panel-head"><span class="step">3</span><h2 id="h-symbols">Symbol index</h2></div>
+    <p class="help">Every symbol used here, and every constant written with it. One symbol often stands for several constants, and one constant can have several symbols. The index follows the group chosen above. Choose a symbol to search for it, or a name to see that constant.</p>
+    <p class="cc-idx-count muted" id="cc-idx-count"></p>
+    <div class="cc-idx" id="cc-idx"></div>
+  </section>
+
+  <section class="panel" id="about" aria-labelledby="h-about">
+    <div class="panel-head"><span class="step">4</span><h2 id="h-about">Where the values come from</h2></div>
+    <div class="explain" id="cc-about">
+      <p><b>Mathematical constants</b> were computed from their definitions at 120 significant digits and are shown to 100 digits, cut off rather than rounded, so the digits you see are exactly the start of the true expansion. Each was also computed a second, independent way, with a different formula wherever one exists, and the two agree to at least 110 digits. A continued fraction shows only the terms those digits settle for certain.</p>
+      <p><b>Physical constants</b> are the complete <span id="cc-codata">CODATA 2022</span> set of recommended values, with their standard uncertainties. A value written 6.674 30(15) means 6.674 30 with a standard uncertainty of 0.000 15 in its last digits. Since 2019 the constants that define the SI (among them c, h, e, k and N_A) are exact. When CODATA prints an exact value cut short, as in 1.054 571 817…, the further digits shown here were worked out from those exact defining constants, and they agree with every digit CODATA prints.</p>
+      <p><b>Astronomical and Earth constants</b> come from the International Astronomical Union’s resolutions (the 2012 astronomical unit, the 2015 nominal solar and planetary values, the 2015 parsec), the IERS and IAU time scales, and the WGS 84 ellipsoid that GPS uses. A nominal value is an exact conversion constant, not a measurement. Each card names its source.</p>
+      <p><b>Chemistry and everyday constants</b> are the usual reference states (absolute zero, the triple and critical points of water, standard temperature and pressure in both conventions) and units that are defined exactly, such as the inch, the pound and the calorie.</p>
+      <p><b>The calculator</b> reads a sum the way Higher Powers does and works it out with the same engine, carrying more digits than it shows. A mathematical constant goes in with all of its 100 digits, an exact constant exactly, and a measured one with the digits CODATA gives. A result shows only the digits its inputs vouch for. When a sum uses measured constants, the note under the result lists their relative standard uncertainties and a rough combined figure: each input is nudged by its own uncertainty and the effects are added as if the inputs were independent. CODATA’s values are partly correlated, so treat that figure as a guide, not a full uncertainty analysis.</p>
+      <p><b>Send to Higher Powers</b> opens Higher Powers in this tab with the constant set as a variable, under the name you choose. The name and the value travel only in the page’s address, after the #: nothing is sent anywhere, and nothing leaves your device. A value whose digits go on is sent ending in …, so Higher Powers, like this calculator, shows only the digits it can vouch for.</p>
+      <p><b>How digit searches match.</b> Only the digits count: “1.6180”, “16180” and “0.0016180” all look for the run 1 6 1 8 0. A value that starts with your digits comes first, then one that rounds to them in its last place, then one that has them somewhere further along (for four digits or more). If you typed a decimal point or a power of ten, values of the same size rank above the rest.</p>
+    </div>
+  </section>
+
+  <footer>
+    <span>Constant Companion · <a href="../">all AdequateFootwear tools</a></span>
+    <span class="mono">A steady light</span>
+  </footer>
+</main>
+
+<script>
+(() => {
+'use strict';
+const $ = (id) => document.getElementById(id);
+const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+const reduced = () => !!(window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches);
+
+/* ---------- Higher Powers' number engine and expression language, shared byte-identical with that page ---------- */
+/* ---------- Higher Powers: the number engine ----------
+   Exact rationals (BigInt numerator and denominator), binary floating point of any precision with a
+   bound on its own error, and complex numbers whose parts are either. Written from scratch.
+
+   API (stable; shared byte-identical with other pages, which INCLUDE this file):
+   A self-contained module with no DOM, storage or network use, and nothing but BigInt and Math.
+   It defines one constant, HPN, in the scope it is included into. pages/higherpowers.calc.js
+   (HPC), included after it, reads expressions and evaluates them with it.
+
+   Settings (global to the module):
+     HPN.setDigits(n)        working precision, n significant decimal digits (20 to 200 on the
+                             page); also the default number of digits fmtC and fmtReal show.
+     HPN.digits, HPN.bits    the current setting, and the working precision in bits.
+                             Set it before evaluating: a result keeps the precision it was made at.
+     HPN.startNotes() ... HPN.takeNotes() -> [string]   gather the plain-language notes that one
+                             evaluation raises (for example "n!! is read as (n!)!").
+
+   Values:
+     A real is {k:'q', n, d}, an exact fraction n/d of BigInts (d > 0, in lowest terms), or
+     {k:'f', m, e, a}, the float m·2^e correct to a relative error of 2^-a.
+     A number is complex: {re, im}, two reals. Build them with
+       HPN.Q(n, d = 1n)      exact fraction from BigInts (HPN.qi(k) from a Number or BigInt);
+       HPN.C(re, im = Q0)    a complex value; HPN.C(HPN.Q(3n)) is the exact 3.
+     HPC.parseDecimal('6.62607015e-34') gives the EXACT value of a decimal string, as a complex.
+     Arithmetic: HPN.cadd, csub, cmul, cdiv, cneg, cpow, csqrt, cexp, cln, ... (complex);
+     HPN.radd, rsub, rmul, rdiv, rcmp, rsign ... (reals). HPN.isExactC(z), HPN.isRealC(z).
+
+   Errors: anything that can't be worked out throws HPN.HPError(message, node), where the message
+   is a sentence for the reader and node, when set, is {pos, end}: the span of the input to mark.
+
+   Formatting a result to n digits:
+     HPN.fmtC(z, 'dec', n).text     z to n significant digits, halves rounded away from 0:
+                                    "1.4142135624" (n = 11), "−6.62607015 × 10^-34" or
+                                    "3 + 4i". A leading minus is U+2212; an exponent's is "-". A float
+                                    never shows more digits than it can vouch for, so the text may
+                                    be shorter than n; HPN.reliableDigits(z.re) says how many are
+                                    sound. Trailing zeros are dropped.
+     HPN.fmtC(z, 'exact').text      whole numbers in full, fractions as "1/7" (or their full
+                                    decimal when it ends, "0.125"); floats as for 'dec'.
+     HPN.fmtReal(x, mode, n)        the same for one real.
+     .dropped on fmtC's result is 'im' or 're' when a part too small to show was left out.
+     For a form other programs read back: replace "−" with "-" and " × 10^" with "e".
+*/
+const HPN = (() => {
+'use strict';
+const LOG2_10 = 3.321928094887362, LOG10_2 = 0.30102999566398120;
+const MAX_BITS = 332200;           // magnitudes up to about 10^±100000
+const EXACT_BITS = 332200;         // whole numbers up to about 100,000 digits stay exact
+const FRAC_BITS = 40000;           // fractions whose parts grow past about 12,000 digits become decimals
+let DIGITS = 30, W = bitsFor(30);
+function bitsFor(d) { return Math.ceil(d * LOG2_10) + 40; }
+let NOTES = null;                  // notes gathered while one expression is worked out
+const note = (s) => { if (NOTES && !NOTES.includes(s)) NOTES.push(s); };
+
+class HPError extends Error { constructor(msg, node) { super(msg); this.node = node || null; } }
+const fail = (msg, node) => { throw new HPError(msg, node); };
+let BUDGET_END = Infinity;        // a time limit for the slow integer work (factor, nextprime)
+
+/* ---------- BigInt helpers ---------- */
+const babs = (x) => (x < 0n ? -x : x);
+function blen(x) {
+  if (x < 0n) x = -x;
+  if (x === 0n) return 0;
+  const s = x.toString(16);
+  return (s.length - 1) * 4 + (32 - Math.clz32(parseInt(s[0], 16)));
+}
+function log2B(x) { const L = blen(x), s = Math.max(0, L - 60); return L ? Math.log2(Number(babs(x) >> BigInt(s))) + s : 0; } // log2 |x|, as a double, for any size
+function bgcd(a, b) { a = babs(a); b = babs(b); while (b) { const t = a % b; a = b; b = t; } return a; }
+const P10 = [1n];
+function pow10(k) {
+  if (k < 256) { while (P10.length <= k) P10.push(P10[P10.length - 1] * 10n); return P10[k]; }
+  return 10n ** BigInt(k);
+}
+function rshift(m, s) { // m / 2^s rounded half to even; s may be negative (a left shift)
+  if (s <= 0) return m << BigInt(-s);
+  const neg = m < 0n; if (neg) m = -m;
+  const S = BigInt(s); let q = m >> S; const r = m - (q << S), half = 1n << (S - 1n);
+  if (r > half || (r === half && (q & 1n))) q += 1n;
+  return neg ? -q : q;
+}
+function rdiv(a, b) { // a / b rounded half to even, b > 0
+  const neg = (a < 0n) !== (b < 0n); a = babs(a); b = babs(b);
+  let q = a / b; const r2 = 2n * (a - q * b);
+  if (r2 > b || (r2 === b && (q & 1n))) q += 1n;
+  return neg ? -q : q;
+}
+function fdivB(a, b) { // floor(a / b) for b > 0
+  const q = a / b; return (a % b !== 0n && a < 0n) ? q - 1n : q;
+}
+function isqrt(n) {
+  if (n < 0n) throw new Error('isqrt of a negative');
+  if (n < 2n) return n;
+  let x = 1n << BigInt(Math.ceil(blen(n) / 2));
+  for (;;) { const y = (x + n / x) >> 1n; if (y >= x) return x; x = y; }
+}
+function iroot(n, k) { // floor of the k-th root of n >= 0
+  if (n < 2n || k === 1) return n;
+  const K = BigInt(k);
+  let x = 1n << BigInt(Math.ceil(blen(n) / k));
+  for (;;) { const y = ((K - 1n) * x + n / (x ** (K - 1n))) / K; if (y >= x) return x; x = y; }
+}
+
+/* ---------- reals: exact rationals (q) and floats (f) ----------
+   q: {k:'q', n, d} with d > 0 and gcd(n, d) = 1.
+   f: {k:'f', m, e, a}: the value m·2^e, correct to a relative error of at most 2^-a (a may be Infinity).
+   A float with m = 0n is "zero to within 2^e": a difference whose digits all cancelled. */
+const Q = (n, d = 1n) => {
+  if (d < 0n) { n = -n; d = -d; }
+  if (d === 0n) fail('Division by zero.');
+  if (d !== 1n) { const g = bgcd(n, d); if (g !== 1n) { n /= g; d /= g; } }
+  return { k: 'q', n, d };
+};
+const qi = (n) => ({ k: 'q', n: BigInt(n), d: 1n });
+const Q0 = qi(0), Q1 = qi(1), Q2 = qi(2), QH = Q(1n, 2n);
+const isQ = (x) => x.k === 'q';
+const isNZ = (x) => x.k === 'f' && x.m === 0n;
+const isZeroExact = (x) => x.k === 'q' && x.n === 0n;
+const isZero = (x) => isZeroExact(x) || isNZ(x);
+const isInt = (x) => x.k === 'q' && x.d === 1n;
+function accSum(...as) { // combine relative errors 2^-a1 + 2^-a2 + ... into one accuracy
+  let m = Infinity; for (const a of as) if (a < m) m = a;
+  if (m === Infinity) return Infinity;
+  let s = 0; for (const a of as) if (a !== Infinity) s += Math.pow(2, m - a);
+  return m - Math.log2(s);
+}
+function lse(...xs) { // log2(2^x1 + 2^x2 + ...)
+  let m = -Infinity; for (const x of xs) if (x > m) m = x;
+  if (m === -Infinity) return -Infinity;
+  let s = 0; for (const x of xs) if (x !== -Infinity) s += Math.pow(2, x - m);
+  return m + Math.log2(s);
+}
+function checkRange(mag) {
+  if (mag > MAX_BITS) fail('The result is larger than about 10^100000, beyond what this calculator handles.');
+  if (mag < -MAX_BITS) fail('The result is smaller than about 10^-100000, beyond what this calculator handles.');
+}
+function nz(E) { if (E > MAX_BITS) fail('Precision ran out completely: the error is larger than the number itself could be.'); return { k: 'f', m: 0n, e: Math.ceil(E), a: 0 }; }
+function fmk(m, e, a) {
+  if (m === 0n) return nz(e - W);
+  const L = blen(m);
+  if (L > W) { const s = L - W; m = rshift(m, s); e += s; a = accSum(a, W - 1); if (blen(m) > W) { m >>= 1n; e += 1; } }
+  checkRange(blen(m) + e);
+  return { k: 'f', m, e, a };
+}
+const fmag = (x) => blen(x.m) + x.e;           // |x| < 2^fmag
+const errExp = (x) => (isNZ(x) ? x.e : fmag(x) - x.a); // |error| <= 2^errExp
+function rmag(x) { // an upper bound on log2|x| (whole bits), for estimates; exact zero gives -Infinity
+  if (x.k === 'q') return x.n === 0n ? -Infinity : blen(x.n) - blen(x.d) + 1;
+  return isNZ(x) ? x.e : fmag(x);
+}
+function toNum(x) { // a double, for estimates only
+  if (x.k === 'q') { let n = x.n, d = x.d; const s = Math.max(blen(n), blen(d)) - 60; if (s > 0) { n >>= BigInt(s); d >>= BigInt(s); if (d === 0n) return n < 0n ? -Infinity : Infinity; } return Number(n) / Number(d); }
+  if (x.m === 0n) return 0;
+  const L = blen(x.m), s = Math.max(0, L - 60);
+  return Number(x.m >> BigInt(s)) * Math.pow(2, x.e + s);
+}
+function q2f(q, bits) { // a rational as a float with about `bits` bits
+  bits = bits || W + 16;
+  if (q.n === 0n) return nz(-bits);
+  if ((q.d & (q.d - 1n)) === 0n) { // a power of two below: exact
+    const m = q.n, e = -(blen(q.d) - 1);
+    return fmkB(m, e, Infinity, bits);
+  }
+  const sh = bits + 2 + blen(q.d) - blen(q.n);
+  let num = q.n, den = q.d;
+  if (sh >= 0) num <<= BigInt(sh); else den <<= BigInt(-sh);
+  return fmkB(rdiv(num, den), -sh, bits, bits);
+}
+function fmkB(m, e, a, bits) { const s = W; W = Math.max(W, bits); try { return fmk(m, e, a); } finally { W = s; } }
+const toF = (x) => (x.k === 'q' ? q2f(x) : x);
+function wp(extra, fn) { const s = W; W = s + Math.max(0, Math.ceil(extra)); try { return fn(); } finally { W = s; } } // raised precision, raw result
+function withPrec(extra, fn) { return roundAny(wp(extra, fn)); } // raised precision, result rounded back
+function roundAny(r) {
+  if (!r || typeof r !== 'object') return r;
+  if (Array.isArray(r)) return r.map(roundAny);
+  if (r.k) return round2W(r);
+  if (r.re) return { re: round2W(r.re), im: round2W(r.im) };
+  return r;
+}
+function round2W(x) { // bring a float made at a raised precision back to the working precision
+  if (x.k === 'q' || x.m === 0n) return x;
+  return fmk(x.m, x.e, x.a);
+}
+function qCap(n, d) {
+  const q = Q(n, d);
+  if (q.d === 1n ? blen(q.n) > EXACT_BITS : Math.max(blen(q.n), blen(q.d)) > FRAC_BITS) {
+    if (q.d === 1n) note('The exact whole number would have more than 100,000 digits, so it is carried on as a decimal.');
+    else note('The exact fraction grew too long to keep, so it is carried on as a decimal.');
+    return q2f(q);
+  }
+  return q;
+}
+
+function rneg(x) { return x.k === 'q' ? { k: 'q', n: -x.n, d: x.d } : { k: 'f', m: -x.m, e: x.e, a: x.a }; }
+function rsign(x) { if (x.k === 'q') return x.n > 0n ? 1 : x.n < 0n ? -1 : 0; return x.m > 0n ? 1 : x.m < 0n ? -1 : 0; }
+function withErr(x, E) { // x with an extra absolute error of 2^E
+  if (E === -Infinity) return x;
+  if (isNZ(x)) return nz(lse(x.e, E));
+  const a = accSum(x.a, fmag(x) - 1 - E);
+  if (a < 5) return nz(lse(fmag(x), errExp(x), E));
+  return { k: 'f', m: x.m, e: x.e, a };
+}
+function fadd(x, y) {
+  const ex = errExp(x), ey = errExp(y);
+  if (isNZ(x) && isNZ(y)) return nz(lse(ex, ey));
+  if (isNZ(x)) return withErr(y, ex);
+  if (isNZ(y)) return withErr(x, ey);
+  const mx = fmag(x), my = fmag(y);
+  let m, e, extra = -Infinity;
+  if (mx - my > W + 64) { m = x.m; e = x.e; extra = my; }
+  else if (my - mx > W + 64) { m = y.m; e = y.e; extra = mx; }
+  else { e = Math.min(x.e, y.e); m = (x.m << BigInt(x.e - e)) + (y.m << BigInt(y.e - e)); }
+  const E = lse(ex, ey, extra);
+  if (m === 0n) return nz(E);
+  const a = blen(m) + e - 1 - E;
+  if (a < 5) return nz(lse(blen(m) + e, E));
+  return fmk(m, e, a);
+}
+function radd(x, y) {
+  if (isZeroExact(x)) return y;
+  if (isZeroExact(y)) return x;
+  if (x.k === 'q' && y.k === 'q') return x.d === y.d ? qCap(x.n + y.n, x.d) : qCap(x.n * y.d + y.n * x.d, x.d * y.d);
+  return fadd(toF(x), toF(y));
+}
+const rsub = (x, y) => radd(x, rneg(y));
+function fmul(x, y) {
+  if (isNZ(x) && isNZ(y)) return nz(x.e + y.e);
+  if (isNZ(x)) return nz(x.e + fmag(y) + 0.1);
+  if (isNZ(y)) return nz(y.e + fmag(x) + 0.1);
+  return fmk(x.m * y.m, x.e + y.e, accSum(x.a, y.a, x.a + y.a));
+}
+function rmul(x, y) {
+  if (isZeroExact(x) || isZeroExact(y)) return Q0;
+  if (x.k === 'q' && y.k === 'q') {
+    if (x.d === 1n && y.d === 1n) return qCap(x.n * y.n, 1n);
+    return qCap(x.n * y.n, x.d * y.d);
+  }
+  if (x.k === 'q' && x.d === 1n && (x.n === 1n || x.n === -1n)) return x.n === 1n ? y : rneg(y);
+  if (y.k === 'q' && y.d === 1n && (y.n === 1n || y.n === -1n)) return y.n === 1n ? x : rneg(x);
+  return fmul(toF(x), toF(y));
+}
+function fdiv(x, y) {
+  if (isNZ(y)) fail('Division by a value that is zero to within the working precision.');
+  if (isNZ(x)) return nz(x.e - (fmag(y) - 1) + 0.1);
+  const sh = W + 2 + blen(y.m) - blen(x.m);
+  let num = x.m, den = y.m;
+  if (sh >= 0) num <<= BigInt(sh); else den <<= BigInt(-sh);
+  return fmk(rdiv(num, den), x.e - y.e - sh, accSum(x.a, y.a, W) - 0.1);
+}
+function rdivR(x, y) {
+  if (isZeroExact(y)) fail('Division by zero.');
+  if (isZeroExact(x)) return Q0;
+  if (x.k === 'q' && y.k === 'q') return qCap(x.n * y.d, x.d * y.n);
+  return fdiv(toF(x), toF(y));
+}
+const rinv = (x) => rdivR(Q1, x);
+function rcmp(x, y) { // compares the values as given (floats by their middle values)
+  if (x.k === 'q' && y.k === 'q') { const a = x.n * y.d, b = y.n * x.d; return a < b ? -1 : a > b ? 1 : 0; }
+  const d = rsub(x, y);
+  return rsign(d);
+}
+function rabs(x) { return rsign(x) < 0 ? rneg(x) : x; }
+
+/* fixed point: a BigInt X standing for X / 2^p */
+function toFix(x, p) {
+  if (x.k === 'q') return rdiv(x.n << BigInt(p), x.d);
+  return rshift(x.m, -(x.e + p));
+}
+function fromFix(X, p, a) { return X === 0n ? nz(-p + 2) : fmk(X, -p, a); }
+
+/* ---------- constants by series ---------- */
+function atanInvFix(k, p) { // atan(1/k)·2^p
+  const g = p + 20, K = BigInt(k), K2 = K * K;
+  let t = (1n << BigInt(g)) / K, s = t, n = 1n, neg = true;
+  for (;;) { t /= K2; n += 2n; if (t === 0n) break; s += neg ? -(t / n) : t / n; neg = !neg; }
+  return rshift(s, 20);
+}
+function atanhInvFix(k, p) {
+  const g = p + 20, K = BigInt(k), K2 = K * K;
+  let t = (1n << BigInt(g)) / K, s = t, n = 1n;
+  for (;;) { t /= K2; n += 2n; if (t === 0n) break; s += t / n; }
+  return rshift(s, 20);
+}
+const KEPT = { pi: [0, 0n], ln2: [0, 0n] };
+function piFix(p) {
+  if (KEPT.pi[0] < p) { const q = p + 64; KEPT.pi = [q, 16n * atanInvFix(5, q) - 4n * atanInvFix(239, q)]; }
+  return rshift(KEPT.pi[1], KEPT.pi[0] - p);
+}
+function ln2Fix(p) {
+  if (KEPT.ln2[0] < p) { const q = p + 64; KEPT.ln2 = [q, 18n * atanhInvFix(26, q) - 2n * atanhInvFix(4801, q) + 8n * atanhInvFix(8749, q)]; }
+  return rshift(KEPT.ln2[1], KEPT.ln2[0] - p);
+}
+const piF = () => fromFix(piFix(W + 8), W + 8, W + 4);
+const ln2F = () => fromFix(ln2Fix(W + 8), W + 8, W + 4);
+
+/* ---------- fixed-point kernels ---------- */
+function expFix(x, p) { // e^x for |x| <= 1, fixed point at p bits
+  const s = Math.max(4, Math.round(Math.sqrt(p) / 2)), g = p + s + 12, G = BigInt(g);
+  let y = rshift(x, p - g + s); // x / 2^s at g bits
+  const one = 1n << G;
+  let sum = one, term = one;
+  for (let n = 1n; ; n++) { term = ((term * y) >> G) / n; if (term === 0n) break; sum += term; }
+  for (let i = 0; i < s; i++) sum = (sum * sum) >> G;
+  return rshift(sum, g - p);
+}
+function logFix(y, p) { // ln(y) for y in about [0.7, 1.42], fixed point at p bits
+  const g = p + 16, G = BigInt(g), one = 1n << G;
+  const Y = y << 16n;
+  const zs = ((Y - one) << G) / (Y + one), neg = zs < 0n, z = neg ? -zs : zs, z2 = (z * z) >> G;
+  let t = z, s = z;
+  for (let n = 3n; ; n += 2n) { t = (t * z2) >> G; if (t === 0n) break; s += t / n; }
+  return rshift(neg ? -2n * s : 2n * s, 16);
+}
+function sinCosFix(x, p) { // [sin x, cos x] for |x| <= 1, fixed point at p bits
+  const g = p + 16, G = BigInt(g), one = 1n << G, X = x << 16n, X2 = (X * X) >> G;
+  let s = X, t = X;
+  for (let n = 2n; ; n += 2n) { t = -((t * X2) >> G) / (n * (n + 1n)); if (t === 0n) break; s += t; }
+  let c = one; t = one;
+  for (let n = 1n; ; n += 2n) { t = -((t * X2) >> G) / (n * (n + 1n)); if (t === 0n) break; c += t; }
+  return [rshift(s, 16), rshift(c, 16)];
+}
+function atanFix(x, p) { // atan(x) for |x| <= 1, fixed point at p bits
+  const g = p + 20, G = BigInt(g), one = 1n << G;
+  const neg = x < 0n;
+  let X = (neg ? -x : x) << 20n;
+  for (let i = 0; i < 3; i++) X = (X << G) / (one + isqrt((one << G) + X * X)); // halve the angle
+  const X2 = (X * X) >> G;
+  let t = X, s = X;
+  for (let n = 3n, neg = true; ; n += 2n, neg = !neg) { t = (t * X2) >> G; if (t === 0n) break; s += neg ? -(t / n) : t / n; }
+  return rshift(neg ? -s * 8n : s * 8n, 20);
+}
+
+/* ---------- real transcendental functions ---------- */
+function rexp(x) {
+  if (isZeroExact(x)) return Q1;
+  if (isNZ(x)) return withErr({ k: 'f', m: 1n, e: 0, a: Infinity }, x.e + 1);
+  const mx = rmag(x);
+  if (mx > 20) { const v = toNum(x); if (Math.abs(v) > 230259) fail(v > 0 ? 'e to that power is larger than about 10^100000, beyond what this calculator handles.' : 'e to that power is smaller than about 10^-100000, beyond what this calculator handles.'); }
+  const v = toNum(x), k = Math.round(v / Math.LN2), kb = blen(BigInt(Math.abs(k)));
+  const p = W + 24 + kb;
+  const X = toFix(x, p), r = X - BigInt(k) * ln2Fix(p);
+  const E = expFix(r, p);
+  let res = fmk(E, k - p, W + 8);
+  if (x.k === 'f') res = withAcc(res, x.a - mx);
+  return res;
+}
+function withAcc(r, aProp) { // fold an accuracy carried in from the input into a result
+  if (r.k === 'q' || isNZ(r)) return r;
+  const a = accSum(r.a, aProp);
+  if (a < 5) return { k: 'f', m: r.m, e: r.e, a: Math.max(a, -1e9) };
+  return { k: 'f', m: r.m, e: r.e, a };
+}
+function rln(x) { // x > 0
+  if (x.k === 'q' && x.n === x.d) return Q0;
+  let extra = 0;
+  if (x.k === 'q') {
+    const dm = rmag(Q(x.n - x.d, x.d)); if (dm < 0) extra = -dm + 4;
+    x = q2f(x, W + 40 + extra);
+  } else {
+    const L = blen(x.m), K = L + x.e;
+    if (K === 0 || K === 1) { // near 1: find how near
+      const e = Math.min(x.e, 0), D = (x.m << BigInt(x.e - e)) - (1n << BigInt(-e));
+      if (D === 0n) return x.a === Infinity ? Q0 : nz(-x.a);
+      const dm = blen(D) + e; if (dm < 0) extra = -dm + 4;
+    }
+  }
+  const L = blen(x.m); let K = L + x.e; // x = y·2^K, y = m/2^L in [0.5, 1)
+  const p = W + 24 + extra + blen(BigInt(Math.abs(K) + 1));
+  let y = rshift(x.m, L - p); // y·2^p
+  const lim = (1n << BigInt(p)) * 181n / 256n; // about 0.707
+  if (y < lim) { y <<= 1n; K -= 1; }
+  const v = logFix(y, p) + BigInt(K) * ln2Fix(p);
+  let res = fromFix(v, p, W + 8);
+  if (isNZ(res)) return res;
+  if (x.a !== Infinity) res = withErr2(res, -x.a);
+  return res;
+}
+function withErr2(r, E) { // add an absolute error 2^E to a float result; may become a zero-within
+  if (E === -Infinity || r.k === 'q') return r;
+  return withErr(r, E);
+}
+function sinCosR(x) { // [sin x, cos x], x real in radians
+  if (isZeroExact(x)) return [Q0, Q1];
+  if (isNZ(x)) return [nz(x.e), withErr({ k: 'f', m: 1n, e: 0, a: Infinity }, 2 * x.e)];
+  const mx = rmag(x);
+  if (mx > 1100000) fail('That angle is too large to reduce accurately.');
+  const inErr = x.k === 'f' ? fmag(x) - x.a : -Infinity;
+  let p = W + 24 + Math.max(0, mx);
+  let X, k, r;
+  for (let tries = 0; ; tries++) {
+    X = toFix(x, p); const hp = rshift(piFix(p + 4), 5); // π/2 at p bits
+    k = rdiv(X, hp); r = X - k * hp;
+    const rm = blen(r) - p;
+    if (rm > -12 || tries > 2 || inErr > rm - 8) break;
+    p += -rm + 16; // close to a multiple of π/2: work harder, if the input is precise enough to deserve it
+  }
+  const [s, c] = sinCosFix(r, p);
+  const q = Number(((k % 4n) + 4n) % 4n);
+  const S = [s, c, -s, -c][q], C = [c, -s, -c, s][q];
+  const mk = (v) => { let f = fromFix(v, p, W + 8); if (!isNZ(f)) f = withAcc(f, blen(v) - 12); return withErr2(f, inErr); };
+  return [mk(S), mk(C)];
+}
+function ratan(x) {
+  if (isZeroExact(x)) return Q0;
+  if (isNZ(x)) return x;
+  const mx = rmag(x), big = mx > 1 && rcmp(rabs(x), Q1) > 0;
+  const inErr = x.k === 'f' ? fmag(x) - x.a : -Infinity;
+  const p = W + 24 + Math.max(0, -mx);
+  let v;
+  if (!big) v = atanFix(toFix(x, p), p);
+  else {
+    const inv = wp(30, () => rinv(x)), t = atanFix(toFix(inv, p), p), hp = rshift(piFix(p + 4), 5);
+    v = (rsign(x) > 0 ? hp : -hp) - t;
+  }
+  let res = fromFix(v, p, W + 8);
+  if (inErr > -Infinity) res = withErr2(res, inErr - Math.max(0, 2 * mx - 2)); // d atan = dx / (1 + x²)
+  return res;
+}
+function rsqrt(x) { // x >= 0
+  if (isZeroExact(x)) return Q0;
+  if (isNZ(x)) return nz(x.e / 2);
+  if (x.k === 'q') {
+    const a = isqrt(x.n), b = isqrt(x.d);
+    if (a * a === x.n && b * b === x.d) return Q(a, b);
+    x = q2f(x, 2 * W + 8);
+  }
+  let sh = 2 * (W + 2) - blen(x.m); if ((x.e - sh) & 1) sh++;
+  const M = sh >= 0 ? x.m << BigInt(sh) : rshift(x.m, -sh);
+  let r = isqrt(M); if (M - r * r > r) r += 1n;
+  return fmk(r, (x.e - sh) / 2, accSum(x.a + 1, W + 1));
+}
+function rnthrootExact(x, n) { // exact n-th root of a rational, or null
+  if (x.k !== 'q') return null;
+  const neg = x.n < 0n; if (neg && n % 2 === 0) return null;
+  const a = iroot(babs(x.n), n), b = iroot(x.d, n), N = BigInt(n);
+  if (a ** N === babs(x.n) && b ** N === x.d) return Q(neg ? -a : a, b);
+  return null;
+}
+const rpi = () => piF();
+
+/* ---------- complex numbers: {re, im}, parts are reals ---------- */
+const C = (re, im = Q0) => ({ re, im });
+const CI = C(Q0, Q1), C0 = C(Q0), C1 = C(Q1);
+const isRealC = (z) => isZero(z.im);
+const isExactC = (z) => isQ(z.re) && isQ(z.im);
+const cadd = (a, b) => C(radd(a.re, b.re), radd(a.im, b.im));
+const cneg = (a) => C(rneg(a.re), rneg(a.im));
+const csub = (a, b) => cadd(a, cneg(b));
+function cmul(a, b) {
+  if (isZeroExact(a.im) && isZeroExact(b.im)) return C(rmul(a.re, b.re));
+  return C(rsub(rmul(a.re, b.re), rmul(a.im, b.im)), radd(rmul(a.re, b.im), rmul(a.im, b.re)));
+}
+function cdiv(a, b) {
+  if (isZeroExact(b.re) && isZeroExact(b.im)) fail('Division by zero.');
+  if (isZeroExact(b.im)) return C(rdivR(a.re, b.re), rdivR(a.im, b.re));
+  if (isZeroExact(b.re)) return C(rdivR(a.im, b.im), rneg(rdivR(a.re, b.im)));
+  return withPrec(10, () => {
+    const den = radd(rmul(b.re, b.re), rmul(b.im, b.im));
+    const re = rdivR(radd(rmul(a.re, b.re), rmul(a.im, b.im)), den);
+    const im = rdivR(rsub(rmul(a.im, b.re), rmul(a.re, b.im)), den);
+    return C(round2W(re), round2W(im));
+  });
+}
+function cabs(z) {
+  if (isZeroExact(z.im)) return rabs(z.re);
+  if (isZeroExact(z.re)) return rabs(z.im);
+  return withPrec(10, () => round2W(rsqrt(radd(rmul(z.re, z.re), rmul(z.im, z.im)))));
+}
+function carg(z) { // principal argument in radians, in (-π, π]
+  const x = z.re, y = z.im;
+  if (isZero(x) && isZero(y)) fail('Zero has no argument (angle).');
+  return ratan2(y, x);
+}
+function ratan2(y, x) {
+  const sx = isNZ(x) ? 0 : rsign(x), sy = isNZ(y) ? 0 : rsign(y);
+  if (sx === 0 && sy === 0) fail('atan2(0, 0) has no angle.');
+  if (sx === 0) { const h = withPrec(4, () => rdivR(rpi(), Q2)); return round2W(sy > 0 ? h : rneg(h)); }
+  if (sy === 0 && isZeroExact(y)) return sx > 0 ? Q0 : rpi();
+  return withPrec(12, () => {
+    const t = ratan(rdivR(y, x));
+    if (sx > 0) return round2W(t);
+    return round2W(sy >= 0 ? radd(t, rpi()) : rsub(t, rpi()));
+  });
+}
+function csqrt(z) {
+  if (isRealC(z)) {
+    const x = z.re;
+    if (isNZ(z.im) && isNZ(x)) return C(nz(lse(x.e, z.im.e) / 2));
+    if (rsign(x) >= 0 || isNZ(x)) return C(rsqrt(isNZ(x) ? x : x));
+    return C(Q0, rsqrt(rneg(x)));
+  }
+  // principal square root, written to avoid cancellation
+  return withPrec(12, () => {
+    const a = z.re, b = z.im, r = cabs(z);
+    let re, im;
+    if (rsign(a) >= 0) { const t = rsqrt(rdivR(radd(r, a), Q2)); re = t; im = rdivR(b, rmul(Q2, t)); }
+    else { const t = rsqrt(rdivR(rsub(r, a), Q2)); re = rdivR(rabs(b), rmul(Q2, t)); im = rsign(b) < 0 ? rneg(t) : t; }
+    return C(round2W(re), round2W(im));
+  });
+}
+function cexp(z) {
+  if (isZeroExact(z.im)) return C(rexp(z.re));
+  return withPrec(12, () => {
+    const m = rexp(z.re), [s, c] = sinCosR(z.im);
+    return C(round2W(rmul(m, c)), round2W(rmul(m, s)));
+  });
+}
+function cln(z) {
+  if (isZero(z.re) && isZero(z.im)) fail('ln(0) is undefined: the logarithm of zero goes to minus infinity.');
+  if (isRealC(z) && !isNZ(z.re)) {
+    if (rsign(z.re) > 0) return C(rln(z.re));
+    return C(rln(rneg(z.re)), rpi());
+  }
+  return withPrec(12, () => {
+    let lr;
+    if (isZeroExact(z.re) || isNZ(z.re)) lr = rln(rabs(z.im));
+    else lr = rdivR(rln(radd(rmul(z.re, z.re), rmul(z.im, z.im))), Q2);
+    return C(round2W(lr), round2W(carg(z)));
+  });
+}
+function cpowInt(z, n) { // n: BigInt
+  if (n === 0n) { if (isZero(z.re) && isZero(z.im)) note('0^0 is taken as 1, by the usual convention.'); return C1; }
+  if (n < 0n) { if (isZero(z.re) && isZero(z.im)) fail('Zero to a negative power is division by zero.'); return cdiv(C1, cpowInt(z, -n)); }
+  if (isExactC(z)) {
+    if (isZeroExact(z.im)) { // a rational to a whole power: check the size first
+      const x = z.re;
+      if (x.n === 0n || x.n === x.d || x.n === -x.d) return C(x.n === 0n ? Q0 : (x.n < 0n && (n & 1n)) ? qi(-1) : Q1);
+      const bits = Number(n) * Math.max(log2B(x.n), log2B(x.d)); // the true size, not n × bit length (2 is 2 bits, 1 bit of size)
+      if (n > 2000000n || (x.d === 1n ? bits > EXACT_BITS + 64 : bits > FRAC_BITS + 64)) {
+        note(x.d === 1n ? 'The exact whole number would have more than 100,000 digits, so it is shown as a decimal.' : 'The exact fraction would be too long to keep, so it is shown as a decimal.');
+        return C(withPrec(blen(n) + 8, () => round2W(rpowIntF(q2f(x, W + 16 + blen(n)), n))));
+      }
+      return C(qCap(x.n ** n, x.d ** n));
+    }
+    if (isZeroExact(z.re) && (z.im.n === 1n || z.im.n === -1n) && z.im.d === 1n) { // ±i
+      const k = Number(((n % 4n) + 4n) % 4n), s = z.im.n;
+      return [C1, C(Q0, qi(s)), C(qi(-1)), C(Q0, qi(-s))][k];
+    }
+    if (n <= 4096n) {
+      const est = Number(n) * Math.max(blen(z.re.n), blen(z.re.d), blen(z.im.n), blen(z.im.d));
+      if (est < FRAC_BITS) return powSq(z, n);
+    }
+    return withPrec(2 * blen(n) + 24, () => powSq(C(toF(z.re), toF(z.im)), n));
+  }
+  if (isRealC(z) && !isNZ(z.re)) return C(withPrec(blen(n) + 8, () => round2W(rpowIntF(toF(z.re), n))));
+  if (n > 64n) return cexp(cmul(C(qi(n)), cln(z)));
+  return withPrec(2 * blen(n) + 24, () => powSq(z, n));
+}
+function powSq(z, n) { let r = C1, b = z; while (n > 0n) { if (n & 1n) r = cmul(r, b); n >>= 1n; if (n) b = cmul(b, b); } return r; }
+function rpowIntF(x, n) { // float to a whole power, with a size check first
+  const lx = Math.log2(Math.abs(toNum(x)));
+  checkRange(Number(n) * (isFinite(lx) ? lx : fmag(x) - 1));
+  if (n > 4096n) { // through exp and ln, at enough precision
+    const s = rsign(x) < 0 && (n & 1n) ? -1 : 1;
+    const r = withPrec(blen(n) + 24 + Math.log2(Math.abs(fmag(x)) + 2), () => rexp(rmul(qi(n), rln(rabs(x)))));
+    return s < 0 ? rneg(r) : r;
+  }
+  let r = null, b = x;
+  while (n > 0n) { if (n & 1n) r = r ? rmul(r, b) : b; n >>= 1n; if (n) b = rmul(b, b); }
+  return r;
+}
+function cpow(z, w, rootNote) {
+  if (isExactC(w) && isZeroExact(w.im) && w.re.d === 1n) return cpowInt(z, w.re.n);
+  if (isZero(z.re) && isZero(z.im)) {
+    if (isZeroExact(z.re) && isZeroExact(z.im)) {
+      if (isRealC(w) && rsign(w.re) > 0) return C0;
+      fail('Zero to a negative or complex power is undefined.');
+    }
+    if (isRealC(w) && rsign(w.re) > 0) return C(nz(Math.max(z.re.e || -Infinity, z.im.e || -Infinity) * toNum(w.re)));
+    fail('That power of a number that is zero to within the precision is undefined.');
+  }
+  // a rational to a rational power: try for an exact result
+  if (isExactC(z) && isZeroExact(z.im) && isExactC(w) && isZeroExact(w.im) && w.re.d <= 1000n) {
+    const x = z.re, p = w.re.n, q = Number(w.re.d);
+    if (x.n > 0n) { const r = rnthrootExact(x, q); if (r) return cpowInt(C(r), p); }
+    else if (q === 2) { const r = rnthrootExact(rneg(x), 2); if (r) return cpowInt(C(Q0, r), p); }
+  }
+  if (isExactC(z) && isZeroExact(z.im) && rsign(z.re) < 0 && isRealC(w) && rootNote !== false) note('A negative number to a fractional power gives the principal complex value. For a real odd root, use cbrt(x) or root(x, n).');
+  if (isRealC(z) && !isNZ(z.re) && rsign(z.re) > 0 && isRealC(w) && !isNZ(w.re)) {
+    let lnx = wp(20, () => rln(z.re));
+    const mag = Math.max(0, rmag(lnx) + rmag(w.re));
+    if (mag > 0) lnx = wp(20 + mag, () => rln(z.re));
+    return C(withPrec(mag + 20, () => rexp(rmul(w.re, lnx))));
+  }
+  const t = wp(20, () => cmul(w, cln(z)));
+  const mag = Math.max(rmag(t.re), rmag(t.im), 0);
+  return withPrec(mag + 20, () => cexp(cmul(w, cln(z))));
+}
+function cnroot(z, n) { // the principal n-th root, but the real root for a negative real and odd n
+  if (n === 0) fail('root(x, 0) is undefined.');
+  if (isRealC(z) && !isNZ(z.re)) {
+    const x = z.re;
+    const ex = rnthrootExact(x, Math.abs(n));
+    if (ex) return n > 0 ? C(ex) : cdiv(C1, C(ex));
+    if (rsign(x) < 0 && Math.abs(n) % 2 === 1) {
+      const r = cnroot(C(rneg(x)), n); return cneg(r);
+    }
+    if (rsign(x) >= 0) return cpow(z, C(Q(1n, BigInt(n))), false);
+  }
+  if (isRealC(z) && isNZ(z.re)) return C(nz(z.re.e / Math.abs(n)));
+  return cpow(z, C(Q(1n, BigInt(n))), false);
+}
+function csinCos(z) { // [sin z, cos z]
+  if (isZeroExact(z.im)) { const [s, c] = sinCosR(z.re); return [C(s), C(c)]; }
+  return withPrec(14, () => {
+    const [s, c] = sinCosR(z.re), ep = rexp(z.im), em = rinv(ep);
+    const ch = rdivR(radd(ep, em), Q2), sh = rsinh(z.im);
+    return [C(round2W(rmul(s, ch)), round2W(rmul(c, sh))), C(round2W(rmul(c, ch)), round2W(rneg(rmul(s, sh))))];
+  });
+}
+function rsinh(x) {
+  if (isZeroExact(x)) return Q0;
+  const mx = rmag(x);
+  return withPrec(Math.max(0, -mx) + 12, () => { const ep = rexp(x); return round2W(rdivR(rsub(ep, rinv(ep)), Q2)); });
+}
+function rcosh(x) { if (isZeroExact(x)) return Q1; return withPrec(12, () => { const ep = rexp(x); return round2W(rdivR(radd(ep, rinv(ep)), Q2)); }); }
+function rtanh(x) {
+  if (isZeroExact(x)) return Q0;
+  const v = toNum(x);
+  if (Math.abs(v) > (W + 20) * Math.LN2 / 2) return rsign(x) > 0 ? { k: 'f', m: 1n, e: 0, a: W + 10 } : { k: 'f', m: -1n, e: 0, a: W + 10 };
+  const mx = rmag(x);
+  return withPrec(Math.max(0, -mx) + 12, () => { const e2 = rexp(rmul(Q2, x)); return round2W(rdivR(rsub(e2, Q1), radd(e2, Q1))); });
+}
+function csinh(z) { if (isZeroExact(z.im)) return C(rsinh(z.re)); return withPrec(12, () => { const a = cexp(z), b = cexp(cneg(z)); const r = cdiv(csub(a, b), C(Q2)); return C(round2W(r.re), round2W(r.im)); }); }
+function ccosh(z) { if (isZeroExact(z.im)) return C(rcosh(z.re)); return withPrec(12, () => { const a = cexp(z), b = cexp(cneg(z)); const r = cdiv(cadd(a, b), C(Q2)); return C(round2W(r.re), round2W(r.im)); }); }
+function ctanh(z) { // tanh(a + bi) = (sinh 2a + i sin 2b) / (cosh 2a + cos 2b)
+  if (isZeroExact(z.im)) return C(rtanh(z.re));
+  const a2 = rmul(Q2, z.re), b2 = rmul(Q2, z.im);
+  if (rmag(a2) > 18 && Math.abs(toNum(a2)) > (W + 20) * Math.LN2) { // cosh 2a swamps cos 2b
+    return withPrec(14, () => { const [s] = sinCosR(b2), e = rexp(rneg(rabs(a2))); return C({ k: 'f', m: rsign(a2) > 0 ? 1n : -1n, e: 0, a: W + 20 }, rmul(rmul(Q2, s), e)); });
+  }
+  return withPrec(20 + Math.max(0, -rmag(z.re)), () => {
+    const [s, c] = sinCosR(b2), den = radd(rcosh(a2), c);
+    if (isZero(den)) fail('tanh is undefined here: it has a pole.');
+    return C(rdivR(rsinh(a2), den), rdivR(s, den));
+  });
+}
+function ctan(z) { // tan(a + bi) = (sin 2a + i sinh 2b) / (cos 2a + cosh 2b)
+  if (isZeroExact(z.im)) { const [s, c] = sinCosR(z.re); if (isZero(c)) fail('tan is undefined here: the cosine is zero' + (isZeroExact(c) ? '.' : ' to within the working precision.')); return C(withPrec(8, () => rdivR(s, c))); }
+  const r = ctanh(C(rneg(z.im), z.re)); // tan z = −i tanh(iz), iz = −b + ai
+  return C(r.im, rneg(r.re));
+}
+const fin = (z) => C(round2W(z.re), round2W(z.im));
+function casin(z) {
+  if (isRealC(z) && !isNZ(z.re)) {
+    const x = z.re, c = rcmp(rabs(x), Q1);
+    if (c === 0) { const h = withPrec(4, () => rdivR(rpi(), Q2)); return C(round2W(rsign(x) > 0 ? h : rneg(h))); }
+    if (c < 0) return C(withPrec(14, () => round2W(ratan(rdivR(x, rsqrt(rmul(rsub(Q1, x), radd(Q1, x))))))));
+  }
+  if (isRealC(z) && isNZ(z.re)) return C(z.re);
+  // asin z = -i ln(iz + sqrt(1 - z²))
+  return withPrec(20, () => {
+    const iz = cmul(CI, z), s = csqrt(csub(C1, cmul(z, z)));
+    let r = cmul(cneg(CI), cln(cadd(iz, s)));
+    if (isRealC(z) && rsign(z.re) > 0) r = C(r.re, rneg(rabs(r.im))); // on the cut, match the usual convention
+    if (isRealC(z) && rsign(z.re) < 0) r = C(r.re, rabs(r.im));
+    return fin(r);
+  });
+}
+function cacos(z) {
+  if (isRealC(z) && !isNZ(z.re)) {
+    const x = z.re, c = rcmp(rabs(x), Q1);
+    if (c === 0) return rsign(x) > 0 ? C(Q0) : C(rpi());
+    if (c < 0) return C(withPrec(14, () => round2W(rmul(Q2, ratan(rsqrt(rdivR(rsub(Q1, x), radd(Q1, x))))))));
+  }
+  return withPrec(20, () => { const h = rdivR(rpi(), Q2), a = casin(z); return fin(C(rsub(h, a.re), rneg(a.im))); });
+}
+function catan(z) {
+  if (isRealC(z)) return C(ratan(z.re));
+  if (isZero(z.re) && isExactC(z) && (z.im.n === z.im.d || z.im.n === -z.im.d)) fail('atan(±i) is undefined: it goes to infinity.');
+  // atan z = (i/2)(ln(1 - iz) - ln(1 + iz))
+  return withPrec(20, () => {
+    const iz = cmul(CI, z);
+    const d = csub(cln(csub(C1, iz)), cln(cadd(C1, iz)));
+    return fin(cmul(C(Q0, QH), d));
+  });
+}
+
+/* ---------- gamma (real arguments) ---------- */
+const TAN = [0n, 1n]; // tangent numbers, for the Bernoulli numbers
+let BERN = [];         // BERN[k] = B_{2k} as a rational
+function bernoulli(k) { // B_{2k}, k >= 1, from tangent numbers (Brent and Harvey)
+  if (BERN[k]) return BERN[k];
+  const n = Math.max(k, 2 * BERN.length + 8);
+  const T = new Array(n + 1).fill(0n); T[1] = 1n;
+  for (let j = 2; j <= n; j++) T[j] = BigInt(j - 1) * T[j - 1];
+  for (let j = 2; j <= n; j++) for (let i = j; i <= n; i++) T[i] = BigInt(i - j) * T[i - 1] + BigInt(i - j + 2) * T[i];
+  BERN = [null];
+  for (let j = 1; j <= n; j++) {
+    const f = 4n ** BigInt(j);
+    const v = Q(BigInt(2 * j) * T[j], f * (f - 1n));
+    BERN[j] = j % 2 ? v : { k: 'q', n: -v.n, d: v.d };
+  }
+  return BERN[k];
+}
+function lnGammaBig(z) { // ln Γ(z) for a float z >= about the working digits, by Stirling's series
+  const half = QH;
+  let s = rsub(rmul(rsub(z, half), rln(z)), z);
+  s = radd(s, rdivR(rln(rmul(Q2, rpi())), Q2));
+  const z2 = rmul(z, z), lim = -(W + 10);
+  let zp = z; // z^(2k-1)
+  for (let k = 1; k < 2000; k++) {
+    const B = bernoulli(k), t = rdivR(rdivR(B, qi(2 * k * (2 * k - 1))), zp);
+    s = radd(s, t);
+    if (rmag(t) - rmag(s) < lim) break;
+    zp = rmul(zp, z2);
+  }
+  return s;
+}
+function rgamma(x) {
+  if (isNZ(x)) fail('gamma has a pole at 0.');
+  if (isInt(x)) {
+    if (x.n <= 0n) fail('gamma has a pole at 0, −1, −2, … and this is one of them.');
+    return factorialR(x.n - 1n);
+  }
+  const v = toNum(x);
+  if (v > 25300) fail('gamma of that number is larger than about 10^100000, beyond what this calculator handles.');
+  if (v < 0.5) { // reflection: Γ(x) = π / (sin(πx) Γ(1 − x))
+    if (v < -25300) fail('gamma of that number is smaller than about 10^-100000, beyond what this calculator handles.');
+    return withPrec(40, () => {
+      const s = sinPi(x);
+      if (isNZ(s)) fail('That is too close to one of gamma’s poles (0, −1, −2, …) to tell at this precision.');
+      return round2W(rdivR(rpi(), rmul(s, rgamma(rsub(Q1, x)))));
+    });
+  }
+  const digits = Math.ceil(W * LOG10_2);
+  const N = Math.max(0, Math.ceil(digits - v));
+  const lg = Math.log2(Math.max(2, (v + N) * Math.log(v + N + 1)));
+  return withPrec(60 + lg, () => {
+    let z = radd(x, qi(N)), prod = Q1;
+    for (let j = 0; j < N; j++) prod = rmul(prod, radd(x, qi(j)));
+    const zf = toF(z);
+    const l = lnGammaBig(zf);
+    return round2W(rdivR(rexp(l), prod));
+  });
+}
+function sinPi(x) { // sin(πx) with an exact reduction for rationals
+  if (x.k === 'q') {
+    let r = Q(((x.n % (2n * x.d)) + 2n * x.d) % (2n * x.d), x.d); // x mod 2, in [0, 2)
+    if (rcmp(r, Q1) > 0) r = rsub(r, Q2);                           // now in (-1, 1]
+    if (rcmp(r, QH) > 0) r = rsub(Q1, r);                           // sin(πr) = sin(π(1 − r))
+    else if (rcmp(r, rneg(QH)) < 0) r = rsub(qi(-1), r);            // sin(πr) = sin(π(−1 − r))
+    if (r.n === 0n) return Q0;
+    if (r.n === 1n && r.d === 2n) return Q1;
+    if (r.n === -1n && r.d === 2n) return qi(-1);
+    return sinCosR(wp(8, () => rmul(r, rpi())))[0];
+  }
+  return sinCosR(rmul(x, rpi()))[0];
+}
+function factorialR(n) { // n! for a whole n >= 0
+  if (n < 0n) fail('Factorial needs a whole number that is 0 or more.');
+  if (n < 2n) return Q1;
+  const digits = Number(n) < 30 ? 30 : (Number(n) * Math.log10(Number(n) / Math.E) + Math.log10(2 * Math.PI * Number(n)) / 2);
+  if (digits > 100000) fail(`${n}! is larger than about 10^100000, beyond what this calculator handles.`);
+  if (digits > 99990) { note('The exact factorial would have more than 100,000 digits, so it is shown as a decimal.'); return withPrec(30, () => rexp(lnGammaBig(toF(qi(n + 1n))))); }
+  const prod = (a, b) => { if (b - a < 16n) { let p = 1n; for (let i = a; i <= b; i++) p *= i; return p; } const m = (a + b) >> 1n; return prod(a, m) * prod(m + 1n, b); };
+  return qi(prod(2n, n));
+}
+
+/* ---------- whole-number functions ---------- */
+const SMALL_PRIMES = (() => { const N = 65536, s = new Uint8Array(N), out = []; for (let i = 2; i < N; i++) if (!s[i]) { out.push(i); for (let j = i * i; j < N; j += i) s[j] = 1; } return out; })();
+function modpow(b, e, m) { let r = 1n; b %= m; if (b < 0n) b += m; while (e > 0n) { if (e & 1n) r = r * b % m; e >>= 1n; if (e) b = b * b % m; } return r; }
+function mrStrong(n, a) { // strong probable prime test to base a
+  let d = n - 1n, s = 0; while (!(d & 1n)) { d >>= 1n; s++; }
+  let x = modpow(a, d, n);
+  if (x === 1n || x === n - 1n) return true;
+  for (let i = 1; i < s; i++) { x = x * x % n; if (x === n - 1n) return true; if (x === 1n) return false; }
+  return false;
+}
+function jacobi(a, n) { a %= n; if (a < 0n) a += n; let t = 1; while (a !== 0n) { while (!(a & 1n)) { a >>= 1n; const r = n % 8n; if (r === 3n || r === 5n) t = -t; } [a, n] = [n, a]; if (a % 4n === 3n && n % 4n === 3n) t = -t; a %= n; } return n === 1n ? t : 0; }
+function lucasStrong(n) { // strong Lucas probable prime test, Selfridge's parameters
+  let D = 5n; for (;;) { const j = jacobi(D, n); if (j === -1) break; if (j === 0 && babs(D) !== n) return false; D = D > 0n ? -(D + 2n) : -(D - 2n); if (D === 13n) { const r = isqrt(n); if (r * r === n) return false; } }
+  const P = 1n, Qp = (1n - D) / 4n;
+  let d = n + 1n, s = 0; while (!(d & 1n)) { d >>= 1n; s++; }
+  const mod = (x) => { x %= n; return x < 0n ? x + n : x; };
+  const half = (x) => (((x & 1n) ? x + n : x) >> 1n) % n; // x in [0, n): x/2 mod n
+  let U = 0n, V = 2n, Qk = 1n; // U_0, V_0, Q^0
+  const bits = d.toString(2);
+  for (const bit of bits) {
+    // double: U_2k = U_k V_k, V_2k = V_k² - 2Q^k
+    U = mod(U * V); V = mod(V * V - 2n * Qk); Qk = mod(Qk * Qk);
+    if (bit === '1') { // add one: U_{k+1} = (P U + V)/2, V_{k+1} = (D U + P V)/2
+      const U2 = half(mod(P * U + V)), V2 = half(mod(D * U + P * V)); U = U2; V = V2; Qk = mod(Qk * Qp);
+    }
+  }
+  if (U === 0n || V === 0n) return true;
+  for (let r = 1; r < s; r++) { V = mod(V * V - 2n * Qk); Qk = mod(Qk * Qk); if (V === 0n) return true; }
+  return false;
+}
+const MR_BASES = [2n, 3n, 5n, 7n, 11n, 13n, 17n, 19n, 23n, 29n, 31n, 37n, 41n];
+const MR_LIMIT = 3317044064679887385961981n; // these 13 bases decide every n below this
+function isPrimeB(n) { // returns 0 (composite), 1 (prime, proved), 2 (probable prime)
+  if (n < 2n) return 0;
+  for (const p of SMALL_PRIMES.slice(0, 60)) { const P = BigInt(p); if (n === P) return 1; if (n % P === 0n) return 0; }
+  if (n < 80000n) { for (const p of SMALL_PRIMES) { const P = BigInt(p); if (P * P > n) return 1; if (n % P === 0n) return 0; } return 1; }
+  if (n < MR_LIMIT) { for (const a of MR_BASES) if (!mrStrong(n, a)) return 0; return 1; }
+  if (blen(n) > 33300) fail('That number is too large to test for primality here (more than 10,000 digits).');
+  for (const p of SMALL_PRIMES.slice(60, 2000)) if (n % BigInt(p) === 0n) return 0;
+  if (!mrStrong(n, 2n)) return 0;
+  return lucasStrong(n) ? 2 : 0;
+}
+function pollardBrent(n) { // a nontrivial factor of composite n, or null when time runs out
+  if (!(n & 1n)) return 2n;
+  for (let c = 1n; c < 200n; c++) {
+    let y = 2n + c, r = 1, q = 1n, g = 1n, x = y, ys = y;
+    const f = (v) => (v * v + c) % n;
+    while (g === 1n) {
+      x = y; for (let i = 0; i < r; i++) y = f(y);
+      let k = 0;
+      while (k < r && g === 1n) {
+        ys = y; const lim = Math.min(128, r - k);
+        for (let i = 0; i < lim; i++) { y = f(y); q = q * babs(x - y) % n; }
+        g = bgcd(q, n); k += lim;
+        if (Date.now() > BUDGET_END) return null;
+      }
+      r *= 2;
+    }
+    if (g === n) { g = 1n; while (g === 1n) { ys = f(ys); g = bgcd(babs(x - ys), n); } }
+    if (g !== n) return g;
+  }
+  return null;
+}
+function factorB(n) { // {factors: Map prime -> exponent, probable: bool, rest: BigInt or null}
+  const fs = new Map(); let probable = false; const rest = [];
+  const add = (p, k = 1) => fs.set(p, (fs.get(p) || 0) + k);
+  if (n < 0n) n = -n;
+  for (const p of SMALL_PRIMES) { const P = BigInt(p); if (P * P > n) break; while (n % P === 0n) { add(P); n /= P; } }
+  const stack = n > 1n ? [n] : [];
+  while (stack.length) {
+    const m = stack.pop();
+    const pr = isPrimeB(m);
+    if (pr) { add(m); if (pr === 2) probable = true; continue; }
+    const r = isqrt(m); if (r * r === m) { stack.push(r, r); continue; }
+    const f = pollardBrent(m);
+    if (!f) { rest.push(m); continue; }
+    stack.push(f, m / f);
+  }
+  return { fs, probable, rest };
+}
+function fibB(n) { // [F(n), F(n+1)] by fast doubling, n >= 0 (Number)
+  if (n === 0) return [0n, 1n];
+  const [a, b] = fibB(Math.floor(n / 2));
+  const c = a * (2n * b - a), d = a * a + b * b;
+  return n % 2 ? [d, c + d] : [c, d];
+}
+
+/* ---------- formatting ---------- */
+function decDigits(num, den, k) { // |num/den| to k significant digits: {s, d} (value = 0.s × 10^(d+1))
+  num = babs(num);
+  const L = blen(num) - blen(den);
+  let d = Math.floor((L - 1) * LOG10_2);
+  for (let guard = 0; guard < 8; guard++) {
+    const s = d - k + 1; let a = num, b = den;
+    if (s >= 0) b *= pow10(s); else a *= pow10(-s);
+    let M = a / b; const r2 = 2n * (a - M * b); if (r2 >= b) M += 1n; // half away from zero
+    if (M >= pow10(k)) { d++; continue; }
+    if (M < pow10(k - 1)) { d--; continue; }
+    return { s: M.toString(), d };
+  }
+  throw new Error('decDigits did not settle');
+}
+function placeDigits(neg, s, d, sci) { // digit string s with first-digit exponent d
+  let out;
+  if (!sci && d >= -6 && d < s.length) {
+    if (d >= 0) { const ip = s.slice(0, d + 1), fp = s.slice(d + 1).replace(/0+$/, ''); out = fp ? ip + '.' + fp : ip; }
+    else { const fp = ('0'.repeat(-d - 1) + s).replace(/0+$/, ''); out = '0.' + fp; }
+  } else {
+    const fp = s.slice(1).replace(/0+$/, '');
+    out = s[0] + (fp ? '.' + fp : '') + ' × 10^' + d;
+  }
+  return (neg ? '−' : '') + out;
+}
+function reliableDigits(x) { // significant digits a float can honestly show
+  if (x.k === 'q') return Infinity;
+  if (isNZ(x)) return 0;
+  return Math.floor((x.a - 1) * LOG10_2);
+}
+function fmtReal(x, mode, k) { // mode 'exact' or 'dec'; k = digits to show
+  k = k || DIGITS;
+  if (x.k === 'q') {
+    if (x.d === 1n) {
+      const s = babs(x.n).toString();
+      if (mode === 'exact' || s.length <= k) return (x.n < 0n ? '−' : '') + s;
+      const dd = decDigits(x.n, 1n, k); return placeDigits(x.n < 0n, dd.s, dd.d, true);
+    }
+    if (mode === 'exact') { const t = exactDecimal(x); return t || (x.n < 0n ? '−' : '') + babs(x.n) + '/' + x.d; }
+    const dd = decDigits(x.n, x.d, k); return placeDigits(x.n < 0n, dd.s, dd.d, false);
+  }
+  if (isNZ(x)) return '0';
+  const kk = Math.max(1, Math.min(k, reliableDigits(x)));
+  const m = x.m, num = x.e >= 0 ? babs(m) << BigInt(x.e) : babs(m), den = x.e >= 0 ? 1n : 1n << BigInt(-x.e);
+  const dd = decDigits(num, den, kk);
+  return placeDigits(m < 0n, dd.s, dd.d, false);
+}
+function exactDecimal(q, maxLen = 2000) { // the full decimal of a fraction that ends, or null
+  if (!terminates(q.d)) return null;
+  let a = 0, b = 0, d = q.d; while (d % 2n === 0n) { d /= 2n; a++; } while (d % 5n === 0n) { d /= 5n; b++; }
+  const k = Math.max(a, b); if (k + blen(q.n) * LOG10_2 > maxLen) return null;
+  const s = (babs(q.n) * pow10(k) / q.d).toString().padStart(k + 1, '0');
+  return (q.n < 0n ? '−' : '') + s.slice(0, s.length - k) + '.' + s.slice(s.length - k);
+}
+function terminates(d) { while (d % 2n === 0n) d /= 2n; while (d % 5n === 0n) d /= 5n; return d === 1n; }
+function repeating(q, maxPeriod = 60) { // 0.1(6) style for a fraction whose period is short, else null
+  if (q.d === 1n || terminates(q.d)) return null;
+  let n = babs(q.n), d = q.d; const ip = n / d; let r = n % d;
+  const seen = new Map(); let digits = '';
+  while (!seen.has(r)) { if (digits.length > maxPeriod + 40) return null; seen.set(r, digits.length); r *= 10n; digits += (r / d).toString(); r %= d; }
+  const st = seen.get(r), pre = digits.slice(0, st), per = digits.slice(st);
+  if (per.length > maxPeriod) return null;
+  return { text: (q.n < 0n ? '−' : '') + ip + '.' + pre + '(' + per + ')', period: per.length };
+}
+function fmtC(z, mode, k) { // {text, dropped}
+  k = k || DIGITS;
+  let re = z.re, im = z.im, dropped = '';
+  if (isNZ(im)) im = Q0;
+  if (isNZ(re) && !isZero(im)) re = Q0;
+  if (!isZero(re) && !isZeroExact(im) && im.k === 'f' && rmag(im) < rmag(re) - k * LOG2_10 - 2) { dropped = 'im'; im = Q0; }
+  if (!isZero(im) && !isZeroExact(re) && re.k === 'f' && rmag(re) < rmag(im) - k * LOG2_10 - 2) { dropped = 're'; re = Q0; }
+  if (isZeroExact(im)) return { text: fmtReal(re, mode, k), dropped };
+  const neg = rsign(im) < 0, ai = rabs(im);
+  let it = fmtReal(ai, mode, k);
+  if (it === '1') it = ''; else if (/[/×]/.test(it)) it = '(' + it + ')';
+  const itext = it + 'i';
+  if (isZeroExact(re)) return { text: (neg ? '−' : '') + itext, dropped };
+  return { text: fmtReal(re, mode, k) + (neg ? ' − ' : ' + ') + itext, dropped };
+}
+
+return {
+  // settings
+  setDigits(d) { DIGITS = d; W = bitsFor(d); }, get digits() { return DIGITS; }, get bits() { return W; },
+  startNotes() { NOTES = []; }, takeNotes() { const n = NOTES || []; NOTES = null; return n; }, note,
+  setBudget(ms) { BUDGET_END = Date.now() + ms; }, clearBudget() { BUDGET_END = Infinity; },
+  HPError, fail,
+  // bigint
+  babs, blen, bgcd, isqrt, iroot, pow10, fdivB, rdivB: rdiv,
+  // reals
+  Q, qi, Q0, Q1, Q2, QH, isQ, isNZ, isZero, isZeroExact, isInt, radd, rsub, rmul, rdiv: rdivR, rneg, rinv, rabs, rsign, rcmp, rmag, toNum, toF, q2f, withPrec, round2W,
+  rexp, rln, sinCosR, ratan, ratan2, rsqrt, rpi, rgamma, sinPi, factorialR, rsinh, rcosh, rtanh, reliableDigits, errExp, fmag, nz, ln2F,
+  // complex
+  C, CI, C0, C1, isRealC, isExactC, cadd, csub, cmul, cdiv, cneg, cabs, carg, csqrt, cexp, cln, cpow, cpowInt, cnroot, csinCos, csinh, ccosh, ctanh, ctan, casin, cacos, catan,
+  // integers
+  isPrimeB, factorB, fibB, modpow, SMALL_PRIMES,
+  // formatting
+  fmtReal, fmtC, decDigits, placeDigits, repeating, terminates, exactDecimal,
+};
+})();
+/* ---------- Higher Powers: the expression language ----------
+   A tokenizer, a recursive-descent parser, a printer that shows how an expression was read, and an
+   evaluator over the number engine. Written from scratch; nothing typed in is ever run as code.
+
+   API (stable; shared byte-identical with other pages, which INCLUDE this file):
+   A self-contained module with no DOM, storage or network use. Include pages/higherpowers.num.js
+   first: this defines one constant, HPC, in the same scope, and uses HPN.
+
+   Parsing and evaluating an expression with named constants:
+     HPN.setDigits(30);
+     HPC.setConstants([{ id: 'golden_ratio', name: 'Golden ratio', value: '1.6180339887498948482045868343656381177203', exact: false }]);
+         // optional: each id becomes a built-in name. value is a plain decimal string, with no
+         // exponent and no padding zeros beyond its known digits; exact: true
+         // means the digits are the whole value, false that it is correct to the digits given.
+         // Calling it again replaces the list. pi (π), e and i are always built in.
+     const ast = HPC.parse('2 × golden_ratio + x²', (name) => name === 'x');
+         // -> a syntax tree, or null for an empty line. The second argument says which names are
+         // the caller's variables (it lets a variable share a function's name). Throws HPN.HPError
+         // with .node = {pos, end} marking the bad part of the line. A number typed with … (or ...)
+         // straight after it, such as 1.6180339887…, is taken as correct only to the digits given (a
+         // decimal with that error bound), not as the exact fraction a plain decimal is.
+         // The usual printed forms are read too (sin⁻¹x, sin²x, sin 30°, log₂ 8, |x|, ⌊x⌋, 5C2, n!!, 17 mod 5);
+         // ast.notes lists, in plain words, each convention that was applied ([] when none), and the same
+         // notes are given to HPN.note, so a page gathering notes gets them with the result.
+     HPC.freeNames(ast)          // Set of the names it needs that aren't built in: here {'x'}.
+     const z = HPC.evaluate(ast, { lookup: (name) => name === 'x' ? HPC.parseDecimal('3') : null,
+                                   angle: 'rad', ds: { neg: 'ignore', dec: 'all' } });
+         // -> a complex value {re, im}. lookup gives each variable's value, or null when it has none
+         // (evaluate then throws "x has no value yet."). angle is 'rad' or 'deg'. ds says what digitsum
+         // and digitalroot do with a negative number ('ignore' or 'keep') and a decimal ('all' or
+         // 'whole'); left as '' they throw HPC.HPAsk (.kind 'neg' or 'dec', .fn the function's name)
+         // so a page can ask the reader. Every other failure throws HPN.HPError, as above.
+     HPN.fmtC(z, 'dec', 12).text // -> "12.2360679775": see the formatting notes in higherpowers.num.js.
+     HPC.show(ast)               // -> "(2 × golden_ratio) + (x ^ 2)": how the line was read, bracketed.
+     HPC.show(ast, new Map([['x', '3']]))   // the same with values written in for the names.
+
+   Names and values:
+     HPC.validName(s)            '' when s can be a variable's name, else a sentence saying why not
+                                 (built-in names, named constants and function names are refused).
+     HPC.isBuiltinName(s)        pi, π, e, i or a named constant's id.
+     HPC.parseDecimal(s)         the EXACT value of a plain decimal string, as a complex: an optional
+                                 sign, digits with an optional point, an optional exponent
+                                 ("-6.62607015e-34", "42", "+.5E3"). null for anything else, or
+                                 for an exponent beyond ±100000. No binary rounding happens.
+     HPC.constValue(id)          a built-in name's value at the current precision.
+     HPC.FN                      the functions, by lower-case name: {name, min, max, ...}.
+*/
+const HPC = (() => {
+'use strict';

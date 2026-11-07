@@ -465,7 +465,7 @@ table.nums td:last-child{overflow-wrap:anywhere;white-space:normal}
     <p class="lead">Paste the cache's formulas, one per line, in the order the puzzle gives them. Names can be single words, several words, or hyphenated; a hyphen with spaces around it is a minus sign.</p>
     <div class="field">
       <textarea class="numin txt" id="fx-in" rows="7" spellcheck="false" autocomplete="off" aria-labelledby="h1-s" aria-describedby="fx-help"></textarea>
-      <p class="help" id="fx-help">Use + − × ÷ (or x, *, /), ^ for powers, and brackets. “6 x Name”, “6 Name” and “6(Name)” all multiply; an x between two values means times, otherwise it’s a name. Powers go first, then × and ÷, then + and −, and a multiplication with no sign, like 3A or 2(B), goes before a ÷ next to it. The read-back shows the order in brackets. Labels like “A =” at the start of a line are ignored.</p>
+      <p class="help" id="fx-help">Use + − × ÷ (or x, *, /), ^ for powers, and brackets. “6 x Name”, “6 Name” and “6(Name)” all multiply; an x between two values means times (6 x 5, 3x2, 6 x −5), otherwise it’s a name (X + 5, 3X, 3X − 1). Powers go first, then × and ÷, then + and −, and a multiplication with no sign, like 3A or 2(B), goes before a ÷ next to it. The read-back shows the order in brackets. Labels like “A =” at the start of a line are ignored.</p>
       <label class="inline small"><input type="checkbox" id="fx-hyph"> Treat every hyphen as a minus sign (for formulas like A-B)</label>
     </div>
     <div id="fx-read"></div>
@@ -545,9 +545,10 @@ table.nums td:last-child{overflow-wrap:anywhere;white-space:normal}
       if (num) { toks.push({ t:'num', v: parseFloat(num[0]) }); i += num[0].length; joinable = false; continue; }
       if ('+-−*/^()'.includes(ch)) { toks.push({ t:'op', v: ch === '−' ? '-' : ch }); i++; joinable = false; continue; }
       // x on its own means "times", but only between two operands (6 x Name, A x2, A x(B), 6 x -5);
-      // anywhere else (X + 5, 3X, 3X-1, x - 1) it is a name like any other.
+      // anywhere else (X + 5, 3X, 3X-1, 3X -1, x - 1) it is a name like any other. Before a minus it
+      // means times only with a space before it, so an x glued to the value before it stays a name.
       if ((ch === 'x' || ch === 'X') && operandEnd(toks[toks.length - 1]) && !(isLetter(s[i + 1]) || /['’]/.test(s[i + 1] || '') || (!hyph && s[i + 1] === '-' && isLetter(s[i + 2])))) {
-        const m = s.slice(i + 1).match(/^( *)(.?)(.?)/), gap = m[1].length > 0, nx = m[2], spaced = gap || s[i - 1] === ' ';
+        const m = s.slice(i + 1).match(/^( *)(.?)(.?)/), gap = m[1].length > 0, nx = m[2], spaced = s[i - 1] === ' ';
         if (/[0-9(]/.test(nx) || (gap && isLetter(nx)) || (spaced && (nx === '-' || nx === '−') && /[0-9(A-Za-z\u00C0-\u024F]/.test(m[3]))) { toks.push({ t:'op', v:'*' }); i++; joinable = false; continue; }
       }
       const nm = s.slice(i).match(wordRe);
@@ -627,6 +628,45 @@ table.nums td:last-child{overflow-wrap:anywhere;white-space:normal}
   }
   function miles(a, b){ const R = 3958.8, r = Math.PI / 180, dLat = (b.lat - a.lat) * r, dLon = (b.lon - a.lon) * r; const h = Math.sin(dLat / 2) ** 2 + Math.cos(a.lat * r) * Math.cos(b.lat * r) * Math.sin(dLon / 2) ** 2; return 2 * R * Math.asin(Math.sqrt(h)); }
 
+
+  /* ---------- which part each line is ---------- */
+  // st.slotLines is every line of Step 1 as last seen, blank ones included, and st.slotAll the choice
+  // for each (null for a line that hasn't had one). A line keeps its choice while it is edited, even
+  // through being emptied and retyped; lines added get the usual layout; formulas pasted over the old
+  // ones (two or more lines, none in common) start again from the usual layout.
+  let fullOf = [];   // for each formula row (blank lines skipped), its index in st.slotLines
+  const likeness = (a, b) => { if (a === b) return 1e6; let p = 0; while (p < a.length && p < b.length && a[p] === b[p]) p++; let q = 0; while (q < a.length && q < b.length && a[a.length - 1 - q] === b[b.length - 1 - q]) q++; return Math.max(p, q); };
+  // pair each line of the shorter list with one of the longer list, in order, as alike as possible
+  function pairUp(short, long){
+    const k = short.length, m = long.length, best = Array.from({ length: k + 1 }, () => new Array(m + 1).fill(-Infinity));
+    for (let j = 0; j <= m; j++) best[k][j] = 0;
+    for (let i = k - 1; i >= 0; i--) for (let j = m - 1; j >= 0; j--) best[i][j] = Math.max(best[i][j + 1], likeness(short[i], long[j]) + best[i + 1][j + 1]);
+    const pick = []; for (let i = 0, j = 0; i < k; j++) if (best[i][j] === likeness(short[i], long[j]) + best[i + 1][j + 1]) { pick.push(j); i++; }
+    return pick;
+  }
+  function matchSlots(now){
+    const nb = (a) => a.filter(Boolean);
+    let was = Array.isArray(st.slotLines) && Array.isArray(st.slotAll) && st.slotAll.length === st.slotLines.length ? st.slotLines : null, had = was ? st.slotAll : null;
+    if (!was && Array.isArray(st.slots)) {   // saved before lines were tracked: the choices go to the lines in order
+      let r = 0; was = now; had = now.map((l) => (l ? st.slots[r++] : null) || null);
+    }
+    let slots;
+    if (!was || !Array.isArray(st.slots) || (nb(now).length >= 2 && (!nb(was).length || (nb(was).length >= 2 && !nb(now).some((l) => was.includes(l)))))) slots = now.map(() => null);
+    else {
+      let p = 0; while (p < was.length && p < now.length && was[p] === now[p]) p++;
+      let q = 0; while (q < was.length - p && q < now.length - p && was[was.length - 1 - q] === now[now.length - 1 - q]) q++;
+      const wm = was.slice(p, was.length - q), nm = now.slice(p, now.length - q), mid = nm.map(() => null);
+      if (wm.length === nm.length) wm.forEach((_, i) => { mid[i] = had[p + i]; });                                         // edited in place
+      else if (wm.length < nm.length) pairUp(wm, nm).forEach((j, i) => { mid[j] = had[p + i]; });                        // lines added
+      else pairUp(nm, wm).forEach((j, i) => { mid[i] = had[p + j]; });                                                    // lines removed
+      slots = [...had.slice(0, p), ...mid, ...had.slice(was.length - q)];
+    }
+    // a formula line with no choice yet gets the usual part for its place, unless another line has it
+    fullOf = []; now.forEach((l, i) => { if (l) fullOf.push(i); });
+    fullOf.forEach((f, r) => { if (!slots[f]) { const u = r < 6 ? SLOTS[r][0] : 'none'; slots[f] = u !== 'none' && !slots.includes(u) ? u : 'none'; } });
+    st.slotLines = now; st.slotAll = slots; st.slots = fullOf.map((f) => slots[f]);
+  }
+
   /* ---------- render ---------- */
   let lines = [];
   function render(){
@@ -654,21 +694,7 @@ table.nums td:last-child{overflow-wrap:anywhere;white-space:normal}
       const box = $('#fx-vars').querySelector(`input[data-name="${CSS.escape(n)}"]`);
       if (box) { if (t && !(n in vals)) box.setAttribute('aria-invalid', 'true'); else box.removeAttribute('aria-invalid'); }
     }
-    // keep each line's choice when lines are edited, added or removed, and give new lines the usual
-    // layout; formulas pasted over the old ones (no line in common) start again from the usual layout
-    const oldLines = Array.isArray(st.slotLines) ? st.slotLines : [];
-    if (!Array.isArray(st.slots) || (oldLines.length && raw.length && !raw.some((l) => oldLines.includes(l)))) st.slots = [];
-    // a line that is still there keeps its choice (matched in order, as a diff would); a line edited
-    // in place keeps the choice of the line it replaced; a new line gets the usual layout, unless a
-    // kept line already has that part
-    const n0 = oldLines.length, n1 = raw.length, dp = Array.from({ length: n0 + 1 }, () => new Array(n1 + 1).fill(0));
-    for (let a = n0 - 1; a >= 0; a--) for (let b = n1 - 1; b >= 0; b--) dp[a][b] = oldLines[a] === raw[b] ? dp[a + 1][b + 1] + 1 : Math.max(dp[a + 1][b], dp[a][b + 1]);
-    const match = new Array(n1).fill(-1), used = new Set();
-    for (let a = 0, b = 0; a < n0 && b < n1;) { if (oldLines[a] === raw[b]) { match[b] = a; used.add(a); a++; b++; } else if (dp[a + 1][b] >= dp[a][b + 1]) a++; else b++; }
-    raw.forEach((_, i) => { if (match[i] < 0 && i < n0 && !used.has(i)) { match[i] = i; used.add(i); } });
-    const kept = raw.map((_, i) => (match[i] >= 0 && st.slots[match[i]]) || null);
-    st.slots = kept.map((k, i) => k || (i < 6 && !kept.includes(SLOTS[i][0]) ? SLOTS[i][0] : 'none'));
-    if (raw.length) st.slotLines = raw;
+    matchSlots(st.text.split('\n').map((l) => l.trim()));
     const s3 = $('#s3');
     if (!lines.length) { s3.classList.add('waiting'); s3.querySelector('.wait').textContent = 'Needs formulas in Step 1.'; return renderDist(null); }
     s3.classList.remove('waiting');
@@ -722,7 +748,7 @@ table.nums td:last-child{overflow-wrap:anywhere;white-space:normal}
   $('#fx-in').addEventListener('input', (e) => { st.text = e.target.value; save(); render(); });
   $('#fx-hyph').addEventListener('change', (e) => { st.hyph = e.target.checked; save(); render(); });
   $('#fx-vars').addEventListener('input', (e) => { const n = e.target.dataset.name; if (n !== undefined) { st.vals[n] = e.target.value; save(); render(); } });
-  $('#fx-table').addEventListener('change', (e) => { const i = e.target.dataset.slot; if (i !== undefined) { const had = document.activeElement === e.target; st.slots[+i] = e.target.value; save(); render(); if (had) { const sel = $(`#fx-table select[data-slot="${i}"]`); if (sel) sel.focus(); } } });
+  $('#fx-table').addEventListener('change', (e) => { const i = e.target.dataset.slot; if (i !== undefined) { const had = document.activeElement === e.target; st.slots[+i] = e.target.value; if (Array.isArray(st.slotAll) && fullOf[+i] !== undefined) st.slotAll[fullOf[+i]] = e.target.value; save(); render(); if (had) { const sel = $(`#fx-table select[data-slot="${i}"]`); if (sel) sel.focus(); } } });
   $('#fx-ns').addEventListener('change', (e) => { st.ns = e.target.value; save(); render(); });
   $('#fx-ew').addEventListener('change', (e) => { st.ew = e.target.value; save(); render(); });
   $('#fx-posted').addEventListener('input', (e) => { st.posted = e.target.value; save(); render(); });

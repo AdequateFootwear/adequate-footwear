@@ -652,7 +652,8 @@ S(y) ≡ (7 − (T₂ mod 7)) mod 7
   const short = (v) => { const t = String(v); return t.length > 24 ? t.slice(0, 10) + '…' + t.slice(-6) : t; };
   const gcdB = (a, b) => { a = a < 0n ? -a : a; b = b < 0n ? -b : b; while (b) [a, b] = [b, a % b]; return a; };
   const gcdN = (a, b) => { while (b) [a, b] = [b, a % b]; return Math.abs(a); };
-  const int = (el, lo, hi, dflt) => { let v = parseInt(el.value, 10); if (!Number.isFinite(v)) v = dflt; return Math.max(lo, Math.min(hi, v)); };
+  // a whole number from lo to hi as typed, or null: nothing is rounded, clamped or cut short
+  const int = (el, lo, hi) => { const t = el.value.trim(); if (!/^\d+$/.test(t)) return null; const v = Number(t); return v >= lo && v <= hi ? v : null; };
   const st = (() => { try { return JSON.parse(localStorage.getItem('day-of-the-week:v1') || '{}'); } catch (e) { return {}; } })();
   const save = () => { try { localStorage.setItem('day-of-the-week:v1', JSON.stringify(st)); } catch (e) {} };
 
@@ -701,11 +702,14 @@ S(y) ≡ (7 − (T₂ mod 7)) mod 7
     $('#dd-wheel').setAttribute('aria-label', `On a 7-day clock: start at ${DAYS[r.anchor]}, move ${s1} to the doomsday ${DAYS[r.yd]}, then ${modN(r.w - r.yd, 7)} more to ${DAYS[r.w]}.`);
   }
   function doDoom(){
-    const y = int($('#dd-y'), 1, 9999, 2026), m = +$('#dd-m').value, d = int($('#dd-d'), 1, 31, 1);
+    const y = int($('#dd-y'), 1, 9999), m = +$('#dd-m').value, d = int($('#dd-d'), 1, 31);
     const work = $('.dd-work'), zel = $('#zeller').closest('details');
-    if (d > dim(m, y)) {
-      // no weekday for a date that doesn't exist: clear all the working, including the clock
-      $('#dd-out').innerHTML = `<p>${MONTHS[m - 1]} ${y} has only ${dim(m, y)} days.</p>`;
+    const bad = y === null ? 'Enter the year as a whole number from 1 to 9999.'
+      : d === null ? 'Enter the day as a whole number from 1 to 31.'
+      : d > dim(m, y) ? `${MONTHS[m - 1]} ${y} has only ${dim(m, y)} days.` : '';
+    if (bad) {
+      // no weekday for a date that can't be read or doesn't exist: clear all the working, including the clock
+      $('#dd-out').innerHTML = `<p>${bad}</p>`;
       $('#dd-steps').innerHTML = ''; $('#dd-fline').innerHTML = ''; $('#zeller').textContent = '';
       $('#dd-wheel').innerHTML = ''; $('#dd-wheel').setAttribute('aria-label', 'The steps on a 7-day clock');
       work.hidden = true; work.style.display = 'none'; zel.hidden = true; zel.style.display = 'none';

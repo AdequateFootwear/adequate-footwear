@@ -9366,23 +9366,26 @@ function checkGeom(g, where, depth) {
   if (why) throw new Error(`${where} has ${why}`);
 }
 /* What is wrong with a geometry's shape, or '': a line needs two or more positions, and a polygon's ring four or more,
-   ending where it starts. Nothing is closed or repaired; empty geometries are allowed. */
-function shapeProblem(g) {
+   ending where it starts. Nothing is closed or repaired; empty geometries are allowed, but not an empty ring beside others.
+   wkb is true only for geometries read from a GeoPackage's WKB, never for GeoJSON (whose members a file can set). */
+function shapeProblem(g, wkb) {
   if (!g) return '';
-  if (g.type === 'GeometryCollection') { for (const x of g.geometries || []) { const w = shapeProblem(x); if (w) return w; } return ''; }
+  if (g.type === 'GeometryCollection') { for (const x of g.geometries || []) { const w = shapeProblem(x, wkb); if (w) return w; } return ''; }
   const c = g.coordinates || [];
   // a measure (M, the last ordinate of a WKB position with M) isn't part of where a point is, so closure ignores it
-  const at = g.hasM ? (p) => p.slice(0, -1) : (p) => p;
+  const at = wkb && g.hasM === true ? (p) => p.slice(0, -1) : (p) => p;
   const same = (p, q) => { p = at(p); q = at(q); return p.length === q.length && p.every((v, i) => v === q[i] || (v !== v && q[i] !== q[i])); }; // NaN Z values match too
   const line = (l) => (l.length === 1 ? `a line with only one position; a line needs two or more.` : '');
   const ring = (r) => (!r.length ? '' : r.length < 4 ? `a polygon ring with ${r.length} position${r.length === 1 ? '' : 's'}; a ring needs four or more, ending where it starts.`
     : !same(r[0], r[r.length - 1]) ? 'a polygon ring that doesn’t end where it starts, so it isn’t closed.' : '');
   const all = (xs, f) => { for (const x of xs) { const w = f(x); if (w) return w; } return ''; };
+  // a polygon is empty only when every ring is: an empty ring beside others would let a hole be drawn as the outside
+  const poly = (rs) => (rs.some((r) => !r.length) && rs.some((r) => r.length) ? 'a polygon with an empty ring among rings that aren’t empty.' : all(rs, ring));
   switch (g.type) {
     case 'LineString': return line(c);
     case 'MultiLineString': return all(c, line);
-    case 'Polygon': return all(c, ring);
-    case 'MultiPolygon': return all(c, (p) => all(p, ring));
+    case 'Polygon': return poly(c);
+    case 'MultiPolygon': return all(c, poly);
     default: return '';
   }
 }
@@ -9439,7 +9442,7 @@ function mapSource(e, fmt) {
         else if (Number(L.srsId) === 0) crs = { mode: 'geo', code: null, label: 'an undefined geographic coordinate system' };
         else if (Number(L.srsId) === -1) crs = { mode: 'native', code: -1, label: 'an undefined Cartesian coordinate system', unit: null, unitM: null };
         else crs = crsOf(null, L.srsDefinition, undefined, L.srsName || (L.srsId !== undefined ? `coordinate system ${L.srsId}` : ''));
-        return { label: L.table, crs, features: L.features.map((f) => ({ props: f.props, geom: f.geom, error: f.error })) };
+        return { label: L.table, crs, wkb: true, features: L.features.map((f) => ({ props: f.props, geom: f.geom, error: f.error })) };
       });
     }
     if (fmt === 'geojson') { const g = geojsonOf(e); return [{ label: '', crs: g.crs, features: g.features.map((f) => ({ props: f.props, id: f.id, geom: f.geom })) }]; }
@@ -9528,7 +9531,7 @@ async function renderMap(e, panel, tok, fmt) {
       return acc;
     };
     for (const f of L.features) {
-      const shape = f.error ? '' : shapeProblem(f.geom);
+      const shape = f.error ? '' : shapeProblem(f.geom, L.wkb === true);
       if (f.error || shape) { out.bad++; if (!out.badWhy) out.badWhy = f.error || `one has ${shape}`; continue; }
       const p = parts(f.geom, []);
       if (p.length) out.feats.push({ props: f.props, id: f.id, parts: p });

@@ -1,0 +1,589 @@
+<!-- Review copy: lines 1441-2028 of monkeying-around/index.html, split so Copilot can review it. Not served. -->
+  return { text: r.text, view: r.view || null, notes: r.notes || [], marked: !!r.marked, errs: [] };
+}
+/* ---- the chain: each step that's on works on the text from the one before; a step that's off passes its text on ---- */
+function chain(text, steps) {
+  let cur = text, blockedBy = 0, markedBy = 0;
+  return steps.map((s, i) => {
+    if (blockedBy) return { input: null, text: null, blockedBy, notes: [], errs: [] };
+    if (!s.on) return { input: cur, text: cur, off: true, notes: [], errs: [], markedBy };
+    const r = run(s.type, cur, s.o);
+    r.input = cur; r.markedBy = markedBy;
+    if (r.text === null) blockedBy = i + 1;
+    else { cur = r.text; if (r.marked) markedBy = i + 1; }
+    return r;
+  });
+}
+
+return { STEPS, MORSE, UNMORSE, WORD, settle, run, chain, intOf, cpCmp, BAD };
+})(MK);
+
+const { L, mod } = MK;
+const radio = (name) => (document.querySelector(`input[name="${name}"]:checked`) || {}).value;
+const setRadio = (name, v) => { const r = document.querySelector(`input[name="${name}"][value="${v}"]`); if (r) r.checked = true; };
+const intOf = (s) => { const t = String(s).trim().replace(/[−‒–—]/g, '-'); return /^[-+]?\d{1,9}$/.test(t) ? parseInt(t, 10) : null; };
+
+function cfg() {
+  return {
+    cipher: $('mk-cipher').value, dir: radio('mk-dir') || 'enc', key: $('mk-key').value,
+    start: intOf($('mk-start').value) || 1, repeat: radio('mk-run') !== 'stop', nonl: radio('mk-nonl') || 'keep',
+    fold: { accent: $('mk-f-accent').checked, sz: $('mk-f-sz').checked, lig: $('mk-f-lig').checked, fancy: $('mk-f-fancy').checked },
+    auto: $('mk-auto').value,
+    tri: { offset: intOf($('mk-tri-off').value) || 0, step: intOf($('mk-tri-step').value) === null ? 1 : intOf($('mk-tri-step').value) },
+    quag: { pa: $('mk-qkw1').value, ca: $('mk-qkw2').value, ind: $('mk-qind').value }
+  };
+}
+
+/* ---------- what each cipher says about itself ---------- */
+const FORMULA = {
+  vig: ['C = P + K', 'P = C − K'], gron: ['C = P + d', 'P = C − d'], beau: ['C = K − P', 'P = K − C'], varb: ['C = P − K', 'P = C + K'],
+  trith: ['C = P + s + i·t', 'P = C − s − i·t'], porta: ['C = Porta(K, P)', 'P = Porta(K, C)']
+};
+const HELP = {
+  vig: 'Each message letter is shifted along by its key letter: A shifts 0 places, B 1, and so on up to Z, 25.',
+  beau: 'The message letter is subtracted from the key letter. It undoes itself: enciphering and deciphering are the same.',
+  varb: 'The key letter is subtracted from the message letter, so it enciphers the way Vigenère deciphers.',
+  gron: 'Vigenère with a key of digits, 0 to 9: each digit is how many places to shift. Only the key’s digits are used.',
+  auto: 'The key you type is a primer. After it, the plaintext’s own letters carry on as the key.',
+  porta: 'Thirteen alphabets, one for each pair of key letters (AB, CD … YZ). Each swaps the first half of the alphabet with the second, so the same key deciphers.',
+  trith: 'No key: the shift starts at the starting shift and grows by the step for each letter. With 0 and 1, the shifts go 0, 1, 2, 3 …',
+  q1: 'The plaintext alphabet is keyed; the ciphertext alphabet is plain A to Z, slid along for each key letter.',
+  q2: 'The plaintext alphabet is plain A to Z; the ciphertext alphabet is keyed and slid along for each key letter.',
+  q3: 'The same keyed alphabet is used for the plaintext and the ciphertext, slid along for each key letter.',
+  q4: 'Two different keyed alphabets: one for the plaintext, one for the ciphertext, slid along for each key letter.'
+};
+function formulaOf(c) {
+  if (c.cipher === 'auto') return FORMULA[c.auto];
+  if (c.cipher[0] === 'q') return ['C = CA[pos(P) + s]', 'P = PA[pos(C) − s]'];
+  return FORMULA[c.cipher];
+}
+const keyShown = (c, k) => (c.cipher === 'gron' || c.cipher === 'trith' ? String(k) : L(k));
+
+/* ---------- the alignment view ---------- */
+const MAX_COLS = 3000;
+let last = null, sel = -1, lastCfg = null;
+function visible(s) {
+  if (s === ' ') return '·';
+  if (s === '\n' || s === '\r\n' || s === '\r') return '↵';
+  if (s === '\t') return '⇥';
+  if (/^\s$/u.test(s)) return '·';
+  return s;
+}
+function colLabel(c, col, i) {
+  if (col.kind === 'letter') {
+    const k = col.steps.map((st) => (st.k === null ? 'none' : keyShown(c, st.k))).join(' ');
+    return `${i + 1}: ${col.s}, key ${k}, result ${col.out}`;
+  }
+  if (col.kind === 'script') return `${i + 1}: ${col.s}, another script, left in place`;
+  return `${i + 1}: ${col.s === ' ' ? 'space' : col.s}, left in place${col.skip ? ', key moves on' : ''}`;
+}
+function renderAlign(c, r) {
+  const box = $('mk-align');
+  const cols = r.cols.slice(0, MAX_COLS);
+  if (sel >= cols.length) sel = -1;
+  if (sel < 0) sel = cols.findIndex((x) => x.kind === 'letter');
+  if (sel < 0 && cols.length) sel = 0;
+  box.innerHTML = cols.map((col, i) => {
+    let m = esc(visible(col.s)), k = '', o = esc(visible(col.out)), cls = 'mk-col';
+    if (col.kind === 'letter') {
+      k = col.steps.map((st) => (st.k === null ? ' ' : keyShown(c, st.k))).join('');
+      if (col.steps.some((st) => st.k === null)) cls += ' gap';
+    } else {
+      cls += col.kind === 'script' ? ' nl sc' : ' nl';
+      if (col.skip) { cls += ' skip'; k = col.skip.k === null ? '' : keyShown(c, col.skip.k); }
+    }
+    return `<div class="${cls}" role="option" id="mk-c${i}" tabindex="${i === sel ? 0 : -1}" aria-selected="${i === sel}" aria-label="${esc(colLabel(c, col, i))}" data-i="${i}"><span class="m">${m}</span><span class="k">${esc(k)}</span><span class="o">${o}</span></div>`;
+  }).join('');
+  $('mk-align-more').textContent = r.cols.length > MAX_COLS ? `Showing the first ${fmt(MAX_COLS)} of ${fmt(r.cols.length)} characters here; the result above has all of them.` : '';
+  explain();
+}
+function select(i, focus) {
+  const cols = last ? Math.min(last.cols.length, MAX_COLS) : 0;
+  if (!cols) return;
+  i = Math.max(0, Math.min(cols - 1, i));
+  const old = $('mk-c' + sel); if (old) { old.setAttribute('aria-selected', 'false'); old.tabIndex = -1; }
+  sel = i;
+  const el = $('mk-c' + i); el.setAttribute('aria-selected', 'true'); el.tabIndex = 0;
+  if (focus) el.focus();
+  explain(true);
+}
+$('mk-align').addEventListener('click', (e) => { const el = e.target.closest('.mk-col'); if (el) select(+el.dataset.i, true); });
+$('mk-align').addEventListener('keydown', (e) => {
+  const el = e.target.closest('.mk-col'); if (!el) return;
+  const i = +el.dataset.i, cols = Math.min(last.cols.length, MAX_COLS);
+  // up and down move by a visual row: find the nearest column above or below
+  const rowJump = (dir) => {
+    const r0 = el.getBoundingClientRect(); let best = -1, bd = Infinity;
+    for (let j = i + dir; j >= 0 && j < cols; j += dir) {
+      const r = $('mk-c' + j).getBoundingClientRect();
+      if (dir > 0 ? r.top <= r0.top + 2 : r.top >= r0.top - 2) continue;
+      if (best >= 0 && Math.abs(r.top - $('mk-c' + best).getBoundingClientRect().top) > 2) break;
+      const d = Math.abs(r.left - r0.left); if (d < bd) { bd = d; best = j; }
+    }
+    return best < 0 ? i : best;
+  };
+  const to = { ArrowRight: i + 1, ArrowLeft: i - 1, Home: 0, End: cols - 1, ArrowDown: null, ArrowUp: null }[e.key];
+  if (to === undefined) return;
+  e.preventDefault();
+  select(to === null ? rowJump(e.key === 'ArrowDown' ? 1 : -1) : to, true);
+});
+
+/* ---------- one letter, worked out ---------- */
+function stepText(c, st) {
+  const x = st.inp, k = st.k, r = st.out, dec = c.dir === 'dec';
+  const li = `<var>${L(x)}</var> (${x})`, lr = `<var>${L(r)}</var>`;
+  const sum = (v) => (v > 25 ? `${v} − 26 = ${v - 26}` : v < 0 ? `${v} + 26 = ${v + 26}` : String(v));
+  const kd = `<var>${esc(keyShown(c, k))}</var>`;
+  const rule = c.cipher === 'auto' ? c.auto : c.cipher;
+  if (c.cipher === 'trith') {
+    const o = c.tri.offset, t = c.tri.step, raw = o + st.j * t;
+    const sh = `shift (${o} + ${st.j} × ${t < 0 ? `(${t})` : t} = ${raw}${raw !== k ? ` ≡ ${k}` : ''})`;
+    return dec ? `${li} − ${sh} = ${sum(x - k)} → ${lr}` : `${li} + ${sh} = ${sum(x + k)} → ${lr}`;
+  }
+  if (c.cipher === 'porta') {
+    const pr = k >> 1;
+    return `Key ${kd} uses the <var>${L(2 * pr)}${L(2 * pr + 1)}</var> alphabet (number ${pr} of 0 to 12), where ${li.replace(/ \(\d+\)/, '')} and ${lr} swap places`;
+  }
+  if (c.cipher[0] === 'q') {
+    const q = last.rule, ind = q.PA[mod(q.pCA[k] - q.sh(k), 26)];
+    const slid = `With key ${kd} under plaintext <var>${L(ind)}</var>, the ciphertext alphabet is slid ${q.sh(k)} place${q.sh(k) === 1 ? '' : 's'} along`;
+    return dec ? `${slid}, and ciphertext <var>${L(x)}</var> is under plaintext ${lr}` : `${slid}, and plaintext <var>${L(x)}</var> is over ciphertext ${lr}`;
+  }
+  const kk = `${kd} (${k})`;
+  if (rule === 'beau') return `${kk} − ${li} = ${sum(k - x)} → ${lr}`;
+  const add = (rule === 'varb') === dec; // Vigenère enciphers by adding; variant Beaufort deciphers by adding
+  return add ? `${li} + ${kk} = ${sum(x + k)} → ${lr}` : `${li} − ${kk} = ${sum(x - k)} → ${lr}`;
+}
+function explain(user) {
+  const out = $('mk-explain');
+  if (!last || sel < 0 || !last.cols[sel]) { out.innerHTML = ''; highlight(null); return; }
+  const c = lastCfg, col = last.cols[sel], n = sel + 1;
+  const ch = `“${esc(visible(col.s))}”`;
+  let h = '';
+  if (col.kind === 'letter') {
+    const read = col.how ? ` (read as ${esc(col.steps.map((st) => (st.up ? L(st.inp) : L(st.inp).toLowerCase())).join(''))})` : '';
+    const parts = col.steps.map((st) => {
+      if (st.k === null) return 'no key letter reached this one: the running key ran out, so it shows as _.';
+      let from = '';
+      if (c.cipher === 'auto') {
+        const primer = last.key.vals.length - (last.start - 1);
+        from = st.j < primer ? ` The key comes from the primer.` : ` The key is plaintext letter ${st.j - primer + 1}.`;
+      }
+      return stepText(c, st) + '.' + from;
+    });
+    h = `Character ${n}, ${ch}${read}: ${parts.join(' Then ')}`;
+    highlight(col.steps.find((st) => st.k !== null) || null, user);
+  } else if (col.kind === 'script') {
+    h = `Character ${n}, ${ch}, is from another script, so it stays as it is and the key doesn’t move.`; highlight(null);
+  } else {
+    h = `Character ${n}, ${ch}, isn’t a letter A to Z, so it stays as it is` + (col.skip ? (col.skip.k === null ? ', and it uses up a key position.' : `, and it uses up key letter <var>${esc(keyShown(c, col.skip.k))}</var>.`) : ', and the key doesn’t move.');
+    highlight(null);
+  }
+  out.innerHTML = h;
+}
+
+/* ---------- the table ---------- */
+let tab = null, tabSig = '', grid = [], hl = [];
+function buildTable(c) {
+  const sig = JSON.stringify([c.cipher, c.auto, c.cipher[0] === 'q' ? [c.quag, c.fold] : 0]);
+  if (sig === tabSig) return;
+  tabSig = sig; tab = MK.tableau(c);
+  const corner = c.cipher === 'gron' ? 'digit' : c.cipher === 'trith' ? 'shift' : 'key';
+  let h = `<thead><tr><th class="rl" scope="col">${corner}</th>${tab.head.map((p) => `<th scope="col">${L(p)}</th>`).join('')}</tr></thead><tbody>`;
+  h += tab.rows.map((r) => `<tr><th class="rl" scope="row">${esc(r.label)}</th>${r.cells.map((v) => `<td>${L(v)}</td>`).join('')}</tr>`).join('');
+  $('mk-tab').innerHTML = h + '</tbody>';
+  const t = $('mk-tab');
+  grid = Array.from(t.rows, (tr) => Array.from(tr.cells));
+  hl = [];
+  const rowsWord = { gron: 'digits', trith: 'shifts', porta: 'pairs of key letters' }[c.cipher] || 'key letters';
+  const colsWord = c.cipher[0] === 'q' ? 'plaintext letters, in the order of the plaintext alphabet' : 'plaintext letters';
+  $('mk-tab-help').textContent = `Rows are ${rowsWord}, columns are ${colsWord}, and each cell is the ciphertext letter. To encipher, go along the key’s row to the message letter’s column. To decipher, find the ciphertext letter in the key’s row and read the heading of its column.`;
+}
+function highlight(st, user) {
+  hl.forEach((el) => el.classList.remove('hr', 'hit')); hl = [];
+  const say = $('mk-tab-say');
+  if (!st || !tab) { say.textContent = 'Pick a letter in the letter-by-letter view to light up its row and column.'; return; }
+  const c = lastCfg, plain = c.dir === 'dec' ? st.out : st.inp, ciph = c.dir === 'dec' ? st.inp : st.out;
+  const ri = tab.rowOf(st.k) + 1, ci = tab.colOf(plain) + 1;
+  if (!grid[ri] || !grid[0][ci]) return;
+  for (let i = 0; i < grid.length; i++) { grid[i][ci].classList.add('hr'); hl.push(grid[i][ci]); }
+  for (const el of grid[ri]) { el.classList.add('hr'); hl.push(el); }
+  grid[ri][ci].classList.add('hit');
+  const rowName = c.cipher === 'porta' ? `row ${tab.rows[ri - 1].label}` : c.cipher === 'gron' ? `row ${st.k}` : c.cipher === 'trith' ? `shift ${st.k}` : `row ${L(st.k)}`;
+  say.innerHTML = `Lit up: ${esc(rowName)}, column <var>${L(plain)}</var>, where they meet: <var>${L(ciph)}</var>. Plaintext <var>${L(plain)}</var> ↔ ciphertext <var>${L(ciph)}</var>.`;
+  if (user) { // keep the lit cell in view, inside the table's own scroll box only
+    const w = $('mk-tabwrap'), cell = grid[ri][ci];
+    const left = cell.offsetLeft, right = left + cell.offsetWidth, lab = grid[ri][0].offsetWidth;
+    if (left - lab < w.scrollLeft) w.scrollLeft = Math.max(0, left - lab - 8);
+    else if (right > w.scrollLeft + w.clientWidth) w.scrollLeft = right - w.clientWidth + 8;
+  }
+}
+
+/* ---------- notes and counts ---------- */
+const note = (kind, html) => `<li class="${kind}"><span class="ic" aria-hidden="true">${kind === 'warn' ? '!' : 'i'}</span><span>${html}</span></li>`;
+function update() {
+  save();
+  const c = cfg(); lastCfg = c;
+  const isQ = c.cipher[0] === 'q', isTri = c.cipher === 'trith', isAuto = c.cipher === 'auto', isGron = c.cipher === 'gron';
+  // which controls apply
+  $('mk-auto-wrap').hidden = !isAuto;
+  $('mk-tri-off-wrap').hidden = $('mk-tri-step-wrap').hidden = !isTri;
+  $('mk-quag').hidden = !isQ;
+  $('mk-qkw2-wrap').hidden = c.cipher !== 'q4';
+  $('mk-qkw1-lbl').textContent = { q1: 'Plaintext alphabet keyword', q2: 'Ciphertext alphabet keyword', q3: 'Alphabet keyword (both alphabets)', q4: 'Plaintext alphabet keyword' }[c.cipher] || 'Alphabet keyword';
+  $('mk-key-on').hidden = isTri; $('mk-key-off').hidden = !isTri;
+  $('mk-run').hidden = isAuto;
+  $('mk-key-lbl').textContent = isAuto ? 'Primer (the key that starts it off)' : isGron ? 'Key (digits)' : 'Key';
+  const f = formulaOf(c);
+  $('mk-formula').innerHTML = `<span>Encipher: ${esc(f[0])}</span><span>Decipher: ${esc(f[1])}</span><span>(mod 26)</span>`;
+  $('mk-cipher-help').textContent = HELP[c.cipher];
+
+  const errs = [];
+  if (isTri) {
+    if (intOf($('mk-tri-off').value) === null && $('mk-tri-off').value.trim() !== '') errs.push('The starting shift should be a whole number, such as 0 or 3.');
+    if (intOf($('mk-tri-step').value) === null && $('mk-tri-step').value.trim() !== '') errs.push('The step should be a whole number, such as 1 or −2.');
+  }
+  if (isQ) { // the indicator is one letter; blank means the first letter of the plaintext alphabet
+    const typed = $('mk-qind').value.trim(), iv = typed ? MK.keyValues(typed, c.fold, false).vals : [];
+    if (typed && !iv.length) errs.push(`The indicator should be one letter A to Z, and “${typed}” has none here, so the first letter of the plaintext alphabet is used, as when the box is blank.`);
+    else if (iv.length > 1) errs.push(`The indicator should be one letter, and “${typed}” has ${iv.length}, so only the first, ${MK.L(iv[0])}, is used.`);
+  }
+  const stTyped = $('mk-start').value.trim();
+  if (!isTri && stTyped !== '' && !(intOf(stTyped) >= 1)) errs.push('The starting letter should be a whole number, 1 or more.');
+
+  const r = MK.process($('mk-msg').value, c); last = r;
+  const n = r.key.vals.length, st = r.start, avail = Math.max(0, n - st + 1);
+  const unitWord = isGron ? 'digit' : 'letter';
+  const notes = [];
+  let blank = false;
+  if (!isTri && !n) { blank = r.letters > 0; if (r.letters) notes.push(note('info', isGron ? 'Type a key made of digits to see the result.' : isAuto ? 'Type a primer to see the result.' : 'Type a key to see the result.')); }
+  else if (!isTri && st > n) { blank = true; notes.push(note('warn', `The key has only ${plural(n, unitWord)}, so it can’t start at ${unitWord} ${fmt(st)}.`)); }
+  if (r.missing && !blank) notes.push(note('warn', `The running key is shorter than the message. From ${unitWord} ${fmt(st)} it has ${plural(avail, unitWord)}, but the message needs ${fmt(r.used)}, so the last ${plural(r.missing, 'letter')} have no key and show as _.`));
+  if (r.scripts) notes.push(note('info', `${plural(r.scripts, 'letter')} from other scripts, such as Greek or Cyrillic, ${r.scripts === 1 ? 'was' : 'were'} left in place. They never move the key on.`));
+  const fl = r.folded, fparts = [];
+  if (fl.accent) fparts.push(`${fmt(fl.accent)} accented`); if (fl.sz) fparts.push(`${fmt(fl.sz)} ß`); if (fl.lig) fparts.push(`${fmt(fl.lig)} Æ, Œ or ligature`); if (fl.fancy) fparts.push(`${fmt(fl.fancy)} fancy`);
+  if (fparts.length) notes.push(note('info', `Read as plain letters: ${fparts.join(', ')}.`));
+  if (isAuto && c.nonl === 'move' && r.others) notes.push(note('info', 'In autokey the key comes from the message’s letters, so spaces and punctuation don’t move it on, whichever choice is made under What counts as a letter.'));
+  if (isGron && r.key.skipped) notes.push(note('info', `Gronsfeld uses only the key’s digits, so its ${plural(r.key.skipped, 'letter')} ${r.key.skipped === 1 ? 'was' : 'were'} skipped.`));
+  if (MK.RECIPROCAL[c.cipher] && r.letters) notes.push(note('info', `${MK.CIPHERS[c.cipher]} undoes itself: enciphering and deciphering give the same result.`));
+  errs.forEach((e) => notes.unshift(`<li class="bad"><span class="ic" aria-hidden="true">!</span><span>${esc(e)}</span></li>`));
+  $('mk-notes').innerHTML = notes.join('');
+
+  // message counts
+  const verb = c.dir === 'dec' ? 'decipher' : 'encipher';
+  const otherSay = r.others ? (c.nonl === 'drop' ? `${plural(r.others, 'other character')} will be removed.` : `${plural(r.others, 'other character')} ${r.others === 1 ? 'stays' : 'stay'} in place${c.nonl === 'move' && !isAuto ? ', each moving the key on' : ', not moving the key'}.`) : '';
+  $('mk-msg-stats').textContent = r.letters || r.others || r.scripts ? `${plural(r.letters, 'letter')} to ${verb}. ${otherSay}` : '';
+
+  // key counts
+  if (!isTri) {
+    const kv = r.key;
+    let ks = '';
+    if (!n) ks = isGron && kv.skipped ? 'No digits in the key yet.' : '';
+    else if (isAuto) ks = `The primer has ${plural(avail, 'letter')}${st > 1 ? ` from letter ${fmt(st)}` : ''}; after it, the plaintext’s own letters carry on as the key.`;
+    else if (c.repeat) ks = `The key has ${plural(n, unitWord)}, repeating every ${fmt(n)}${st > 1 && st <= n ? `, starting at ${unitWord} ${fmt(st)}` : ''}.`;
+    else ks = `The key has ${plural(n, unitWord)}. From ${unitWord} ${fmt(st)}, ${fmt(avail)} ${avail === 1 ? 'is' : 'are'} left${r.used ? `, and the message needs ${fmt(r.used)}` : ''}.`;
+    $('mk-key-stats').textContent = ks;
+    $('mk-start').max = String(Math.max(1, n));
+    if (n && st <= n) {
+      const a = Math.max(0, st - 1 - 12), shown = kv.shown;
+      const before = shown.slice(a, st - 1).join(''), after = shown.slice(st, st + 47).join('');
+      $('mk-keyview').innerHTML = `${a > 0 ? '<span class="dim">…</span>' : ''}<span class="dim">${esc(before)}</span><mark>${esc(shown[st - 1])}</mark>${esc(after)}${st + 47 < n ? '<span class="dim">…</span>' : ''}`;
+      $('mk-keyview').setAttribute('aria-label', `The key from ${unitWord} ${st}: ${shown.slice(st - 1, st + 47).join('')}`);
+    } else { $('mk-keyview').textContent = ''; $('mk-keyview').removeAttribute('aria-label'); }
+  }
+
+  // Quagmire alphabets
+  if (isQ) {
+    const q = r.rule;
+    $('mk-alpha').innerHTML = `<span class="al">Plaintext</span><span class="ab">${q.PA.map(L).join('')}</span><span class="al">Ciphertext</span><span class="ab">${q.CA.map(L).join('')}</span>`;
+  }
+
+  $('mk-out').textContent = blank ? '' : r.text;
+  mbFrom = blank ? '' : r.text; mbCompute();
+  clearTimeout(update.t);
+  update.t = setTimeout(() => { $('mk-status').textContent = blank || !r.text ? '' : `Result ready: ${plural(r.letters, 'letter')}.`; }, 900);
+  buildTable(c);
+  if (blank) { last = Object.assign({}, r, { cols: [] }); $('mk-align').innerHTML = ''; $('mk-align-more').textContent = ''; explain(); return; }
+  renderAlign(c, r);
+}
+let tId = 0;
+const soon = () => { clearTimeout(tId); tId = setTimeout(update, $('mk-msg').value.length + $('mk-key').value.length > 4000 ? 150 : 30); };
+// the example's note stays only while the solver tries its suggestion (what counts as a letter); any other change ends it
+const leaveExample = () => { $('mk-exnote').hidden = true; };
+['mk-msg', 'mk-key', 'mk-start', 'mk-tri-off', 'mk-tri-step', 'mk-qkw1', 'mk-qkw2', 'mk-qind'].forEach((id) => $(id).addEventListener('input', () => { leaveExample(); soon(); }));
+['mk-cipher', 'mk-auto', 'mk-f-accent', 'mk-f-sz', 'mk-f-lig', 'mk-f-fancy'].forEach((id) => $(id).addEventListener('change', () => { leaveExample(); update(); }));
+document.querySelectorAll('input[name="mk-dir"], input[name="mk-run"]').forEach((el) => el.addEventListener('change', () => { leaveExample(); update(); }));
+document.querySelectorAll('input[name="mk-nonl"]').forEach((el) => el.addEventListener('change', update));
+
+/* ---------- copy and swap ---------- */
+$('mk-copy').addEventListener('click', () => {
+  const b = $('mk-copy'), t = $('mk-out').textContent;
+  if (!t) return;
+  const done = (msg) => { b.textContent = msg; clearTimeout(b._t); b._t = setTimeout(() => { b.textContent = 'Copy'; }, 1400); };
+  const fallback = () => { const r = document.createRange(); r.selectNodeContents($('mk-out')); const s = getSelection(); s.removeAllRanges(); s.addRange(r); done('Selected: copy it'); };
+  if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(t).then(() => done('Copied'), fallback); else fallback();
+});
+$('mk-swap').addEventListener('click', () => {
+  const t = $('mk-out').textContent; if (!t) return;
+  $('mk-msg').value = t;
+  setRadio('mk-dir', radio('mk-dir') === 'dec' ? 'enc' : 'dec');
+  $('mk-exnote').hidden = true;
+  update();
+  $('mk-msg').focus();
+});
+
+/* ---------- monkey business: a chain of steps on the result, or on the solver's own text ---------- */
+const MB_ORDER = [['Pick out', ['nth', 'first', 'last', 'lengths']], ['Rearrange', ['reverse', 'columns', 'blocks', 'sort']],
+  ['Tidy', ['remove', 'case', 'dedupe']], ['Convert', ['caesar', 'atbash', 'a1z26', 'num2let', 'tocodes', 'fromcodes', 'tomorse', 'frommorse']], ['Look', ['counts']]];
+const MB_SHOW = 20000; // characters shown in one step's box; Copy and the Use buttons always take all of it
+let chain = [], mbNext = 1, mbFrom = '', mbRes = [];
+$('mb-pick').innerHTML = MB_ORDER.map(([g, ids]) => `<optgroup label="${esc(g)}">${ids.map((id) => `<option value="${id}">${esc(MKC.STEPS[id].name)}</option>`).join('')}</optgroup>`).join('');
+const mbDefaults = (type) => Object.fromEntries(MKC.STEPS[type].opts.map((op) => [op.k, op.def]));
+const mbStep = (type, o, on) => ({ id: mbNext++, type, on: on !== false, o: Object.assign(mbDefaults(type), o || {}) });
+const mbSay = (t) => { const s = $('mb-status'); s.textContent = ''; setTimeout(() => { s.textContent = t; }, 30); };
+const mbName = (s) => MKC.STEPS[s.type].name;
+
+function mbOptHTML(s, op) {
+  const v = s.o[op.k], hid = op.when && s.o[op.when[0]] !== op.when[1] ? ' hidden' : '';
+  if (op.type === 'check') return `<label class="mb-check"${hid}><input type="checkbox" data-k="${op.k}"${v ? ' checked' : ''}> ${esc(op.label)}</label>`;
+  if (op.type === 'select') return `<label${hid}>${esc(op.label)} <select data-k="${op.k}">${op.choices.map(([c, t]) => `<option value="${c}"${c === v ? ' selected' : ''}>${esc(t)}</option>`).join('')}</select></label>`;
+  return `<label${hid}>${esc(op.label)} <input type="text" inputmode="numeric" autocomplete="off" data-k="${op.k}" value="${esc(v)}"></label>`;
+}
+function mbCardHTML(s, i) {
+  const d = MKC.STEPS[s.type], n = i + 1, last = i === chain.length - 1, nm = esc(d.name);
+  return `<li class="mb-step${s.on ? '' : ' off'}" id="mb-s${s.id}" data-id="${s.id}" aria-labelledby="mb-h${s.id}">
+  <div class="mb-head"><span class="mb-n" aria-hidden="true">${n}</span><h3 class="mb-name" id="mb-h${s.id}"><span class="sr">Step ${n}: </span>${nm}</h3>
+    <label class="mb-on"><input type="checkbox" data-act="on"${s.on ? ' checked' : ''}> On</label></div>
+  <div class="mb-tools">
+    <button type="button" class="btn small" data-act="up" aria-label="Move step ${n}, ${nm}, up"${i === 0 ? ' aria-disabled="true"' : ''}>↑ Up</button>
+    <button type="button" class="btn small" data-act="down" aria-label="Move step ${n}, ${nm}, down"${last ? ' aria-disabled="true"' : ''}>↓ Down</button>
+    <button type="button" class="btn small" data-act="remove" aria-label="Remove step ${n}, ${nm}">Remove</button>
+  </div>
+  <p class="help">${esc(d.help)}</p>
+  ${d.opts.length ? `<div class="mb-opts">${d.opts.map((op) => mbOptHTML(s, op)).join('')}</div>` : ''}
+  <div class="mb-res" id="mb-r${s.id}"></div>
+  <div class="btnrow mb-btns">
+    <button type="button" class="btn small" data-act="msg" aria-label="Use step ${n}’s result as the message">Use as the message</button>
+    <button type="button" class="btn small" data-act="key" aria-label="Use step ${n}’s result as the key">Use as the key</button>
+    <button type="button" class="btn small" data-act="copy" aria-label="Copy step ${n}’s result">Copy</button>
+  </div>
+</li>`;
+}
+function mbRender(focus) { // focus: { id, sel } puts the focus back where it was after the cards are rebuilt
+  $('mb-steps').innerHTML = chain.map(mbCardHTML).join('');
+  $('mb-none').hidden = chain.length > 0;
+  $('mb-clear').hidden = chain.length === 0; mbClearArm(false);
+  mbCompute();
+  if (focus) { const el = focus.id ? document.querySelector(`#mb-s${focus.id} ${focus.sel}`) : $(focus.el); if (el) el.focus(); }
+}
+const mbNoteHTML = (nt) => {
+  const [kind, text, list, after] = nt;
+  const items = list ? ' ' + list.items.map((x) => `<code class="mb-item">${esc(x)}</code>`).join(' ') + (list.more ? ` … and ${fmt(list.more)} more` : '') : '';
+  return `<li class="${kind}"><span class="ic" aria-hidden="true">${kind === 'info' ? 'i' : '!'}</span><span>${esc(text)}${items}${after ? ' ' + esc(after) : ''}</span></li>`;
+};
+const mbShown = (t) => (t.length > MB_SHOW ? t.slice(0, MB_SHOW) : t);
+function mbView(v, s) {
+  if (v.kind === 'caesar') {
+    const cut = (t) => (t.length > 2000 ? esc(t.slice(0, 2000)) + '<span class="mb-dim"> …</span>' : esc(t));
+    return `<ol class="mb-shifts" aria-label="All 25 shifts, in order">${v.rows.map((r) => `<li${r.k === v.pick ? ' class="pick"' : ''}><span class="mb-k">${r.k}</span><span class="mb-t">${cut(r.text)}</span></li>`).join('')}</ol>`;
+  }
+  if (v.kind === 'grid') {
+    const R = Math.min(v.grid.length, 60), C = v.grid.length ? Math.min(v.grid[0].length, 60) : 0;
+    const cell = (g) => (g === null ? '<td class="e"></td>' : `<td${/^\s/u.test(g) ? ' class="ws"' : ''}>${esc(visible(g))}</td>`);
+    const rows = v.grid.slice(0, R).map((row) => `<tr>${row.slice(0, C).map(cell).join('')}</tr>`).join('');
+    const more = v.grid.length > R || (v.grid[0] && v.grid[0].length > C) ? `<p class="help">Showing ${fmt(R)} rows and ${fmt(C)} columns of the block; the result has all of it.</p>` : '';
+    return `<p class="mb-cap">${v.dir === 'rows' ? 'Written along the rows, read down the columns:' : 'Written down the columns, read along the rows:'}</p>
+      <div class="mb-gridwrap" tabindex="0" role="region" aria-label="Step ${chain.indexOf(s) + 1}’s block of letters; scroll sideways if it’s wide"><table class="mb-grid">${rows}</table></div>${more}`;
+  }
+  if (v.kind === 'counts') {
+    const max = Math.max(1, ...v.rows.map((r) => r.n)), rows = v.rows.slice(0, 300);
+    const nm = (c) => (c === '\t' ? 'tab' : /^\s/u.test(c) ? 'blank' : c);
+    return `<p class="mb-cap">${fmt(v.total)} counted:</p><ul class="mb-counts">${rows.map((r) => {
+      const pc = v.total ? (100 * r.n / v.total).toFixed(1) + '%' : '';
+      return `<li aria-label="${esc(nm(r.ch))}: ${fmt(r.n)}${pc ? `, ${pc}` : ''}"><span class="ch">${esc(nm(r.ch))}</span><span class="n">${fmt(r.n)}</span><span class="pc">${pc}</span><span class="bar" aria-hidden="true"><i style="width:${(100 * r.n / max).toFixed(1)}%"></i></span></li>`;
+    }).join('')}</ul>${v.rows.length > 300 ? `<p class="help">Showing 300 of ${fmt(v.rows.length)} different characters.</p>` : ''}`;
+  }
+  return '';
+}
+function mbCompute() {
+  const own = radio('mb-src') === 'own';
+  $('mb-own-wrap').hidden = !own;
+  const src = own ? $('mb-own').value : mbFrom;
+  $('mb-src-say').textContent = own ? '' : (src ? `The steps start from the result above, ${plural(Array.from(src).length, 'character')}, and follow it as it changes.` : 'The steps start from the result above, which is empty for now.');
+  mbRes = MKC.chain(src, chain);
+  chain.forEach((s, i) => {
+    const box = $('mb-r' + s.id); if (!box) return;
+    const r = mbRes[i]; let h = '';
+    if (r.blockedBy) h = `<p class="mb-state">Waiting: step ${r.blockedBy} has a setting to fix.</p>`;
+    else if (r.errs.length) h = `<ul class="checks">${r.errs.map((e) => `<li class="bad"><span class="ic" aria-hidden="true">!</span><span>${esc(e)}</span></li>`).join('')}</ul>`;
+    else if (r.off) h = '<p class="mb-state">Off: the text goes on to the next step unchanged.</p>';
+    else if (r.input === '') h = `<p class="mb-state">${i ? 'Nothing to work on: the text coming in is empty.' : 'Nothing to work on yet.'}</p>`;
+    else {
+      const notes = r.notes.slice();
+      if (r.markedBy) notes.unshift(['info', `The text coming in has ? marks from step ${r.markedBy}, where something couldn’t be converted.`]);
+      const v = r.view, listOnly = v && v.kind === 'caesar' && !v.pick, passOn = v && v.kind === 'counts';
+      if (!listOnly && !passOn) h += `<div class="mb-out" role="region" aria-label="Step ${i + 1}’s result">${esc(mbShown(r.text))}</div>`;
+      if (passOn) h += '<p class="mb-state">The text goes on to the next step unchanged.</p>';
+      if (r.text.length > MB_SHOW && !listOnly) h += `<p class="help">Showing the first ${fmt(MB_SHOW)} characters; Copy and the Use buttons take all ${fmt(r.text.length)}.</p>`;
+      if (notes.length) h += `<ul class="checks">${notes.map(mbNoteHTML).join('')}</ul>`;
+      if (v) h += mbView(v, s);
+    }
+    box.innerHTML = h;
+    const none = r.text === null;
+    box.closest('.mb-step').querySelectorAll('[data-act="msg"], [data-act="key"], [data-act="copy"]').forEach((b) => { if (none) b.setAttribute('aria-disabled', 'true'); else b.removeAttribute('aria-disabled'); });
+  });
+}
+const mbIndex = (el) => { const li = el.closest('.mb-step'); return li ? chain.findIndex((s) => s.id === +li.dataset.id) : -1; };
+function mbMove(i, by, sel) {
+  const j = i + by; if (i < 0 || j < 0 || j >= chain.length) return false;
+  const s = chain[i]; chain.splice(i, 1); chain.splice(j, 0, s);
+  mbRender({ id: s.id, sel }); save();
+  mbSay(`Moved ${mbName(s)} to step ${j + 1} of ${chain.length}.`);
+  return true;
+}
+function mbCopy(btn, text, i) {
+  const done = (m) => { btn.textContent = m; clearTimeout(btn._t); btn._t = setTimeout(() => { btn.textContent = 'Copy'; }, 1400); };
+  const fallback = () => { const box = $('mb-r' + chain[i].id).querySelector('.mb-out, .mb-shifts'); if (!box) return done('Can’t copy here'); const r = document.createRange(); r.selectNodeContents(box); const s = getSelection(); s.removeAllRanges(); s.addRange(r); done('Selected: copy it'); };
+  if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(text).then(() => done('Copied'), fallback); else fallback();
+}
+$('mb-steps').addEventListener('click', (e) => {
+  const b = e.target.closest('button[data-act]'); if (!b) return;
+  const i = mbIndex(b); if (i < 0) return;
+  const act = b.dataset.act, s = chain[i];
+  if (b.getAttribute('aria-disabled') === 'true') return;
+  if (act === 'up' || act === 'down') { mbMove(i, act === 'up' ? -1 : 1, `[data-act="${act}"]`); return; }
+  if (act === 'remove') {
+    chain.splice(i, 1);
+    const next = chain[i] || chain[i - 1];
+    mbRender(next ? { id: next.id, sel: '[data-act="remove"]' } : { el: 'mb-pick' }); save();
+    mbSay(`Removed step ${i + 1}, ${mbName(s)}. ${chain.length ? `${plural(chain.length, 'step')} left.` : 'No steps left.'}`);
+    return;
+  }
+  const text = mbRes[i] && mbRes[i].text; if (text === null || text === undefined) return;
+  if (act === 'copy') { mbCopy(b, text, i); return; }
+  if (act === 'msg' || act === 'key') {
+    const to = act === 'msg' ? 'mk-msg' : 'mk-key';
+    $(to).value = text; leaveExample(); update(); $(to).focus();
+    mbSay(`Step ${i + 1}’s result is now the ${act === 'msg' ? 'message' : 'key'}.`);
+  }
+});
+$('mb-steps').addEventListener('keydown', (e) => { // Alt with an arrow moves the step whose button has focus
+  if (!e.altKey || (e.key !== 'ArrowUp' && e.key !== 'ArrowDown')) return;
+  const t = e.target; if (!(t.tagName === 'BUTTON' || (t.tagName === 'INPUT' && t.type === 'checkbox'))) return;
+  const i = mbIndex(t); if (i < 0) return;
+  e.preventDefault();
+  const sel = t.dataset.act ? `[data-act="${t.dataset.act}"]` : `[data-k="${t.dataset.k}"]`;
+  if (!mbMove(i, e.key === 'ArrowUp' ? -1 : 1, sel)) mbSay(e.key === 'ArrowUp' ? `${mbName(chain[i])} is already the first step.` : `${mbName(chain[i])} is already the last step.`);
+});
+const mbSetting = (e) => {
+  const el = e.target, i = mbIndex(el); if (i < 0) return;
+  const s = chain[i];
+  if (el.dataset.act === 'on') { s.on = el.checked; el.closest('.mb-step').classList.toggle('off', !s.on); mbSay(`${mbName(s)} is ${s.on ? 'on' : 'off'}.`); }
+  else if (el.dataset.k) {
+    s.o[el.dataset.k] = el.type === 'checkbox' ? el.checked : el.value;
+    MKC.STEPS[s.type].opts.forEach((op) => { if (op.when) { const w = el.closest('.mb-step').querySelector(`[data-k="${op.k}"]`).closest('label'); w.hidden = s.o[op.when[0]] !== op.when[1]; } });
+  } else return;
+  mbCompute(); save();
+};
+$('mb-steps').addEventListener('input', (e) => { if (e.target.tagName === 'INPUT' && e.target.type === 'text') mbSetting(e); });
+$('mb-steps').addEventListener('change', (e) => { if (e.target.tagName === 'SELECT' || e.target.type === 'checkbox') mbSetting(e); });
+$('mb-add').addEventListener('click', () => {
+  const s = mbStep($('mb-pick').value); chain.push(s);
+  mbRender({ id: s.id, sel: '[data-act="on"]' }); save();
+  mbSay(`Added step ${chain.length}, ${mbName(s)}.`);
+});
+function mbClearArm(on) { const b = $('mb-clear'); b.dataset.armed = on ? '1' : ''; b.textContent = on ? 'Press again to remove them all' : 'Remove all steps'; }
+$('mb-clear').addEventListener('click', () => {
+  if (!$('mb-clear').dataset.armed) { mbClearArm(true); return; }
+  chain = []; mbRender({ el: 'mb-pick' }); save(); mbSay('Removed every step.');
+});
+$('mb-clear').addEventListener('blur', () => mbClearArm(false));
+document.querySelectorAll('input[name="mb-src"]').forEach((el) => el.addEventListener('change', () => { mbCompute(); save(); }));
+$('mb-own').addEventListener('input', () => { clearTimeout(mbCompute.t); mbCompute.t = setTimeout(() => { mbCompute(); save(); }, 40); });
+function mbLoad(list) { // saved steps are checked against what the page knows; anything else is dropped
+  if (!Array.isArray(list)) return;
+  chain = list.filter((x) => x && typeof x.type === 'string' && Object.prototype.hasOwnProperty.call(MKC.STEPS, x.type)).slice(0, 50).map((x) => {
+    const o = {};
+    for (const op of MKC.STEPS[x.type].opts) { const v = x.o && x.o[op.k]; o[op.k] = op.type === 'check' ? (typeof v === 'boolean' ? v : op.def) : typeof v === 'string' ? v.slice(0, 40) : op.def; }
+    return mbStep(x.type, o, x.on !== false);
+  });
+}
+
+/* ---------- the monkey ---------- */
+const FACTS = [
+  'A monkey with a key: a monKEY. Tap me for a fact.',
+  'The cipher now called Vigenère was first described by Giovan Battista Bellaso, in 1553. Blaise de Vigenère’s own book of 1586 described a stronger one: an autokey.',
+  'It was long called le chiffre indéchiffrable: the indecipherable cipher.',
+  'Friedrich Kasiski published a general way to break it in 1863. Charles Babbage had broken it some years earlier, but never published how.',
+  'Johannes Trithemius’s tabula recta was printed in his book Polygraphia in 1518, two years after he died.',
+  'Giovanni Battista della Porta described his cipher in De Furtivis Literarum Notis, in 1563.',
+  'The Beaufort cipher is named after Sir Francis Beaufort, the admiral whose name is also on the Beaufort wind scale.',
+  'Beaufort and Porta both undo themselves: the same key enciphers and deciphers.',
+  'Gronsfeld is Vigenère with a key of digits, so it only ever shifts a letter by 0 to 9 places.',
+  'A key as long as the message, truly random and never used again, turns Vigenère into a one-time pad, which can’t be broken.',
+  'In autokey, once the primer runs out, the message becomes its own key.',
+  'The monkeys with tails that can grip a branch, such as spider monkeys and howler monkeys, all live in Central and South America. No Old World monkey has one.',
+  'Apes, such as chimpanzees and gorillas, aren’t monkeys. One easy way to tell: apes have no tail.',
+  'The pygmy marmoset, from the Amazon, is the smallest monkey: an adult weighs about 100 grams.',
+  'The mandrill is the largest monkey. A big male can weigh over 30 kilograms.',
+  'Some capuchin monkeys crack nuts open with stones, using a flat rock as an anvil.',
+  'Japanese macaques in the mountains of Nagano bathe in hot springs in winter.',
+  'In 1913, Émile Borel imagined monkeys typing at random. Given endless time, they would almost surely type any text at all. A key would save them some time.'
+];
+let factI = 0;
+$('mk-monkey').addEventListener('click', () => {
+  factI = (factI + 1) % FACTS.length;
+  $('mk-says').textContent = FACTS[factI];
+  const m = $('mk-monkey');
+  if (reduced()) return;
+  m.classList.remove('swing'); void m.getBoundingClientRect(); m.classList.add('swing');
+});
+$('mk-monkey').addEventListener('animationend', (e) => { if (e.animationName === 'mk-swing') $('mk-monkey').classList.remove('swing'); });
+
+/* ---------- remember the solver's own work, on this device only ---------- */
+const KEY = 'aft.monkeying-around';
+const TEXT = ['mk-msg', 'mk-key', 'mk-start', 'mk-tri-off', 'mk-tri-step', 'mk-qkw1', 'mk-qkw2', 'mk-qind'];
+const SELECT = ['mk-cipher', 'mk-auto'], CHECK = ['mk-f-accent', 'mk-f-sz', 'mk-f-lig', 'mk-f-fancy'], RADIO = ['mk-dir', 'mk-run', 'mk-nonl'];
+function save() {
+  const o = {};
+  TEXT.concat(SELECT).forEach((id) => { o[id] = $(id).value; });
+  CHECK.forEach((id) => { o[id] = $(id).checked; });
+  RADIO.forEach((n) => { o[n] = radio(n); });
+  o.mbSrc = radio('mb-src'); o.mbOwn = $('mb-own').value;
+  o.chain = chain.map((s) => ({ type: s.type, on: s.on, o: s.o }));
+  try { localStorage.setItem(KEY, JSON.stringify(o)); } catch (e) { /* storage unavailable */ }
+}
+function load() {
+  let o = {};
+  try { o = JSON.parse(localStorage.getItem(KEY) || '{}') || {}; } catch (e) { o = {}; }
+  TEXT.forEach((id) => { if (typeof o[id] === 'string') $(id).value = o[id]; });
+  SELECT.forEach((id) => { if (typeof o[id] === 'string' && [...$(id).options].some((x) => x.value === o[id])) $(id).value = o[id]; });
+  CHECK.forEach((id) => { if (typeof o[id] === 'boolean') $(id).checked = o[id]; });
+  RADIO.forEach((n) => { if (typeof o[n] === 'string') setRadio(n, o[n]); });
+  if (o.mbSrc === 'own' || o.mbSrc === 'result') setRadio('mb-src', o.mbSrc);
+  if (typeof o.mbOwn === 'string') $('mb-own').value = o.mbOwn;
+  mbLoad(o.chain);
+}
+
+/* ---------- the example: all made up ---------- */
+const EX_KEY = 'Far up the river, where the forest grows so thick that the sun comes down in coins, an old monkey named Juniper kept a ledger of every fruit tree she had ever climbed. She wrote it in a small, careful hand, page after page, and when the rains came she read it aloud to anyone who would sit still long enough to listen.';
+const EX_MSG = 'Ierl Ebw,\nSy, bci wenw sc moi tzu wlhtv kadd okl zkzx ht etzx!\nGhya qaqw dh jbwa, cbl ojiau ekq pyei znswiw.\nOcyt xx wyv iae ear uj lg.';
+$('btn-example').addEventListener('click', () => {
+  $('mk-msg').value = EX_MSG; $('mk-key').value = EX_KEY; $('mk-cipher').value = 'vig'; $('mk-start').value = '1';
+  setRadio('mk-dir', 'dec'); setRadio('mk-run', 'stop'); setRadio('mk-nonl', 'keep');
+  CHECK.forEach((id) => { $(id).checked = true; });
+  chain = [mbStep('first', { of: 'lines' }), mbStep('reverse', { mode: 'all' })]; setRadio('mb-src', 'result');
+  sel = -1; mbRender(); update();
+  $('mk-exnote').hidden = false;
+  $('result').scrollIntoView({ behavior: reduced() ? 'auto' : 'smooth', block: 'start' });
+});
+
+/* ---------- start ---------- */
+load();
+mbRender();
+update();
+})();
+</script>
+</body>
+</html>
+

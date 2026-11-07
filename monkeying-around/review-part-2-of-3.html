@@ -1,0 +1,783 @@
+<!-- Review copy: lines 659-1440 of monkeying-around/index.html, split so Copilot can review it. Not served. -->
+          </g>
+          <circle class="mk-skin mk-grip" cx="117" cy="83" r="6"/>
+        </g>
+      </svg>
+    </button>
+    <div class="mk-side">
+      <p class="note">An optional helper: a workbench for the Vigenère family of ciphers, for when you know a key or want to try one, with a chain of simple steps for doing more to the result. It doesn’t guess keys, find key lengths or try to break anything. It runs entirely in your browser and keeps working once it has loaded, even with no signal. What you type stays on this device.</p>
+      <p class="mk-says" id="mk-says" aria-live="polite">A monkey with a key: a monKEY. Tap me for a fact.</p>
+    </div>
+  </div>
+
+  <section class="panel" id="message" aria-labelledby="h-message">
+    <div class="panel-head"><span class="step">1</span><h2 id="h-message">The message</h2></div>
+    <label class="lbl" for="mk-msg">Message</label>
+    <textarea id="mk-msg" class="numin txt mk-text" rows="4" spellcheck="false" autocomplete="off" placeholder="Type or paste the text to encipher or decipher"></textarea>
+    <div class="mk-seg" role="radiogroup" aria-labelledby="mk-dir-lbl">
+      <span class="mk-seglbl" id="mk-dir-lbl">Direction</span>
+      <label><input type="radio" name="mk-dir" value="enc" checked> <span>Encipher</span></label>
+      <label><input type="radio" name="mk-dir" value="dec"> <span>Decipher</span></label>
+    </div>
+    <p class="help" id="mk-msg-stats"></p>
+  </section>
+
+  <section class="panel" id="cipher" aria-labelledby="h-cipher">
+    <div class="panel-head"><span class="step">2</span><h2 id="h-cipher">The cipher</h2></div>
+    <div class="fgrid">
+      <label>Cipher
+        <select id="mk-cipher">
+          <option value="vig">Vigenère</option>
+          <option value="beau">Beaufort</option>
+          <option value="varb">Variant Beaufort</option>
+          <option value="gron">Gronsfeld (a key of digits)</option>
+          <option value="auto">Autokey (plaintext autokey)</option>
+          <option value="porta">Porta</option>
+          <option value="trith">Trithemius (progressive shift)</option>
+          <option value="q1">Quagmire I</option>
+          <option value="q2">Quagmire II</option>
+          <option value="q3">Quagmire III</option>
+          <option value="q4">Quagmire IV</option>
+        </select>
+      </label>
+      <label id="mk-auto-wrap" hidden>Autokey uses the table of
+        <select id="mk-auto">
+          <option value="vig">Vigenère</option>
+          <option value="beau">Beaufort</option>
+          <option value="varb">Variant Beaufort</option>
+        </select>
+      </label>
+      <label id="mk-tri-off-wrap" hidden>Starting shift
+        <input type="text" id="mk-tri-off" inputmode="numeric" autocomplete="off" value="0">
+      </label>
+      <label id="mk-tri-step-wrap" hidden>Step (added each letter)
+        <input type="text" id="mk-tri-step" inputmode="numeric" autocomplete="off" value="1">
+      </label>
+    </div>
+    <p class="mk-formula" id="mk-formula"></p>
+    <p class="help" id="mk-cipher-help"></p>
+    <div id="mk-quag" hidden>
+      <div class="fgrid">
+        <label id="mk-qkw1-wrap"><span id="mk-qkw1-lbl">Alphabet keyword</span>
+          <input type="text" id="mk-qkw1" autocomplete="off" spellcheck="false">
+        </label>
+        <label id="mk-qkw2-wrap">Ciphertext alphabet keyword
+          <input type="text" id="mk-qkw2" autocomplete="off" spellcheck="false">
+        </label>
+        <label>Key letters line up under plaintext letter
+          <input type="text" id="mk-qind" autocomplete="off" spellcheck="false" maxlength="4" placeholder="first letter">
+        </label>
+      </div>
+      <p class="help">A keyed alphabet is the keyword’s letters, each used once, then the rest of A to Z in order. Sources differ on where the key letter (the indicator) lines up: left blank, it goes under the first letter of the plaintext alphabet, as in the Kryptos tableau; type a letter, such as A, to put it under that plaintext letter instead.</p>
+      <div class="mk-alpha" id="mk-alpha"></div>
+    </div>
+  </section>
+
+  <section class="panel" id="key" aria-labelledby="h-key">
+    <div class="panel-head"><span class="step">3</span><h2 id="h-key">The key</h2></div>
+    <div id="mk-key-on">
+      <label class="lbl" for="mk-key" id="mk-key-lbl">Key</label>
+      <textarea id="mk-key" class="numin txt mk-text" rows="2" spellcheck="false" autocomplete="off" placeholder="A short word, or paste a long passage as a running key"></textarea>
+      <div class="mk-seg" role="radiogroup" aria-labelledby="mk-run-lbl" id="mk-run">
+        <span class="mk-seglbl" id="mk-run-lbl">When the key runs out</span>
+        <label><input type="radio" name="mk-run" value="repeat" checked> <span>Repeat it (a short key)</span></label>
+        <label><input type="radio" name="mk-run" value="stop"> <span>Stop (a running key)</span></label>
+      </div>
+      <div class="fgrid">
+        <label>Start at letter number
+          <input type="number" id="mk-start" min="1" step="1" value="1" inputmode="numeric">
+        </label>
+      </div>
+      <p class="help" id="mk-key-stats"></p>
+      <p class="mk-keyview" id="mk-keyview"></p>
+    </div>
+    <p class="help" id="mk-key-off" hidden>Trithemius has no key: each letter is shifted by the starting shift plus the step times its position, so the shifts go 0, 1, 2, 3 … with the usual settings. Set them under The cipher.</p>
+  </section>
+
+  <section class="panel" id="letters" aria-labelledby="h-letters">
+    <div class="panel-head"><span class="step">4</span><h2 id="h-letters">What counts as a letter</h2></div>
+    <fieldset class="mk-fs">
+      <legend>Spaces, digits, punctuation, and letters outside A to Z</legend>
+      <label class="inline"><input type="radio" name="mk-nonl" value="keep" checked> Leave them in place; the key doesn’t move on</label>
+      <label class="inline"><input type="radio" name="mk-nonl" value="move"> Leave them in place, and move the key on one letter for each</label>
+      <label class="inline"><input type="radio" name="mk-nonl" value="drop"> Remove them</label>
+    </fieldset>
+    <fieldset class="mk-fs">
+      <legend>Folding: read these as plain A to Z, in the message and in the key</legend>
+      <label class="inline"><input type="checkbox" id="mk-f-accent" checked> Accented letters: é → e, ñ → n, ø → o, ł → l</label>
+      <label class="inline"><input type="checkbox" id="mk-f-sz" checked> ß → ss</label>
+      <label class="inline"><input type="checkbox" id="mk-f-lig" checked> Æ → AE, Œ → OE, and ligatures such as ﬁ → fi</label>
+      <label class="inline"><input type="checkbox" id="mk-f-fancy" checked> Fancy lettering: 𝔄 𝐀 𝔸 𝒜 𝖠 𝙰 Ａ Ⓐ 🅐 → A</label>
+    </fieldset>
+    <p class="help">Folded letters come out as plain letters, in the message’s own case. Letters from other scripts, such as Greek or Cyrillic, are always left in place and never move the key on. A letter that isn’t folded (é with accents off, say) counts with the spaces and punctuation above.</p>
+  </section>
+
+  <section class="panel" id="result" aria-labelledby="h-result">
+    <div class="panel-head"><span class="step">5</span><h2 id="h-result">The result</h2></div>
+    <p class="mk-exnote" id="mk-exnote" hidden>Example, all made up: a note enciphered with Vigenère, using a passage from a story as a running key, with spaces and punctuation left in place and the key not moving on. Under Monkey business, two steps take the first letter of each line and then reverse them. Now choose “move the key on one letter for each” under What counts as a letter, and the note goes wrong right after its first word.</p>
+    <div class="reading mk-out" id="mk-out" aria-describedby="h-result"></div>
+    <div class="btnrow mk-outbtns">
+      <button type="button" class="btn" id="mk-copy">Copy</button>
+      <button type="button" class="btn" id="mk-swap">Use the result as the message</button>
+    </div>
+    <p class="sr" role="status" id="mk-status"></p>
+    <ul class="checks" id="mk-notes"></ul>
+    <h3 class="mk-h3">Letter by letter</h3>
+    <p class="help">Each column is one character: the message on top, the key in the middle, the result below. Tap a column, or use the arrow keys, Home and End, to see it worked out and lit up in the table.</p>
+    <div class="mk-legend" aria-hidden="true"><span class="m">message</span><span class="k">key</span><span class="o">result</span></div>
+    <div class="mk-align" id="mk-align" role="listbox" aria-label="The message, key and result, letter by letter" aria-orientation="horizontal"></div>
+    <p class="help" id="mk-align-more"></p>
+    <p class="mk-explain" id="mk-explain" aria-live="polite"></p>
+  </section>
+
+  <section class="panel" id="business" aria-labelledby="h-business">
+    <div class="panel-head"><span class="step">6</span><h2 id="h-business">Monkey business</h2></div>
+    <p class="help mb-intro">Do more to the text with a chain of steps. Each step works on what the step before it made, and shows its own result. Switch a step off to skip it, move it with its Up and Down buttons (or press Alt with ↑ or ↓ while one of its buttons has focus), and send any step’s result back up as the message or the key. The steps only show; you decide what any of it means.</p>
+    <div class="mk-seg" role="radiogroup" aria-labelledby="mb-src-lbl">
+      <span class="mk-seglbl" id="mb-src-lbl">Start from</span>
+      <label><input type="radio" name="mb-src" value="result" checked> <span>The result above</span></label>
+      <label><input type="radio" name="mb-src" value="own"> <span>Text of my own</span></label>
+    </div>
+    <div id="mb-own-wrap" hidden>
+      <label class="lbl" for="mb-own">Your text</label>
+      <textarea id="mb-own" class="numin txt mk-text" rows="3" spellcheck="false" autocomplete="off" placeholder="Type or paste any text for the steps to work on"></textarea>
+    </div>
+    <p class="help" id="mb-src-say"></p>
+    <ol class="mb-steps" id="mb-steps" aria-label="The chain of steps"></ol>
+    <p class="mb-none" id="mb-none">No steps yet. Choose one below and add it.</p>
+    <div class="mb-add">
+      <label for="mb-pick">Add a step</label>
+      <select id="mb-pick"></select>
+      <button type="button" class="btn" id="mb-add">Add step</button>
+      <button type="button" class="btn quiet" id="mb-clear">Remove all steps</button>
+    </div>
+    <p class="sr" role="status" id="mb-status"></p>
+  </section>
+
+  <section class="panel" id="table" aria-labelledby="h-table">
+    <div class="panel-head"><span class="step">7</span><h2 id="h-table">The table</h2></div>
+    <p class="help" id="mk-tab-help"></p>
+    <div class="mk-tabwrap" id="mk-tabwrap" tabindex="0" role="region" aria-label="The cipher's table; scroll sideways to see all of it">
+      <table class="mk-tab" id="mk-tab"></table>
+    </div>
+    <p class="mk-explain" id="mk-tab-say"></p>
+  </section>
+
+  <section class="panel" id="about" aria-labelledby="h-about">
+    <div class="panel-head"><span class="step">8</span><h2 id="h-about">About the ciphers</h2></div>
+    <div class="explain">
+      <p>Letters are numbers here: A = 0, B = 1, … Z = 25, and every sum is taken mod 26, so it wraps round from Z back to A. <var>P</var> is a plaintext letter, <var>C</var> its ciphertext letter and <var>K</var> the key letter used on it.</p>
+      <div class="scroll"><table class="ftab mk-ftab">
+        <thead><tr><th scope="col">Cipher</th><th scope="col">Encipher</th><th scope="col">Decipher</th></tr></thead>
+        <tbody>
+          <tr><th scope="row">Vigenère</th><td><var>C = P + K</var></td><td><var>P = C − K</var></td></tr>
+          <tr><th scope="row">Beaufort</th><td><var>C = K − P</var></td><td><var>P = K − C</var></td></tr>
+          <tr><th scope="row">Variant Beaufort</th><td><var>C = P − K</var></td><td><var>P = C + K</var></td></tr>
+          <tr><th scope="row">Gronsfeld</th><td><var>C = P + d</var></td><td><var>P = C − d</var></td></tr>
+          <tr><th scope="row">Trithemius</th><td><var>C = P + s + i·t</var></td><td><var>P = C − s − i·t</var></td></tr>
+        </tbody>
+      </table></div>
+      <p><b>Vigenère</b> adds the key letter, so a key of A changes nothing and a key of B shifts one place. <b>Beaufort</b> subtracts the message letter from the key letter; because <var>K − (K − P) = P</var>, enciphering and deciphering are the same thing. <b>Variant Beaufort</b> subtracts the key, so it enciphers exactly the way Vigenère deciphers. <b>Gronsfeld</b> is Vigenère with a key of digits <var>d</var> from 0 to 9; only the key’s digits are used.</p>
+      <p><b>Autokey</b> here is the plaintext autokey: the key you type is the primer, and once its letters are used up, the message’s own plaintext letters follow it as the key. With a primer of QUEENLY, ATTACKATDAWN is keyed by QUEENLYATTAC. Choose whether its letters are combined by the Vigenère, Beaufort or variant Beaufort rule. Because the key comes from the message’s letters, spaces and punctuation never move it on in autokey.</p>
+      <p><b>Porta</b> has 13 alphabets, one for each pair of key letters (A or B, C or D, … Y or Z). In each one, the first half of the alphabet (A to M) swaps with the second (N to Z): with the pair numbered <var>r</var> (A B is 0, C D is 1, … Y Z is 12), a letter <var>P</var> from A to M becomes <var>13 + (P + r) mod 13</var>, and the swap undoes itself, so the same key deciphers. This is the Porta table most modern references use; some older books lay it out differently, so check that yours matches the one below.</p>
+      <p><b>Trithemius</b> uses no key: letter number <var>i</var> (counting from 0) is shifted by the starting shift <var>s</var> plus <var>i</var> times the step <var>t</var>. The classic form, with <var>s</var> = 0 and <var>t</var> = 1, leaves the first letter alone, shifts the second by one, the third by two, and so on.</p>
+      <p><b>Quagmires</b> use keyed alphabets. Write the plaintext alphabet along the top; under it, slide the ciphertext alphabet along until the key letter sits under the chosen plaintext letter (the indicator position); then read each message letter’s ciphertext letter straight below it. As a formula, with places counted from 0: the slide <var>s</var> is the key letter’s place in the ciphertext alphabet <var>CA</var> minus the indicator’s place in the plaintext alphabet <var>PA</var>, and <var>C = CA[pos(P) + s]</var>, where <var>pos(P)</var> is the place of <var>P</var> in <var>PA</var>; deciphering runs it backwards, <var>P = PA[pos(C) − s]</var> with <var>pos(C)</var> the place of <var>C</var> in <var>CA</var>. Quagmire I keys only the plaintext alphabet, II only the ciphertext alphabet, III uses the same keyed alphabet for both, and IV two different ones. With no keywords, every Quagmire is plain Vigenère. The first two sections of the Kryptos sculpture’s ciphertext are Quagmire III, keyed with KRYPTOS, with the key letter under the first letter of the plaintext alphabet.</p>
+      <p><b>Keys.</b> The key’s letters are read with the same folding as the message, and anything else in the key (spaces, punctuation, other scripts) is skipped. A short key repeats; a running key, such as a passage from a book, is used once from where it starts, and the page says so plainly when it’s shorter than the message, showing <var>_</var> for each letter it didn’t reach. Starting at a later letter is how you’d use, say, a passage that begins partway down a page.</p>
+      <p><b>Monkey business.</b> The steps are exact, and none of them repairs anything: a number, code or Morse group that can’t be read shows as <var>?</var> and is listed, and a setting that doesn’t make sense stops the chain at that step until it’s fixed. A1Z26 numbers the letters A = 1 to Z = 26. Character codes are Unicode code points, the same as ASCII for plain letters, digits and punctuation. Morse is the international code, plus <var>!</var>. Writing in rows and reading down the columns, then writing down the columns and reading along the rows at the same width, gives back the text you started with; when the block isn’t full, its left-hand columns are the longer ones.</p>
+      <p><b>What it doesn’t do.</b> It doesn’t guess keys, find key lengths or attempt any other cryptanalysis. Its Caesar shifts come in order from 1 to 25 and its letter counts are information only: nothing on the page ranks results or says which one reads like words. It’s a workbench for when you know a key, or are trying one.</p>
+    </div>
+  </section>
+
+  <footer>
+    <span>Monkeying Around · <a href="../">all AdequateFootwear tools</a></span>
+    <span class="mono">A key for every lock</span>
+  </footer>
+</main>
+
+<script>
+(() => {
+'use strict';
+const $ = (id) => document.getElementById(id);
+const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+const reduced = () => !!(window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches);
+const fmt = (n) => n.toLocaleString('en-GB');
+const plural = (n, one, many) => `${fmt(n)} ${n === 1 ? one : (many || one + 's')}`;
+
+/* ---------- Monkeying Around: the engine (no page code here, so it can be tested on its own) ---------- */
+const MK = (() => {
+const mod = (x, n) => ((x % n) + n) % n;
+const AZ = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
+const L = (v) => AZ[v];
+
+/* ---- fancy lettering, written from the Unicode block layouts ----
+   Mathematical Alphanumeric Symbols (U+1D400 to U+1D7FF) holds the Latin letters in 13 styles of 52 code points each,
+   capitals A to Z then small a to z. A few of those code points are left empty because the letter was already in
+   Letterlike Symbols (U+2100 to U+214F); the HOLES below say which, and where the letter lives instead. */
+const MATH_STYLES = [
+  [0x1D400, 'bold'], [0x1D434, 'italic'], [0x1D468, 'bold italic'], [0x1D49C, 'script'], [0x1D4D0, 'bold script'],
+  [0x1D504, 'Fraktur'], [0x1D538, 'double-struck'], [0x1D56C, 'bold Fraktur'], [0x1D5A0, 'sans-serif'],
+  [0x1D5D4, 'sans-serif bold'], [0x1D608, 'sans-serif italic'], [0x1D63C, 'sans-serif bold italic'], [0x1D670, 'monospace']];
+const HOLES = { // style start → { index within its 52 (0 = A, 26 = a): the Letterlike Symbols code point used instead }
+  0x1D434: { 33: 0x210E },                                                            // italic h: ℎ (Planck constant)
+  0x1D49C: { 1: 0x212C, 4: 0x2130, 5: 0x2131, 7: 0x210B, 8: 0x2110, 11: 0x2112, 12: 0x2133, 17: 0x211B,
+             30: 0x212F, 32: 0x210A, 40: 0x2134 },                                    // script B E F H I L M R, e g o
+  0x1D504: { 2: 0x212D, 7: 0x210C, 8: 0x2111, 17: 0x211C, 25: 0x2128 },                // Fraktur C H I R Z
+  0x1D538: { 2: 0x2102, 7: 0x210D, 13: 0x2115, 15: 0x2119, 16: 0x211A, 17: 0x211D, 25: 0x2124 } // double-struck C H N P Q R Z
+};
+const FANCY = new Map(); // code point → { c: plain letter, s: style }
+const run = (start, first, n, style) => { for (let i = 0; i < n; i++) FANCY.set(start + i, { c: String.fromCharCode(first + i), s: style }); };
+for (const [b, s] of MATH_STYLES) {
+  run(b, 65, 26, s); run(b + 26, 97, 26, s);
+  const h = HOLES[b] || {};
+  for (const i in h) { const e = FANCY.get(b + +i); FANCY.delete(b + +i); FANCY.set(h[i], e); }
+}
+FANCY.set(0x1D6A4, { c: 'i', s: 'italic dotless' }); FANCY.set(0x1D6A5, { c: 'j', s: 'italic dotless' });
+run(0xFF21, 65, 26, 'fullwidth'); run(0xFF41, 97, 26, 'fullwidth');
+run(0x24B6, 65, 26, 'circled'); run(0x24D0, 97, 26, 'circled');
+run(0x249C, 97, 26, 'parenthesized'); run(0x1F110, 65, 26, 'parenthesized');
+run(0x1F130, 65, 26, 'squared'); run(0x1F150, 65, 26, 'negative circled'); run(0x1F170, 65, 26, 'negative squared');
+// fancy digits, used for a Gronsfeld key: fullwidth, and the five digit styles at U+1D7CE (bold, double-struck, sans-serif, sans-serif bold, monospace)
+const FDIGIT = new Map();
+for (let i = 0; i < 10; i++) FDIGIT.set(0xFF10 + i, i);
+for (let k = 0; k < 5; k++) for (let i = 0; i < 10; i++) FDIGIT.set(0x1D7CE + 10 * k + i, i);
+
+/* ---- accented Latin letters ----
+   Most come apart into a letter plus combining accents (Unicode's canonical decomposition, NFD), and the accents are
+   dropped. Letters with a stroke, bar or middle dot don't come apart, so they are listed here, from their Unicode names
+   ("LATIN SMALL LETTER O WITH STROKE" and so on), with dotless i and j and the long s. */
+const STROKE = new Map();
+{ const s = 'ØOøoĐDđdĦHħhıiĿLŀlŁLłlŦTŧtſsƀbƗIƚlƵZƶzǤGǥgȷjȺAȻCȼcȽLȾTɃBɆEɇeɈJɉjɌRɍrɎYɏyɨiᵽpⱠLⱡlⱣPⱥaⱦtꝀKꝁkꝂKꝃkꝘQꝙqꝞVꝟvꞒCꞓcꞘFꞙfꞸUꞹu';
+  const a = Array.from(s); for (let i = 0; i < a.length; i += 2) STROKE.set(a[i].codePointAt(0), a[i + 1]); }
+const SZ = new Map([[0xDF, 'ss'], [0x1E9E, 'SS']]);
+const LIG = new Map([[0xC6, 'AE'], [0xE6, 'ae'], [0x152, 'OE'], [0x153, 'oe'], [0x132, 'IJ'], [0x133, 'ij'],
+  [0x1C4, 'DZ'], [0x1C5, 'Dz'], [0x1C6, 'dz'], [0x1C7, 'LJ'], [0x1C8, 'Lj'], [0x1C9, 'lj'], [0x1CA, 'NJ'], [0x1CB, 'Nj'], [0x1CC, 'nj'],
+  [0x1F1, 'DZ'], [0x1F2, 'Dz'], [0x1F3, 'dz'],
+  [0xFB00, 'ff'], [0xFB01, 'fi'], [0xFB02, 'fl'], [0xFB03, 'ffi'], [0xFB04, 'ffl'], [0xFB05, 'st'], [0xFB06, 'st']]);
+
+const RE_MARK = /\p{M}/gu;
+const RE_LETTER = /^\p{L}/u;
+const RE_LATINISH = /^[\p{Script=Latin}\p{Script=Common}\p{Script=Inherited}]/u;
+let segmenter = null;
+try { segmenter = new Intl.Segmenter('en', { granularity: 'grapheme' }); } catch (e) { segmenter = null; }
+function graphemes(s) { // what a reader sees as one character: a letter with its accents, an emoji with its modifiers
+  if (segmenter) return Array.from(segmenter.segment(s), (x) => x.segment);
+  const out = [];
+  for (const ch of s) { if (out.length && /^[\p{M}‍︀-️]$/u.test(ch)) out[out.length - 1] += ch; else out.push(ch); }
+  return out;
+}
+
+/* One character → its plain letters, or null if it isn't a letter A to Z after folding.
+   f = { accent, sz, lig, fancy } says which foldings are on. */
+function foldOne(g, f) {
+  // variation selectors (an emoji keyboard's 🅰️ is 🅰 + U+FE0F) only choose how a character is drawn
+  let s = g.normalize('NFC').replace(/[\uFE00-\uFE0F]|\uDB40[\uDD00-\uDDEF]/g, ''), how = null;
+  if (f.accent) { const d = s.normalize('NFD').replace(RE_MARK, ''); if (d !== s) how = 'accent'; s = d; }
+  const cps = Array.from(s);
+  if (cps.length !== 1) return null;
+  const cp = cps[0].codePointAt(0);
+  let t = null;
+  if ((cp >= 65 && cp <= 90) || (cp >= 97 && cp <= 122)) t = cps[0];
+  else if (f.accent && STROKE.has(cp)) { t = STROKE.get(cp); how = 'accent'; }
+  else if (f.sz && SZ.has(cp)) { t = SZ.get(cp); how = 'sz'; }
+  else if (f.lig && LIG.has(cp)) { t = LIG.get(cp); how = 'lig'; }
+  else if (f.fancy && FANCY.has(cp)) { t = FANCY.get(cp).c; how = 'fancy'; }
+  if (t === null) return null;
+  return { L: Array.from(t, (c) => ({ v: c.toUpperCase().charCodeAt(0) - 65, up: c >= 'A' && c <= 'Z' })), how };
+}
+/* Split a text into units: letters (with their plain A–Z letters), other scripts' letters, and everything else. */
+function segment(text, f) {
+  return graphemes(String(text)).map((g) => {
+    const r = foldOne(g, f);
+    if (r) return { s: g, kind: 'letter', L: r.L, how: r.how };
+    const first = Array.from(g.normalize('NFC'))[0] || '';
+    return { s: g, kind: RE_LETTER.test(first) && !RE_LATINISH.test(first) ? 'script' : 'other' };
+  });
+}
+/* The key's letters (or, for Gronsfeld, its digits), after the same folding. */
+function keyValues(text, f, digits) {
+  const vals = [], shown = []; let skipped = 0;
+  for (const g of graphemes(String(text))) {
+    if (digits) {
+      const cp = g.codePointAt(0);
+      if (g.length === 1 && cp >= 48 && cp <= 57) { vals.push(cp - 48); shown.push(g); }
+      else if (f.fancy && Array.from(g).length === 1 && FDIGIT.has(cp)) { vals.push(FDIGIT.get(cp)); shown.push(String(FDIGIT.get(cp))); }
+      else if (foldOne(g, f)) skipped++;
+    } else {
+      const r = foldOne(g, f);
+      if (r) for (const x of r.L) { vals.push(x.v); shown.push(L(x.v)); }
+    }
+  }
+  return { vals, shown, skipped };
+}
+/* A keyed alphabet: the keyword's letters, each used once, then the rest of A to Z in order. */
+function keyed(word, f) {
+  const seen = new Set(), out = [];
+  for (const v of keyValues(word || '', f, false).vals) if (!seen.has(v)) { seen.add(v); out.push(v); }
+  for (let v = 0; v < 26; v++) if (!seen.has(v)) out.push(v);
+  return out;
+}
+
+/* ---- the ciphers, on numbers 0 to 25 (A = 0); p plaintext, c ciphertext, k the key's value ---- */
+const RULES = {
+  vig:  { enc: (p, k) => mod(p + k, 26), dec: (c, k) => mod(c - k, 26) },
+  beau: { enc: (p, k) => mod(k - p, 26), dec: (c, k) => mod(k - c, 26) },
+  varb: { enc: (p, k) => mod(p - k, 26), dec: (c, k) => mod(c + k, 26) },
+  porta: { // 13 alphabets, one for each pair of key letters (AB, CD … YZ); each swaps the first half of A–Z with the second
+    enc: (p, k) => { const r = k >> 1; return p < 13 ? 13 + mod(p + r, 13) : mod(p - 13 - r, 13); },
+    dec: (c, k) => { const r = k >> 1; return c < 13 ? 13 + mod(c + r, 13) : mod(c - 13 - r, 13); } }
+};
+function quagRule(PA, CA, ind) { // plaintext alphabet PA, ciphertext alphabet CA, key letter set under plaintext letter ind
+  const pPA = [], pCA = [];
+  PA.forEach((v, i) => { pPA[v] = i; }); CA.forEach((v, i) => { pCA[v] = i; });
+  const sh = (k) => mod(pCA[k] - pPA[ind], 26); // how far the ciphertext alphabet slides for key letter k
+  return { PA, CA, pPA, pCA, sh,
+    enc: (p, k) => CA[mod(pPA[p] + sh(k), 26)],
+    dec: (c, k) => PA[mod(pCA[c] - sh(k), 26)] };
+}
+const CIPHERS = {
+  vig: 'Vigenère', beau: 'Beaufort', varb: 'Variant Beaufort', gron: 'Gronsfeld', auto: 'Autokey', porta: 'Porta',
+  trith: 'Trithemius', q1: 'Quagmire I', q2: 'Quagmire II', q3: 'Quagmire III', q4: 'Quagmire IV' };
+const RECIPROCAL = { beau: 1, porta: 1 };
+
+/* The rule (enc and dec) a configuration uses. */
+function ruleOf(cfg) {
+  const c = cfg.cipher;
+  if (c === 'vig' || c === 'gron' || c === 'trith') return RULES.vig;
+  if (c === 'beau' || c === 'varb' || c === 'porta') return RULES[c];
+  if (c === 'auto') return RULES[cfg.auto] || RULES.vig;
+  if (c[0] === 'q') return quagOf(cfg);
+  return RULES.vig;
+}
+function quagOf(cfg) {
+  const f = cfg.fold, q = cfg.quag || {}, straight = keyed('', f);
+  const kp = keyed(q.pa, f), kc = keyed(cfg.cipher === 'q4' ? q.ca : q.pa, f);
+  const PA = cfg.cipher === 'q2' ? straight : kp;
+  const CA = cfg.cipher === 'q1' ? straight : kc;
+  const ind = keyValues(q.ind || '', f, false).vals[0]; // left blank: the first letter of the plaintext alphabet
+  return quagRule(PA, CA, ind === undefined ? PA[0] : ind);
+}
+
+/* ---- run a whole message ----
+   cfg = { cipher, dir: 'enc' | 'dec', key, start (1-based), repeat (true: a short key repeats; false: a running key stops),
+           nonl: 'keep' | 'move' | 'drop', fold: { accent, sz, lig, fancy }, auto: 'vig' | 'beau' | 'varb',
+           tri: { offset, step }, quag: { pa, ca, ind } } */
+const GAP = '_'; // shown for a letter the running key didn't reach
+function process(msg, cfg) {
+  const f = cfg.fold, c = cfg.cipher, dec = cfg.dir === 'dec';
+  const units = segment(msg, f);
+  const rule = ruleOf(cfg);
+  const digits = c === 'gron';
+  const kv = c === 'trith' ? { vals: [], shown: [], skipped: 0 } : keyValues(cfg.key, f, digits);
+  const n = kv.vals.length, st = Math.max(1, Math.floor(+cfg.start || 1));
+  const off = Math.trunc(+((cfg.tri || {}).offset) || 0), step = Math.trunc(+((cfg.tri || {}).step) || 0);
+  const move = cfg.nonl === 'move' && c !== 'auto'; // autokey takes its key from the message's letters, so only letters move it
+  const plain = []; // autokey: the plaintext letters so far
+  const primer = c === 'auto' ? kv.vals.slice(st - 1) : null;
+  const keyAt = (j) => { // the key's value at step j, or null when there is none
+    if (c === 'trith') return mod(off + j * step, 26);
+    if (c === 'auto') return j < primer.length ? primer[j] : (j - primer.length < plain.length ? plain[j - primer.length] : null);
+    if (!n || st > n) return null;
+    if (cfg.repeat) return kv.vals[(st - 1 + j) % n];
+    return st - 1 + j < n ? kv.vals[st - 1 + j] : null;
+  };
+  let j = 0, letters = 0, missing = 0, others = 0, scripts = 0, removed = 0;
+  const folded = { accent: 0, sz: 0, lig: 0, fancy: 0 };
+  const out = [], cols = [];
+  for (const u of units) {
+    if (u.kind === 'letter') {
+      const col = { s: u.s, kind: 'letter', how: u.how, steps: [] };
+      if (u.how) folded[u.how]++;
+      let o = '';
+      for (const x of u.L) {
+        const k = keyAt(j), pos = j; j++; letters++;
+        if (k === null) { missing++; o += GAP; col.steps.push({ inp: x.v, up: x.up, k: null, j: pos }); continue; }
+        const r = dec ? rule.dec(x.v, k) : rule.enc(x.v, k);
+        if (c === 'auto') plain.push(dec ? r : x.v);
+        o += x.up ? L(r) : L(r).toLowerCase();
+        col.steps.push({ inp: x.v, up: x.up, k, out: r, j: pos });
+      }
+      col.out = o; out.push(o); cols.push(col);
+    } else if (u.kind === 'script') {
+      scripts++; out.push(u.s); cols.push({ s: u.s, kind: 'script', out: u.s });
+    } else {
+      others++;
+      if (cfg.nonl === 'drop') { removed++; continue; }
+      const col = { s: u.s, kind: 'other', out: u.s };
+      if (move) { col.skip = { k: keyAt(j), j }; j++; }
+      out.push(u.s); cols.push(col);
+    }
+  }
+  const used = j;
+  return { text: out.join(''), cols, letters, missing, others, scripts, removed, folded, used, key: kv, start: st, rule };
+}
+
+/* ---- the table for a cipher: rows by key, columns by plaintext letter, each cell the ciphertext letter ---- */
+function tableau(cfg) {
+  const c = cfg.cipher, rule = ruleOf(cfg);
+  let head = [...Array(26).keys()];
+  if (c[0] === 'q') head = rule.PA.slice();
+  const rows = [];
+  if (c === 'gron') for (let k = 0; k < 10; k++) rows.push({ k, label: String(k) });
+  else if (c === 'porta') for (let r = 0; r < 13; r++) rows.push({ k: 2 * r, label: L(2 * r) + L(2 * r + 1) });
+  else for (let k = 0; k < 26; k++) rows.push({ k, label: c === 'trith' ? String(k) : L(k) });
+  rows.forEach((r) => { r.cells = head.map((p) => rule.enc(p, r.k)); });
+  const rowOf = (k) => (c === 'porta' ? k >> 1 : k);
+  const colOf = (p) => head.indexOf(p);
+  return { head, rows, rowOf, colOf };
+}
+
+return { mod, L, AZ, FANCY, FDIGIT, STROKE, SZ, LIG, HOLES, MATH_STYLES, graphemes, foldOne, segment, keyValues, keyed,
+  RULES, quagRule, quagOf, ruleOf, CIPHERS, RECIPROCAL, process, tableau, GAP };
+})();
+/* ---------- Monkeying Around: monkey business, the steps of the chain (no page code here, so it can be tested on its own) ----------
+   Every step takes text and gives text back. Steps are exact: anything a step can't convert is listed in a note, and shown as ?
+   where it would have been; nothing is guessed, ranked or judged. Needs MK (monkey.core.js) for its grapheme splitter. */
+const MKC = ((MK) => {
+const G = (s) => MK.graphemes(s);
+const RE_L = /^\p{L}/u, RE_D = /^\p{Nd}/u, RE_WS = /^\p{White_Space}/u, RE_PS = /^[\p{P}\p{S}]/u;
+const isL = (g) => RE_L.test(g), isD = (g) => RE_D.test(g), isWS = (g) => RE_WS.test(g), isPS = (g) => RE_PS.test(g);
+const isAZ = (g) => /^[A-Za-z]$/.test(g);
+/* A letter's capital, for counting and sorting capitals and small letters together; a letter whose capital is
+   something else (ß → SS, dotless ı → I, long ſ → S) stays as it is, so it isn't taken for another letter. */
+const caseKey = (g) => { const u = g.toUpperCase(); return u !== g && u.toLowerCase() === g.toLowerCase() && isAZ(u) === isAZ(g) ? u : g; };
+/* A word's first character in title case: ǆ → ǅ, ﬁ → Fi, ŉ → ʼN (capital up to its first letter, then small). */
+const TITLE = { 0x01C4: 'ǅ', 0x01C5: 'ǅ', 0x01C6: 'ǅ', 0x01C7: 'ǈ', 0x01C8: 'ǈ', 0x01C9: 'ǈ', 0x01CA: 'ǋ', 0x01CB: 'ǋ', 0x01CC: 'ǋ', 0x01F1: 'ǲ', 0x01F2: 'ǲ', 0x01F3: 'ǲ' };
+function titleOne(g) {
+  const cps = Array.from(g), first = cps[0], t = TITLE[first.codePointAt(0)];
+  if (t) return t + cps.slice(1).join('');
+  const u = first.toUpperCase(), k = u.search(/[\p{Lu}\p{Ll}\p{Lt}]/u); // a cased letter: ʼ in ʼN isn't one
+  const cut = k < 0 ? u.length : k + String.fromCodePoint(u.codePointAt(k)).length;
+  return u.slice(0, cut) + u.slice(cut).toLowerCase() + cps.slice(1).join('');
+}
+// a word: letters (with their accents) and digits, with ' or ’ allowed between two of them, as in don't
+const WORD = /[\p{L}\p{M}\p{Nd}]+(?:['’][\p{L}\p{M}\p{Nd}]+)*/gu;
+const words = (s) => s.match(WORD) || [];
+const LINES = /\r\n|\n|\r/;
+const BAD = '?'; // shown where something couldn't be converted
+const intOf = (s) => { const t = String(s).trim().replace(/[−‒–—]/g, '-'); return /^[-+]?\d{1,9}$/.test(t) ? parseInt(t, 10) : null; };
+const cpCmp = (a, b) => { // compare by code point (plain < compares UTF-16 units, which puts some characters in the wrong order)
+  const x = Array.from(a), y = Array.from(b);
+  for (let i = 0; i < Math.min(x.length, y.length); i++) { const d = x[i].codePointAt(0) - y[i].codePointAt(0); if (d) return d; }
+  return x.length - y.length;
+};
+const n_ = (n, one, many) => `${n.toLocaleString('en-GB')} ${n === 1 ? one : (many || one + 's')}`;
+const shown = (g) => (g === ' ' ? 'space' : g === '\t' ? 'tab' : /^(\r\n|\n|\r)$/.test(g) ? 'line break' : isWS(g) ? 'a blank' : g);
+const listOf = (arr) => { // distinct items, in the order first met, at most 20; the page shows each one on its own
+  const u = [...new Set(arr)];
+  return { items: u.slice(0, 20).map(shown), more: Math.max(0, u.length - 20) };
+};
+// a note is [kind, text, list, after]: kind is info or warn; list (optional) is shown item by item after the text
+
+/* ---- Morse (International Morse code, ITU-R M.1677, plus ! which many tables add) ---- */
+const MORSE = {
+  A: '.-', B: '-...', C: '-.-.', D: '-..', E: '.', F: '..-.', G: '--.', H: '....', I: '..', J: '.---', K: '-.-', L: '.-..', M: '--',
+  N: '-.', O: '---', P: '.--.', Q: '--.-', R: '.-.', S: '...', T: '-', U: '..-', V: '...-', W: '.--', X: '-..-', Y: '-.--', Z: '--..',
+  0: '-----', 1: '.----', 2: '..---', 3: '...--', 4: '....-', 5: '.....', 6: '-....', 7: '--...', 8: '---..', 9: '----.',
+  '.': '.-.-.-', ',': '--..--', '?': '..--..', "'": '.----.', '!': '-.-.--', '/': '-..-.', '(': '-.--.', ')': '-.--.-', '&': '.-...',
+  ':': '---...', ';': '-.-.-.', '=': '-...-', '+': '.-.-.', '-': '-....-', '_': '..--.-', '"': '.-..-.', '$': '...-..-', '@': '.--.-.'
+};
+const UNMORSE = Object.fromEntries(Object.entries(MORSE).map(([k, v]) => [v, k]));
+
+/* ---- the steps ---- */
+const caesar = (t, k) => t.replace(/[A-Za-z]/g, (c) => { const b = c <= 'Z' ? 65 : 97; return String.fromCharCode(b + (c.charCodeAt(0) - b + k) % 26); });
+const otherLetters = (t) => G(t).filter((g) => isL(g) && !isAZ(g));
+const A1SEP = { space: [' ', ' / '], hyphen: ['-', ' '], comma: [',', ' '] };
+const BASES = { dec: 10, hex: 16, bin: 2 };
+const BASENAME = { dec: 'decimal', hex: 'hex', bin: 'binary' };
+
+const STEPS = {
+  reverse: {
+    name: 'Reverse', group: 'Rearrange',
+    help: 'Reverses the whole text, or each word in its place. A word is a run of letters and digits; spaces and punctuation stay where they are.',
+    opts: [{ k: 'mode', type: 'select', label: 'Reverse', def: 'all', choices: [['all', 'the whole text'], ['words', 'each word, in place']] }],
+    run(t, o) { return { text: o.mode === 'words' ? t.replace(WORD, (w) => G(w).reverse().join('')) : G(t).reverse().join('') }; }
+  },
+  nth: {
+    name: 'Every nth letter', group: 'Pick out',
+    help: 'Takes letter number “start”, then every nth one after it, and leaves the rest out.',
+    opts: [{ k: 'n', type: 'int', label: 'Every', def: '2', min: 1 }, { k: 'start', type: 'int', label: 'Starting at number', def: '1', min: 1 },
+      { k: 'count', type: 'select', label: 'Count', def: 'letters', choices: [['letters', 'letters only'], ['alnum', 'letters and digits'], ['visible', 'all but spaces'], ['all', 'every character']] }],
+    run(t, o) {
+      const keep = { letters: isL, alnum: (g) => isL(g) || isD(g), visible: (g) => !isWS(g), all: () => true }[o.count];
+      const unit = { letters: ['letter'], alnum: ['letter or digit', 'letters and digits'], visible: ['character'], all: ['character'] }[o.count];
+      const gs = G(t).filter(keep), out = [];
+      if (gs.length && o.start > gs.length) return { text: '', notes: [['info', `There ${gs.length === 1 ? 'is' : 'are'} only ${n_(gs.length, ...unit)}, so there’s no number ${o.start} to start at.`]] };
+      for (let i = o.start - 1; i < gs.length; i += o.n) out.push(gs[i]);
+      return { text: out.join(''), notes: gs.length ? [['info', `Took ${n_(out.length, ...unit)} of ${gs.length.toLocaleString('en-GB')}: number ${o.start}, ${o.start + o.n}, ${o.start + 2 * o.n} and so on.`]] : [] };
+    }
+  },
+  first: {
+    name: 'First letters', group: 'Pick out',
+    help: 'The first letter of each word, or of each line. A word is a run of letters and digits, so a word can start with a digit.',
+    opts: [{ k: 'of', type: 'select', label: 'Of each', def: 'words', choices: [['words', 'word'], ['lines', 'line']] }],
+    run(t, o) { return ends(t, o, true); }
+  },
+  last: {
+    name: 'Last letters', group: 'Pick out',
+    help: 'The last letter of each word, or of each line. A word is a run of letters and digits, so a word can end with a digit.',
+    opts: [{ k: 'of', type: 'select', label: 'Of each', def: 'words', choices: [['words', 'word'], ['lines', 'line']] }],
+    run(t, o) { return ends(t, o, false); }
+  },
+  lengths: {
+    name: 'Word lengths as numbers', group: 'Pick out',
+    help: 'How many letters and digits each word has (an apostrophe isn’t counted, so don’t is 4). Each line of text gives one line of numbers.',
+    opts: [{ k: 'sep', type: 'select', label: 'Between the numbers', def: 'space', choices: [['space', 'a space'], ['comma', 'a comma'], ['none', 'nothing (3141)']] }],
+    run(t, o) {
+      const sep = { space: ' ', comma: ', ', none: '' }[o.sep];
+      let long = 0;
+      const text = t.split(LINES).map((line) => words(line).map((w) => { const n = G(w).filter((g) => !/^['’]/.test(g)).length; if (n > 9) long++; return n; }).join(sep)).join('\n');
+      return { text, notes: o.sep === 'none' && long ? [['info', `${n_(long, 'word')} ${long === 1 ? 'has' : 'have'} 10 or more letters, so ${long === 1 ? 'its number has' : 'their numbers have'} two digits or more, and run together they can’t be told apart from shorter words.`]] : [] };
+    }
+  },
+  blocks: {
+    name: 'Group into blocks', group: 'Rearrange',
+    help: 'Takes out the spaces and line breaks, then splits what’s left into blocks of n characters. The last block can be shorter.',
+    opts: [{ k: 'n', type: 'int', label: 'Characters in a block', def: '5', min: 1 },
+      { k: 'between', type: 'select', label: 'Between blocks', def: 'space', choices: [['space', 'a space'], ['line', 'a new line']] }],
+    run(t, o) {
+      const gs = G(t).filter((g) => !isWS(g)), out = [];
+      for (let i = 0; i < gs.length; i += o.n) out.push(gs.slice(i, i + o.n).join(''));
+      const last = gs.length % o.n;
+      return { text: out.join(o.between === 'line' ? '\n' : ' '), notes: gs.length ? [['info', `${n_(out.length, 'block')} from ${n_(gs.length, 'character')}${last ? `; the last block has ${n_(last, 'character')}` : ''}.`]] : [] };
+    }
+  },
+  remove: {
+    name: 'Remove spaces or punctuation', group: 'Tidy',
+    help: 'Takes out the characters you choose and keeps everything else. Punctuation and symbols are marks such as . , ! ? ’ - ( ) & $ +.',
+    opts: [{ k: 'what', type: 'select', label: 'Remove', def: 'spaces', choices: [['spaces', 'spaces and line breaks'], ['spacesonly', 'spaces (keep line breaks)'],
+      ['punct', 'punctuation and symbols'], ['both', 'all spaces and punctuation'], ['digits', 'digits'], ['nonletters', 'all but letters'], ['nonalnum', 'all but letters and digits']] }],
+    run(t, o) {
+      const nl = (g) => /^(\r\n|\n|\r)$/.test(g);
+      const drop = { spaces: isWS, spacesonly: (g) => isWS(g) && !nl(g), punct: isPS, both: (g) => isWS(g) || isPS(g), digits: isD,
+        nonletters: (g) => !isL(g), nonalnum: (g) => !isL(g) && !isD(g) }[o.what];
+      const gs = G(t), kept = gs.filter((g) => !drop(g));
+      return { text: kept.join(''), notes: gs.length ? [['info', `Removed ${n_(gs.length - kept.length, 'character')}.`]] : [] };
+    }
+  },
+  case: {
+    name: 'Change case', group: 'Tidy',
+    help: 'Capitals or small letters. “Each Word Capitalised” makes the first letter of each word a capital and the rest small.',
+    opts: [{ k: 'to', type: 'select', label: 'Change to', def: 'upper', choices: [['upper', 'CAPITALS'], ['lower', 'small letters'], ['swap', 'swap: capitals ↔ small'], ['title', 'Each Word Capitalised']] }],
+    run(t, o) {
+      if (o.to === 'upper') return { text: t.toUpperCase() };
+      if (o.to === 'lower') return { text: t.toLowerCase() };
+      if (o.to === 'swap') return { text: Array.from(t, (c) => { const u = c.toUpperCase(); return u !== c ? u : c.toLowerCase(); }).join('') };
+      return { text: t.replace(WORD, (w) => { const g = G(w); return titleOne(g[0]) + g.slice(1).join('').toLowerCase(); }) };
+    }
+  },
+  caesar: {
+    name: 'All 25 Caesar shifts', group: 'Convert',
+    help: 'Every shift from 1 to 25 at once, in order, for you to scan by eye. Shift 1 turns A into B; shift 13 is ROT13. Pass on the whole list, or just the shift you pick.',
+    opts: [{ k: 'pass', type: 'select', label: 'Pass on', def: 'list', choices: [['list', 'the whole list'], ['one', 'one shift only']] },
+      { k: 'shift', type: 'int', label: 'Shift', def: '13', min: 1, max: 25, when: ['pass', 'one'] }],
+    run(t, o) {
+      const rows = []; for (let k = 1; k <= 25; k++) rows.push({ k, text: caesar(t, k) });
+      const one = o.pass === 'one';
+      return { text: one ? rows[o.shift - 1].text : rows.map((r) => `${r.k}: ${r.text}`).join('\n'), view: { kind: 'caesar', rows, pick: one ? o.shift : 0 }, notes: azNote(t) };
+    }
+  },
+  atbash: {
+    name: 'Atbash', group: 'Convert',
+    help: 'Reverses the alphabet: A ↔ Z, B ↔ Y, C ↔ X and so on. It undoes itself, and keeps each letter’s case.',
+    opts: [],
+    run(t) { return { text: t.replace(/[A-Za-z]/g, (c) => { const b = c <= 'Z' ? 65 : 97; return String.fromCharCode(b + 25 - (c.charCodeAt(0) - b)); }), notes: azNote(t) }; }
+  },
+  a1z26: {
+    name: 'Letters → numbers (A1Z26)', group: 'Convert',
+    help: 'A = 1, B = 2 … Z = 26, capitals or not. Spaces between words become the word gap you choose, and punctuation is left out. Anything else, such as é or a digit, shows as ?.',
+    opts: [{ k: 'sep', type: 'select', label: 'Numbers joined by', def: 'space', choices: [['space', 'spaces (1 2 / 3 4)'], ['hyphen', 'hyphens (1-2 3-4)'], ['comma', 'commas (1,2 3,4)']] }],
+    run(t, o) {
+      const [inner, between] = A1SEP[o.sep], punct = [], bad = [];
+      const text = t.split(LINES).map((line) => {
+        const ws = []; let cur = [];
+        for (const g of G(line)) {
+          if (isAZ(g)) cur.push(g.toUpperCase().charCodeAt(0) - 64);
+          else if (isWS(g)) { if (cur.length) { ws.push(cur); cur = []; } }
+          else if (isPS(g)) punct.push(g); else { bad.push(g); cur.push(BAD); }
+        }
+        if (cur.length) ws.push(cur);
+        return ws.map((w) => w.join(inner)).join(between);
+      }).join('\n');
+      const notes = [];
+      if (bad.length) notes.push(['warn', 'Can’t be turned into A1Z26 numbers, so shown as ?:', listOf(bad), 'Only the letters A to Z have numbers here.']);
+      if (punct.length) notes.push(['info', `Left out ${n_(punct.length, 'punctuation mark or symbol', 'punctuation marks and symbols')}:`, listOf(punct)]);
+      return { text, notes, marked: bad.length > 0 };
+    }
+  },
+  num2let: {
+    name: 'Numbers → letters (A1Z26)', group: 'Convert',
+    help: '1 = A, 2 = B … 26 = Z. Each number must be on its own, between the separators you choose; a / also marks a word gap. Anything else shows as ?.',
+    opts: [{ k: 'sep', type: 'select', label: 'Numbers separated by', def: 'space', choices: [['space', 'spaces (1 2 / 3 4)'], ['hyphen', 'hyphens (1-2 3-4)'], ['comma', 'commas (1,2 3,4)']] },
+      { k: 'case', type: 'select', label: 'Letters as', def: 'upper', choices: [['upper', 'CAPITALS'], ['lower', 'small letters']] }],
+    run(t, o) {
+      const bad = [];
+      const split = { space: [/[\/|]/, /\p{White_Space}+/u], hyphen: [/[\/|]|\p{White_Space}+/u, /-/], comma: [/[\/|]|\p{White_Space}+/u, /,/] }[o.sep];
+      const text = t.split(LINES).map((line) => line.split(split[0]).map((w) => w.split(split[1]).filter((x) => x !== '').map((tok) => {
+        const v = /^\d{1,9}$/.test(tok) ? parseInt(tok, 10) : NaN;
+        if (v >= 1 && v <= 26) { const c = String.fromCharCode(64 + v); return o.case === 'lower' ? c.toLowerCase() : c; }
+        bad.push(tok); return BAD;
+      }).join('')).filter((w) => w !== '').join(' ')).join('\n');
+      return { text, marked: bad.length > 0, notes: bad.length ? [['warn', 'Can’t be read as a number from 1 to 26, so shown as ?:', listOf(bad)]] : [] };
+    }
+  },
+  tocodes: {
+    name: 'Characters → codes', group: 'Convert',
+    help: 'Each character’s Unicode code (the same as ASCII for plain letters, digits and punctuation), spaces and line breaks too, separated by spaces. An accent typed as a separate mark has its own code.',
+    opts: [{ k: 'base', type: 'select', label: 'Write the codes in', def: 'dec', choices: [['dec', 'decimal (A = 65)'], ['hex', 'hex (A = 41)'], ['bin', 'binary (A = 01000001)']] }],
+    run(t, o) {
+      const f = { dec: (v) => String(v), hex: (v) => v.toString(16).toUpperCase().padStart(2, '0'), bin: (v) => v.toString(2).padStart(8, '0') }[o.base];
+      return { text: Array.from(t, (c) => f(c.codePointAt(0))).join(' ') };
+    }
+  },
+  fromcodes: {
+    name: 'Codes → characters', group: 'Convert',
+    help: 'Reads codes separated by spaces or commas, one character each. For a long run of bits with no spaces, put a “Group into blocks” step of 8 in front.',
+    opts: [{ k: 'base', type: 'select', label: 'The codes are in', def: 'dec', choices: [['dec', 'decimal (65 = A)'], ['hex', 'hex (41 = A, 0x41 too)'], ['bin', 'binary (01000001 = A)']] }],
+    run(t, o) {
+      const re = { dec: /^\d{1,8}$/, hex: /^(?:0[xX])?([0-9A-Fa-f]{1,6})$/, bin: /^(?:0[bB])?([01]{1,21})$/ }[o.base], bad = [];
+      let ctrl = 0, long = 0;
+      const text = t.split(/[\p{White_Space},;]+/u).filter((x) => x !== '').map((tok) => {
+        const m = tok.match(re), v = m ? parseInt(m[1] || m[0], BASES[o.base]) : NaN;
+        if (m && o.base === 'bin' && (m[1] || m[0]).length > 8) long++;
+        if (!(v >= 0 && v <= 0x10FFFF) || (v >= 0xD800 && v <= 0xDFFF)) { bad.push(tok); return BAD; }
+        if ((v < 32 && v !== 9 && v !== 10 && v !== 13) || (v >= 127 && v < 160)) ctrl++;
+        return String.fromCodePoint(v);
+      }).join('');
+      const notes = [];
+      if (bad.length) notes.push(['warn', `Not a character code in ${BASENAME[o.base]}, so shown as ?:`, listOf(bad)]);
+      if (long) notes.push(['info', `${n_(long, 'code')} ${long === 1 ? 'is' : 'are'} longer than 8 bits and ${long === 1 ? 'was' : 'were'} read as one number each. Codes run together aren’t split here; a “Group into blocks” step in front does that.`]);
+      if (ctrl) notes.push(['info', `${n_(ctrl, 'code')} ${ctrl === 1 ? 'is a control character' : 'are control characters'}, with nothing to see.`]);
+      return { text, marked: bad.length > 0, notes };
+    }
+  },
+  tomorse: {
+    name: 'Text → Morse', group: 'Convert',
+    help: 'International Morse code for A to Z, 0 to 9 and common punctuation. Letters are separated by a space and words by /. A character with no code here shows as ?.',
+    opts: [],
+    run(t) {
+      const bad = [];
+      const text = t.split(LINES).map((line) => line.split(/\p{White_Space}+/u).map((w) => G(w).map((g) => {
+        const m = MORSE[isAZ(g) ? g.toUpperCase() : g]; if (!m) { bad.push(g); return BAD; } return m;
+      }).join(' ')).filter((w) => w !== '').join(' / ')).join('\n');
+      return { text, marked: bad.length > 0, notes: bad.length ? [['warn', 'No Morse code here for these, so shown as ?:', listOf(bad)]] : [] };
+    }
+  },
+  frommorse: {
+    name: 'Morse → text', group: 'Convert',
+    help: 'Reads dots and dashes (· • and – — _ work too), letters separated by spaces and words by / or |. A code it doesn’t know shows as ?.',
+    opts: [],
+    run(t) {
+      const bad = [];
+      const text = t.split(LINES).map((line) => line.split(/[\/|]/).map((w) => w.split(/\p{White_Space}+/u).filter((x) => x !== '').map((tok) => {
+        const c = UNMORSE[tok.replace(/[·•∙]/g, '.').replace(/[−–—_]/g, '-')];
+        if (c === undefined) { bad.push(tok); return BAD; } return c;
+      }).join('')).filter((w) => w !== '').join(' ')).join('\n');
+      return { text, marked: bad.length > 0, notes: bad.length ? [['warn', 'Not a Morse code it knows, so shown as ?:', listOf(bad)]] : [] };
+    }
+  },
+  columns: {
+    name: 'Write in rows or columns', group: 'Rearrange',
+    help: 'Writes the text into a block so many columns wide, then reads it off the other way. The two directions undo each other at the same width.',
+    opts: [{ k: 'width', type: 'int', label: 'Columns', def: '5', min: 1 },
+      { k: 'dir', type: 'select', label: 'Write in', def: 'rows', choices: [['rows', 'rows, read columns'], ['cols', 'columns, read rows']] },
+      { k: 'spaces', type: 'check', label: 'Leave out spaces and line breaks', def: true }],
+    run(t, o) {
+      const gs = o.spaces ? G(t).filter((g) => !isWS(g)) : G(t), n = gs.length;
+      const w = Math.min(o.width, Math.max(n, 1)), h = Math.ceil(n / w), r = n % w; // wider than the text is the same as one row
+      const grid = Array.from({ length: h }, (_, i) => Array.from({ length: w }, (_, j) => null));
+      if (o.dir === 'rows') {
+        gs.forEach((g, i) => { grid[Math.floor(i / w)][i % w] = g; });
+      } else { // the columns on the left are one longer when the block isn't full, so this undoes the other direction exactly
+        let i = 0;
+        for (let j = 0; j < w; j++) for (let row = 0; row < (r === 0 || j < r ? h : h - 1); row++) grid[row][j] = gs[i++];
+      }
+      const out = [];
+      if (o.dir === 'rows') { for (let j = 0; j < w; j++) for (let i = 0; i < h; i++) if (grid[i][j] !== null) out.push(grid[i][j]); }
+      else for (const row of grid) for (const g of row) if (g !== null) out.push(g);
+      return { text: out.join(''), view: { kind: 'grid', grid, dir: o.dir },
+        notes: n ? [['info', `${n_(n, 'character')} in ${n_(w, 'column')}${w < o.width ? ` (the text is shorter than ${o.width.toLocaleString('en-GB')})` : ''} and ${n_(h, 'row')}${r ? `; the last row has ${n_(r, 'character')}` : ''}.`]] : [] };
+    }
+  },
+  counts: {
+    name: 'Letter counts', group: 'Look',
+    help: 'How often each letter comes up, as a table and a bar chart, with capitals and small letters counted together. It’s information only: the text goes on to the next step unchanged.',
+    opts: [{ k: 'what', type: 'select', label: 'Count', def: 'az', choices: [['az', 'letters A to Z'], ['all', 'all but spaces']] },
+      { k: 'order', type: 'select', label: 'Order', def: 'alpha', choices: [['alpha', 'alphabetical'], ['most', 'most often first']] }],
+    run(t, o) {
+      const gs = G(t), m = new Map();
+      if (o.what === 'az') for (let i = 0; i < 26; i++) m.set(String.fromCharCode(65 + i), 0);
+      let total = 0;
+      for (const g of gs) {
+        if (o.what === 'az' ? !isAZ(g) : isWS(g)) continue;
+        const k = o.what === 'az' ? g.toUpperCase() : isL(g) ? caseKey(g) : g; m.set(k, (m.get(k) || 0) + 1); total++;
+      }
+      const rows = [...m].map(([ch, n]) => ({ ch, n })).sort((a, b) => (o.order === 'most' ? b.n - a.n : 0) || cpCmp(a.ch, b.ch));
+      const others = o.what === 'az' ? otherLetters(t).length : 0;
+      return { text: t, view: { kind: 'counts', rows, total }, notes: others ? [['info', `${n_(others, 'letter')} outside A to Z (such as é or Greek letters) ${others === 1 ? 'isn’t' : 'aren’t'} counted.`]] : [] };
+    }
+  },
+  sort: {
+    name: 'Sort the letters', group: 'Rearrange',
+    help: 'Puts the letters in alphabetical order, capitals and small letters together. Letters outside A to Z come after Z, in the order of their codes.',
+    opts: [{ k: 'what', type: 'select', label: 'Sort', def: 'letters', choices: [['letters', 'letters only'], ['visible', 'all but spaces']] },
+      { k: 'order', type: 'select', label: 'Order', def: 'az', choices: [['az', 'A to Z'], ['za', 'Z to A']] }],
+    run(t, o) {
+      const gs = G(t).filter(o.what === 'letters' ? isL : (g) => !isWS(g));
+      gs.sort((a, b) => cpCmp(caseKey(a), caseKey(b)) || cpCmp(a, b)); // ß, ı and ſ come after Z, by their own codes
+      if (o.order === 'za') gs.reverse();
+      return { text: gs.join('') };
+    }
+  },
+  dedupe: {
+    name: 'Remove repeated letters', group: 'Tidy',
+    help: 'Keeps the first of each letter and drops its repeats, as when a keyword starts a mixed alphabet. Or drops only a letter that repeats the one right before it.',
+    opts: [{ k: 'mode', type: 'select', label: 'Drop', def: 'all', choices: [['all', 'every repeat'], ['doubles', 'only doubles (AA → A)']] },
+      { k: 'anycase', type: 'check', label: 'Count A and a as the same letter', def: true },
+      { k: 'others', type: 'select', label: 'Spaces, digits and punctuation', def: 'keep', choices: [['keep', 'keep them as they are'], ['drop', 'remove them']] }],
+    run(t, o) {
+      let gs = G(t); if (o.others === 'drop') gs = gs.filter(isL);
+      const norm = (g) => (o.anycase ? g.toLowerCase() : g), seen = new Set(), out = [];
+      gs.forEach((g, i) => {
+        if (isL(g)) {
+          if (o.mode === 'all') { if (seen.has(norm(g))) return; seen.add(norm(g)); }
+          else if (i > 0 && norm(gs[i - 1]) === norm(g)) return;
+        }
+        out.push(g);
+      });
+      return { text: out.join(''), notes: gs.length ? [['info', `Removed ${n_(G(t).length - out.length, 'character')}.`]] : [] };
+    }
+  }
+};
+function ends(t, o, first) {
+  const pick = (gs) => (first ? gs[0] : gs[gs.length - 1]);
+  if (o.of === 'words') return { text: words(t).map((w) => pick(G(w).filter((g) => !/^['’]/.test(g)))).join('') };
+  let skipped = 0;
+  const out = t.split(LINES).map((line) => { const gs = G(line).filter((g) => isL(g) || isD(g)); if (!gs.length) { skipped++; return ''; } return pick(gs); }).join('');
+  return { text: out, notes: skipped && t !== '' ? [['info', `${n_(skipped, 'line')} with no letters or digits (blank lines too) ${skipped === 1 ? 'was' : 'were'} skipped.`]] : [] };
+}
+function azNote(t) {
+  const n = otherLetters(t).length;
+  return n ? [['info', `${n_(n, 'letter')} outside A to Z (such as é or Greek letters) ${n === 1 ? 'was' : 'were'} left as ${n === 1 ? 'it is' : 'they are'}.`]] : [];
+}
+
+/* ---- settings: read the raw values from the page, and say plainly what's wrong with them ---- */
+function settle(type, raw) {
+  const def = STEPS[type], o = {}, errs = [];
+  for (const op of def.opts) {
+    const v = raw && raw[op.k] !== undefined ? raw[op.k] : op.def;
+    if (op.when && (raw && raw[op.when[0]] !== undefined ? raw[op.when[0]] : def.opts.find((x) => x.k === op.when[0]).def) !== op.when[1]) { o[op.k] = intOf(op.def); continue; }
+    if (op.type === 'int') {
+      const n = intOf(v);
+      if (n === null || n < op.min || (op.max !== undefined && n > op.max)) {
+        errs.push(`“${op.label}” should be a whole number${op.max !== undefined ? ` from ${op.min} to ${op.max}` : `, ${op.min} or more`}.`);
+      }
+      o[op.k] = n;
+    } else if (op.type === 'select') o[op.k] = op.choices.some((c) => c[0] === v) ? v : op.def;
+    else o[op.k] = typeof v === 'boolean' ? v : !!op.def;
+  }
+  return { o, errs };
+}
+function run(type, text, raw) {
+  const { o, errs } = settle(type, raw);
+  if (errs.length) return { text: null, errs, notes: [] };
+  const r = STEPS[type].run(text, o);

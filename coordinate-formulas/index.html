@@ -1,0 +1,719 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light dark">
+<title>Coordinate Formulas · Tools of the Trade</title>
+<meta name="description" content="Paste a cache’s coordinate formulas, fill in the values you’ve found, and get the coordinates with the working, range checks and the distance from the listed coordinates.">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%231D4D30'/%3E%3Cpath d='M16 4l4.5 12L16 28l-4.5-12z' fill='%23F4F2E8'/%3E%3Cpath d='M16 4l4.5 12h-9z' fill='%23E8BE66'/%3E%3C/svg%3E">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600;700&family=Barlow:ital,wght@0,400;0,500;0,600;1,400&family=IBM+Plex+Mono:wght@400;500;600&display=swap">
+<style>
+/* ---------- tokens (Tools of the Trade house palette: forest green + brass) ---------- */
+:root{
+  color-scheme:light dark;
+  --page:880px;
+  --ground:#F2F3EC; --surface:#FFFFFF; --surface-2:#EAEDE3; --surface-3:#DFE3D6;
+  --ink:#172019; --ink-2:#434C41; --muted:#646C60;
+  --line:#D0D6C8; --line-strong:#848E7D;
+  --accent:#1D6A3D; --accent-ink:#FFFFFF; --accent-soft:#E2F0E6;
+  --brass:#86590A;
+  --error:#B42318; --error-soft:#FCE9E7;
+  --warn:#8A5F0C; --warn-soft:#FBF0D3;
+  --good:#1D6A3D; --good-soft:#E2F0E6;
+  --focus:#1F5FBF;
+  --band:#1D4D30; --band-ink:#F4F2E8; --band-ink-2:#C9D8CA; --band-hl:#E8BE66; --band-line:rgba(232,190,102,.36);
+  --shadow:0 1px 2px rgba(23,32,25,.06), 0 6px 18px -8px rgba(23,32,25,.2);
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --ground:#111613; --surface:#192019; --surface-2:#212922; --surface-3:#2A332B;
+    --ink:#E7ECE3; --ink-2:#C0C8BB; --muted:#929C8C;
+    --line:#2C362E; --line-strong:#667361;
+    --accent:#6FC78E; --accent-ink:#0E1A12; --accent-soft:#1C3324;
+    --brass:#DDB05A;
+    --error:#FF8C82; --error-soft:#3D201D;
+    --warn:#E3B04B; --warn-soft:#3A3016;
+    --good:#6FC78E; --good-soft:#1C3324;
+    --focus:#7FB0FF;
+    --band:#16281D; --band-line:rgba(232,190,102,.26);
+    --shadow:0 1px 2px rgba(0,0,0,.4), 0 8px 24px -10px rgba(0,0,0,.6);
+  }
+}
+:root[data-theme="dark"]{
+  color-scheme:dark;
+  --ground:#111613; --surface:#192019; --surface-2:#212922; --surface-3:#2A332B;
+  --ink:#E7ECE3; --ink-2:#C0C8BB; --muted:#929C8C;
+  --line:#2C362E; --line-strong:#667361;
+  --accent:#6FC78E; --accent-ink:#0E1A12; --accent-soft:#1C3324;
+  --brass:#DDB05A;
+  --error:#FF8C82; --error-soft:#3D201D;
+  --warn:#E3B04B; --warn-soft:#3A3016;
+  --good:#6FC78E; --good-soft:#1C3324;
+  --focus:#7FB0FF;
+  --band:#16281D; --band-line:rgba(232,190,102,.26);
+  --shadow:0 1px 2px rgba(0,0,0,.4), 0 8px 24px -10px rgba(0,0,0,.6);
+}
+:root[data-theme="light"]{color-scheme:light}
+
+/* ---------- base ---------- */
+*,*::before,*::after{box-sizing:border-box}
+html,body{margin:0;padding:0}
+html{accent-color:var(--accent)}
+body{
+  background:var(--ground); color:var(--ink);
+  font-family:"Barlow",system-ui,-apple-system,"Segoe UI",Helvetica,Arial,sans-serif;
+  font-size:16px; line-height:1.5; -webkit-font-smoothing:antialiased;
+}
+button,input,textarea,select{font:inherit;color:inherit}
+::placeholder{color:var(--muted);opacity:1} /* browsers default to a pale grey that fails 4.5:1 */
+:focus-visible{outline:2px solid var(--focus);outline-offset:2px}
+::selection{background:var(--accent-soft)}
+.mono,.num{font-family:"IBM Plex Mono","SFMono-Regular",Menlo,Consolas,monospace}
+.wrap{max-width:var(--page);margin:0 auto;padding:24px 16px 64px}
+.sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
+a{color:var(--accent)}
+
+/* ---------- masthead (shared by every tool) ---------- */
+.band{position:relative;overflow:hidden;isolation:isolate;background:var(--band);color:var(--band-ink);--focus:var(--band-hl)}
+.band .topo{position:absolute;inset:0;width:100%;height:100%;z-index:-1;fill:none;stroke:var(--band-line);stroke-width:1}
+.band .topo .ix{stroke-width:2}
+.band-in{max-width:var(--page);margin:0 auto;padding:14px 16px 30px}
+.suite{
+  display:flex;align-items:center;justify-content:space-between;gap:6px 14px;flex-wrap:wrap;margin-bottom:26px;
+  font-family:"Barlow Condensed","Barlow",sans-serif;font-weight:600;font-size:14px;letter-spacing:.12em;text-transform:uppercase;
+}
+.suite .crumbs{display:inline-flex;align-items:center;gap:9px;flex-wrap:wrap}
+.suite a{color:inherit;text-decoration:none;display:inline-flex;align-items:center;gap:9px}
+.suite a:hover span{text-decoration:underline;text-underline-offset:3px}
+.suite .sep{color:var(--band-hl)}
+.suite .by{color:var(--band-ink-2)}
+.mark{width:22px;height:22px;flex:none}
+.top{display:flex;align-items:flex-end;justify-content:space-between;gap:16px;flex-wrap:wrap}
+.brand h1{
+  font-family:"Barlow Condensed","Barlow",sans-serif;font-weight:700;font-size:48px;line-height:.95;
+  letter-spacing:.01em;text-transform:uppercase;margin:0;text-wrap:balance;
+}
+.brand h1 .hl{color:var(--band-hl)}
+.brand p{margin:10px 0 0;color:var(--band-ink-2);max-width:60ch}
+.top-actions{display:flex;gap:8px;flex-wrap:wrap}
+.band .btn.quiet{color:var(--band-ink);border-color:rgba(244,242,232,.35)}
+.band .btn.quiet:hover{background:rgba(244,242,232,.12);color:var(--band-ink)}
+
+/* ---------- buttons ---------- */
+.btn{
+  display:inline-flex;align-items:center;gap:6px;
+  border:1px solid var(--line-strong);background:var(--surface);color:var(--ink);
+  border-radius:6px;padding:7px 12px;cursor:pointer;line-height:1.1;
+  font-family:"Barlow Condensed","Barlow",sans-serif;font-weight:600;font-size:15px;letter-spacing:.04em;text-transform:uppercase;
+}
+.btn:hover{background:var(--surface-2)}
+.btn.primary{background:var(--accent);border-color:var(--accent);color:var(--accent-ink)}
+.btn.primary:hover{filter:brightness(1.06)}
+.btn.quiet{border-color:transparent;background:transparent;color:var(--ink-2)}
+.btn.quiet:hover{background:var(--surface-2);color:var(--ink)}
+.btn.small{padding:4px 8px;font-size:13px}
+.btn:disabled{opacity:.45;cursor:not-allowed}
+
+/* ---------- panels & steps ---------- */
+.panel{
+  background:var(--surface);border:1px solid var(--line);border-radius:10px;
+  box-shadow:var(--shadow);padding:18px 18px 20px;margin-top:18px;
+}
+.panel h2 var{font-family:"IBM Plex Mono",monospace;font-style:normal;text-transform:none;font-size:.82em;font-weight:600;letter-spacing:0}
+.panel-head{display:flex;align-items:baseline;gap:12px;margin-bottom:6px;flex-wrap:wrap}
+.step{
+  font-family:"Barlow Condensed","Barlow",sans-serif;font-weight:700;font-size:13px;letter-spacing:.12em;
+  color:var(--brass);text-transform:uppercase;
+}
+.panel h2{
+  font-family:"Barlow Condensed","Barlow",sans-serif;font-weight:600;font-size:26px;line-height:1.05;margin:0;
+  text-transform:uppercase;letter-spacing:.02em;
+}
+.lead{color:var(--ink-2);margin:0 0 14px;max-width:68ch}
+.lead var,.explain var,.math var{font-family:"IBM Plex Mono",monospace;font-style:normal;font-weight:600;color:var(--ink)}
+.panel.waiting .wait{display:block}
+.wait{display:none;color:var(--muted);font-size:15px;border:1px dashed var(--line-strong);border-radius:8px;padding:10px 12px;margin:4px 0 0}
+.panel.waiting .body{display:none}
+
+/* ---------- input fields ---------- */
+.field{border-top:1px solid var(--line);padding:14px 0 4px}
+.field:first-of-type{border-top:0;padding-top:4px}
+.field-head{display:flex;align-items:baseline;gap:10px;flex-wrap:wrap;margin-bottom:6px}
+.sym{font-family:"IBM Plex Mono",monospace;font-weight:600;font-size:20px;color:var(--accent);min-width:1.4em}
+.field-head label,.field-head .name{font-weight:600}
+.tag{
+  font-family:"Barlow Condensed","Barlow",sans-serif;font-weight:600;font-size:12px;letter-spacing:.1em;text-transform:uppercase;
+  border:1px solid var(--line-strong);border-radius:999px;padding:1px 8px;color:var(--ink-2)
+}
+.tag.private{border-color:var(--brass);color:var(--brass)}
+.digits{margin-left:auto;color:var(--muted);font-size:13px;font-variant-numeric:tabular-nums}
+textarea.numin{
+  width:100%;border:1px solid var(--line-strong);border-radius:6px;background:var(--surface);padding:9px 11px;
+  font-family:"IBM Plex Mono",monospace;font-size:15px;line-height:1.45;resize:vertical;min-height:44px;
+  word-break:break-all;
+}
+textarea.numin:hover{border-color:var(--accent)}
+.help{color:var(--muted);font-size:14px;margin:6px 0 0;max-width:72ch}
+ul.checks{list-style:none;margin:8px 0 6px;padding:0;display:flex;flex-direction:column;gap:6px}
+ul.checks:empty{display:none}
+ul.checks li{display:grid;grid-template-columns:22px minmax(0,1fr);gap:8px;align-items:start;font-size:15px;padding:7px 10px;border-radius:7px;background:var(--surface-2)}
+ul.checks li .ic{
+  width:20px;height:20px;border-radius:50%;display:inline-flex;align-items:center;justify-content:center;
+  font-size:12px;font-weight:700;line-height:1;margin-top:1px;font-family:"Barlow",sans-serif;
+}
+ul.checks li.ok .ic{background:var(--good);color:var(--accent-ink)}
+ul.checks li.info .ic{background:var(--surface-3);color:var(--ink-2)}
+ul.checks li.warn{background:var(--warn-soft)}
+ul.checks li.warn .ic{background:var(--warn);color:var(--surface)}
+ul.checks li.bad{background:var(--error-soft)}
+ul.checks li.bad .ic{background:var(--error);color:var(--surface)}
+ul.checks li b{font-weight:600}
+details.more{margin-top:10px}
+details.more > summary{cursor:pointer;color:var(--accent);font-weight:500;font-size:15px}
+details.more[open] > summary{margin-bottom:8px}
+
+/* ---------- computed values ---------- */
+.val{border:1px solid var(--line);border-left:4px solid var(--accent);border-radius:8px;background:var(--surface-2);padding:10px 12px;margin:10px 0}
+.val .vh{display:flex;align-items:baseline;gap:10px;flex-wrap:wrap;margin-bottom:4px}
+.val .vh .formula{color:var(--ink-2);font-size:15px}
+.val .vh .digits{margin-left:auto}
+.val output{display:block;font-family:"IBM Plex Mono",monospace;font-size:16px;word-break:break-all;line-height:1.45}
+.val .vfoot{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-top:6px}
+.val.big output{font-size:20px}
+.math{font-family:"IBM Plex Mono",monospace;font-size:14px;background:var(--surface-2);border-radius:6px;padding:8px 10px;overflow-x:auto;white-space:pre;margin:8px 0}
+.explain{color:var(--ink-2);font-size:15px;max-width:70ch}
+.explain p{margin:8px 0}
+.prog[hidden]{display:none}
+.prog{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin:10px 0}
+.prog progress{flex:1;min-width:160px;height:10px}
+.prog .status{font-size:14px;color:var(--ink-2);font-variant-numeric:tabular-nums}
+
+/* ---------- tables ---------- */
+.scroll{overflow-x:auto}
+table{border-collapse:collapse;width:100%;font-size:14px}
+th{text-align:left;font-family:"Barlow Condensed",sans-serif;font-weight:600;letter-spacing:.08em;text-transform:uppercase;font-size:13px;color:var(--muted);padding:6px 8px;border-bottom:1px solid var(--line);white-space:nowrap}
+td{padding:5px 8px;border-bottom:1px solid var(--line);vertical-align:top;font-variant-numeric:tabular-nums}
+td.num{font-family:"IBM Plex Mono",monospace;font-size:13px;word-break:break-all}
+tr:last-child td{border-bottom:0}
+
+/* ---------- message reader ---------- */
+.conv-opts{display:flex;gap:10px 16px;flex-wrap:wrap;align-items:end;margin:6px 0 10px}
+.conv-opts label{display:flex;flex-direction:column;gap:4px;font-size:13px;color:var(--muted);min-width:0;max-width:100%} /* lets a long select shrink to the card */
+.conv-opts label.inline{flex-direction:row;align-items:center;gap:8px;color:var(--ink);font-size:15px}
+.conv-opts select{border:1px solid var(--line-strong);border-radius:6px;background:var(--surface);padding:6px 8px;font-size:15px;color:var(--ink);max-width:100%}
+.conv-opts input[type=checkbox]{width:17px;height:17px}
+.chips{display:flex;flex-wrap:wrap;gap:6px;margin:8px 0}
+.chip{display:inline-flex;flex-direction:column;align-items:center;border:1px solid var(--line);border-radius:6px;overflow:hidden;min-width:38px;background:var(--surface)}
+.chip .d{font-family:"IBM Plex Mono",monospace;font-size:12.5px;color:var(--muted);padding:2px 6px;background:var(--surface-2);width:100%;text-align:center}
+.chip .t{font-family:"IBM Plex Mono",monospace;font-size:17px;font-weight:600;padding:2px 6px}
+.chip.odd{border-style:dashed}
+.chip.odd .t{color:var(--muted)}
+.chip.pad .d{color:var(--brass)}
+.reading{font-family:"IBM Plex Mono",monospace;font-size:22px;letter-spacing:.04em;word-break:break-all;border:1px solid var(--line);border-left:4px solid var(--accent);border-radius:8px;background:var(--surface-2);padding:12px 14px}
+
+/* ---------- explainer ---------- */
+details.howto{background:var(--surface);border:1px solid var(--line);border-radius:10px;box-shadow:var(--shadow);margin-top:18px}
+details.howto > summary{
+  cursor:pointer;list-style:none;padding:14px 18px;display:flex;align-items:center;gap:10px;
+  font-family:"Barlow Condensed","Barlow",sans-serif;font-weight:600;font-size:20px;letter-spacing:.04em;text-transform:uppercase;
+}
+details.howto > summary::-webkit-details-marker{display:none}
+details.howto > summary::before{content:"";border:6px solid transparent;border-left:8px solid var(--accent);transition:transform .15s}
+details.howto[open] > summary::before{transform:rotate(90deg) translateX(3px)}
+details.howto > summary .meta{margin-left:auto;font-family:"Barlow",sans-serif;font-weight:400;font-size:14px;color:var(--muted);text-transform:none;letter-spacing:0}
+.howto-body{padding:0 18px 18px;color:var(--ink-2)}
+.howto-body ol{padding-left:22px;margin:8px 0}
+.howto-body li{margin:6px 0}
+.howto-body h3{font-family:"Barlow Condensed",sans-serif;font-weight:600;font-size:18px;letter-spacing:.06em;text-transform:uppercase;color:var(--ink);margin:18px 0 6px}
+@media (prefers-reduced-motion:reduce){details.howto > summary::before{transition:none}}
+
+footer{margin-top:28px;color:var(--muted);font-size:13px;display:flex;gap:14px;flex-wrap:wrap;justify-content:space-between}
+footer a{color:inherit}
+.toast{
+  position:fixed;left:50%;bottom:22px;transform:translateX(-50%) translateY(20px);opacity:0;
+  background:var(--ink);color:var(--ground);padding:8px 14px;border-radius:6px;font-size:14px;pointer-events:none;
+  transition:opacity .15s,transform .15s;
+}
+.toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
+@media (max-width:520px){ .brand h1{font-size:42px} .panel{padding:16px 14px 18px} }
+
+/* ---------- modular arithmetic primer ---------- */
+.toc ol{margin:6px 0 0;padding-left:22px;columns:2;column-gap:28px}
+.toc li{margin:3px 0;break-inside:avoid}
+@media (max-width:560px){.toc ol{columns:1}}
+.panel h3{font-family:"Barlow Condensed",sans-serif;font-weight:600;font-size:19px;letter-spacing:.06em;text-transform:uppercase;margin:18px 0 6px}
+.explain ul.facts{padding-left:20px;margin:8px 0}
+.explain ul.facts li{margin:5px 0}
+.play{display:grid;grid-template-columns:minmax(0,260px) minmax(0,1fr);gap:18px;align-items:center;margin-top:10px}
+@media (max-width:620px){.play{grid-template-columns:minmax(0,1fr)}}
+.clock-wrap{max-width:260px;margin:0 auto;width:100%}
+#clock-svg{width:100%;height:auto;display:block}
+#clock-svg .face{fill:var(--surface-2);stroke:var(--line-strong);stroke-width:1.5}
+#clock-svg .tick{stroke:var(--line-strong);stroke-width:2}
+#clock-svg .lbl{font:600 13px "IBM Plex Mono",monospace;fill:var(--ink-2)}
+#clock-svg .lbl.sm{font-size:11px}
+#clock-svg .lbl.on{fill:var(--accent);font-size:15px}
+#clock-svg .lbl.sm.on{font-size:12.5px}
+#clock-svg .hand{stroke:var(--accent);stroke-width:4;stroke-linecap:round}
+#clock-svg .hand.from{stroke:var(--line-strong);stroke-width:2;stroke-dasharray:3 3}
+#clock-svg .hub{fill:var(--accent)}
+#clock-svg .arc{fill:none;stroke:var(--brass);stroke-width:3;stroke-linecap:round;opacity:.85}
+.play-controls{display:flex;flex-direction:column;gap:10px}
+.play-controls label,.calc label{display:flex;flex-direction:column;gap:4px;font-size:14px;color:var(--muted)}
+.calc{display:flex;gap:10px 16px;flex-wrap:wrap;align-items:flex-end;margin:12px 0 6px}
+.calc label{flex-direction:row;align-items:center;gap:8px;color:var(--ink);font-size:15px}
+.calc label{max-width:100%;min-width:0}.calc select{min-width:0;max-width:100%} /* lets a long select shrink to the card on a narrow phone */
+.calc var,.play var{font-family:"IBM Plex Mono",monospace;font-style:normal;font-weight:600}
+input[type=number],input[type=text],select{border:1px solid var(--line-strong);border-radius:6px;background:var(--surface);padding:7px 9px;font-size:15px;color:var(--ink);max-width:100%}
+input[type=text]{font-family:"IBM Plex Mono",monospace;min-width:0;width:12em}
+input[type=number]{width:6.5em;font-family:"IBM Plex Mono",monospace}
+.play-controls input{width:7em}
+.btnrow{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+.say{color:var(--ink-2);margin:4px 0 0}
+.say var,.out var{font-family:"IBM Plex Mono",monospace;font-style:normal;font-weight:600}
+.out{color:var(--ink-2)}
+.out p{margin:8px 0}
+.out p,.out var{overflow-wrap:anywhere} /* long numbers wrap instead of widening the page */
+.out .num,.say .num{font-family:"IBM Plex Mono",monospace;word-break:break-all}
+.out .big,.q .big{font-family:"Barlow Condensed",sans-serif;font-size:26px;color:var(--ink)}
+.one-chip{display:inline-block;background:var(--accent);color:var(--accent-ink);border-radius:4px;padding:0 6px;font-family:"IBM Plex Mono",monospace;font-weight:600}
+table.tt{width:auto;border-collapse:collapse;font-family:"IBM Plex Mono",monospace;font-size:13px;margin:8px 0}
+table.tt th,table.tt td{text-align:center;padding:4px 7px;border:1px solid var(--line);min-width:28px}
+table.tt th{background:var(--surface-2);color:var(--ink-2);font-family:"IBM Plex Mono",monospace;letter-spacing:0;text-transform:none;font-size:13px}
+table.tt td.one{background:var(--accent);color:var(--accent-ink);font-weight:600}
+table.tt tr.noinv td,table.tt tr.noinv th{opacity:.45}
+.chip.one{border-color:var(--accent)}
+.chip.one .t{color:var(--accent)}
+table.tk{width:auto;border-collapse:collapse;font-family:"IBM Plex Mono",monospace;font-size:12.5px;margin:8px 0}
+table.tk th{text-align:right;padding:3px 8px;font-size:12px;letter-spacing:.06em;white-space:nowrap}
+table.tk td{text-align:center;padding:3px 5px;border:1px solid var(--line);min-width:26px;color:var(--muted)}
+table.tk td.m{color:var(--ink);font-weight:600;background:var(--surface-2)}
+table.tk td.hit{background:var(--accent);color:var(--accent-ink);font-weight:600}
+.dd-dates{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;margin:8px 0}
+@media (max-width:560px){.dd-dates{grid-template-columns:minmax(0,1fr)}}
+.dd-dates div{border:1px solid var(--line);border-left:4px solid var(--brass);border-radius:8px;padding:8px 12px;background:var(--surface-2);display:flex;flex-direction:column;gap:2px}
+.dd-dates b{font-family:"IBM Plex Mono",monospace;color:var(--ink)}
+.dd-dates span{font-size:14px;color:var(--ink-2)}
+ol.ddsteps{padding-left:22px;color:var(--ink-2)}
+ol.ddsteps li{margin:6px 0}
+.math{white-space:pre-wrap;word-break:normal;overflow-wrap:anywhere}
+.panel h3 .t-a,.panel h3 .t-y,.panel h3 .t-d{text-transform:none;letter-spacing:0;font-family:"IBM Plex Mono",monospace;font-size:.9em}
+.practice{border:1px solid var(--line);border-radius:10px;padding:14px;background:var(--surface-2)}
+.practice .q{margin-bottom:10px}
+.dows{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:6px;margin-bottom:10px}
+@media (max-width:420px){.dows{grid-template-columns:repeat(4,minmax(0,1fr))}}
+.dows .btn{justify-content:center;padding:9px 4px}
+.dows .btn.right{background:var(--accent);border-color:var(--accent);color:var(--accent-ink);opacity:1}
+.dows .btn.wrong{background:var(--error-soft);border-color:var(--error);color:var(--error);opacity:1}
+.pr-say{min-height:1.5em;color:var(--ink-2);margin-bottom:8px}
+.streak{margin-left:auto;color:var(--muted);font-size:14px;font-variant-numeric:tabular-nums}
+/* doomsday formulas: one colour per term, defined for both themes */
+:root{--t-month:#7B3F8C}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){--t-month:#D9A7E8}}
+:root[data-theme="dark"]{--t-month:#D9A7E8}
+.t-a{color:var(--brass);font-weight:600}
+.t-y{color:var(--accent);font-weight:600}
+.t-d{color:var(--t-month);font-weight:600}
+var.t-a,var.t-y,var.t-d{font-family:"IBM Plex Mono",monospace;font-style:normal}
+.fbox{border:1px solid var(--line);border-left:4px solid var(--brass);border-radius:10px;background:var(--surface-2);padding:12px 14px;margin:12px 0 4px}
+.fline{font-family:"IBM Plex Mono",monospace;font-size:19px;line-height:1.5;color:var(--ink);margin:6px 0 8px;overflow-wrap:anywhere}
+.fline.small{font-size:15px;margin:0 0 6px}
+.legend{list-style:none;margin:0 0 6px;padding:0;display:flex;flex-direction:column;gap:4px;font-size:15px;color:var(--ink-2)}
+.legend .t-a,.legend .t-y,.legend .t-d{font-family:"IBM Plex Mono",monospace;margin-right:6px}
+table.ftab{width:auto;border-collapse:collapse;font-size:14px;margin:8px 0}
+table.ftab th,table.ftab td{border:1px solid var(--line);padding:5px 9px;text-align:center;white-space:nowrap;font-variant-numeric:tabular-nums}
+table.ftab th{background:var(--surface-2);font-family:"Barlow Condensed",sans-serif;letter-spacing:.06em;text-transform:none;font-size:14px;color:var(--ink-2)}
+table.ftab td:last-child{text-align:left}
+.ystrip{display:flex;align-items:center;gap:4px;margin:10px 0;width:max-content}
+.yc{display:flex;flex-direction:column;align-items:center;border:1px solid var(--line);border-radius:6px;padding:4px 7px;background:var(--surface);font-size:13px;color:var(--ink-2);min-width:46px}
+.yc b{font-family:"IBM Plex Mono",monospace;font-size:12.5px;color:var(--ink)}
+.yc.lp{border-color:var(--brass)}
+.yj{display:flex;flex-direction:column;align-items:center;font-family:"IBM Plex Mono",monospace;font-size:12px;color:var(--accent);font-weight:600}
+.yj.two{color:var(--brass)}
+.yj small{font-family:"Barlow",sans-serif;font-weight:400;font-size:10.5px}
+.chain{display:flex;flex-wrap:wrap;align-items:center;gap:6px 4px;margin:10px 0}
+.chain .dt{font-family:"IBM Plex Mono",monospace;font-weight:600;color:var(--t-month);border:1px solid var(--line);background:var(--surface);border-radius:6px;padding:3px 7px}
+.chain .gap{font-size:11.5px;line-height:1.15;color:var(--muted);text-align:center;padding:0 2px}
+.chain .gap::after{content:"→";display:block;color:var(--line-strong);font-size:14px}
+.dd-work{display:grid;grid-template-columns:minmax(0,230px) minmax(0,1fr);gap:16px;align-items:start;margin-top:6px}
+@media (max-width:620px){.dd-work{grid-template-columns:minmax(0,1fr)}}
+.wheel-wrap{max-width:230px;width:100%;margin:0 auto}
+#dd-wheel{width:100%;height:auto;display:block}
+#dd-wheel .face{fill:var(--surface-2);stroke:var(--line-strong);stroke-width:1.5}
+#dd-wheel .dw{fill:var(--surface);stroke:var(--line-strong);stroke-width:1.5}
+#dd-wheel .dw.anc{stroke:var(--brass);stroke-width:3}
+#dd-wheel .dw.dd{stroke:var(--accent);stroke-width:3}
+#dd-wheel .dw.ans{fill:var(--accent);stroke:var(--accent)}
+#dd-wheel .wl{font:600 11px "IBM Plex Mono",monospace;fill:var(--ink-2)}
+#dd-wheel .wl.on{fill:var(--accent-ink)}
+#dd-wheel path.a1{fill:none;stroke:var(--brass);stroke-width:3;stroke-linecap:round}
+#dd-wheel path.a2{fill:none;stroke:var(--accent);stroke-width:3;stroke-linecap:round}
+#dd-wheel text.al{font:700 12px "IBM Plex Mono",monospace}
+#dd-wheel text.al.a1{fill:var(--brass)}
+#dd-wheel text.al.a2{fill:var(--accent)}
+#dd-wheel .wc{font:600 16px "Barlow Condensed",sans-serif;fill:var(--ink)}
+#dd-wheel .wc2{font:600 13px "IBM Plex Mono",monospace;fill:var(--muted)}
+.dd-right{min-width:0}
+.try{border:1px dashed var(--line-strong);border-radius:10px;padding:10px 14px;margin:14px 0 2px;background:var(--surface)}
+.try ol{margin:6px 0 0;padding-left:22px;display:flex;flex-direction:column;gap:8px}
+.try li{color:var(--ink-2)}
+.try li > span{display:block}
+.try details{margin-top:3px}
+.try summary{cursor:pointer;color:var(--accent);font-size:14px;font-weight:500}
+.try details p{margin:4px 0 0;color:var(--ink)}
+.try var,.explain var{font-family:"IBM Plex Mono",monospace;font-style:normal;font-weight:600}
+table tr.hit td{background:var(--accent-soft);font-weight:600}
+table.ftab tr.none td{color:var(--muted)}
+#iv-table,#fp-table{font-size:13.5px}
+
+.defbox{border:1px solid var(--line);border-left:4px solid var(--accent);border-radius:10px;background:var(--surface-2);padding:6px 12px 4px;margin:8px 0}
+.defs{display:grid;grid-template-columns:auto minmax(0,1fr);gap:6px 18px;align-items:baseline;padding:8px 0}
+.defs .dl{font-family:"IBM Plex Mono",monospace;font-size:15px;color:var(--ink);overflow-wrap:anywhere}
+.defs .dl .ind{display:inline-block;width:3.6em;text-align:right;padding-right:.5em;color:var(--accent);font-weight:600}
+.defs .dn{font-size:14px;color:var(--muted)}
+@media (max-width:620px){.defs{grid-template-columns:minmax(0,1fr);gap:0}.defs .dn{margin:0 0 8px 3.6em}.defs .dl .ind{width:auto;padding-right:.4em}}
+.defbox .math{background:transparent;padding:6px 0;margin:4px 0}
+.leapbox{border:1px solid var(--line);border-left:4px solid var(--t-month);border-radius:10px;background:var(--surface-2);padding:12px 14px;margin:14px 0}
+.leapbox p{margin:8px 0}
+.leapbox table.ftab th[scope=row]{text-align:left;white-space:nowrap}
+.leapbox table.ftab td{text-align:left}
+
+@media (prefers-reduced-motion:no-preference){#clock-svg .hand{transition:none}}
+
+/* ---------- tools: Coordinate Formulas, Eldritch Index ---------- */
+textarea.txt{font-family:"Barlow",system-ui,sans-serif;font-size:15.5px;word-break:normal}
+label.inline{display:inline-flex;align-items:center;gap:8px;font-size:15px;color:var(--ink);margin-top:8px}
+label.inline.small{font-size:14px;color:var(--ink-2)}
+label.inline input[type=checkbox]{width:17px;height:17px}
+.lbl{font-weight:600;display:block;margin-bottom:6px}
+input.coordin{width:100%;max-width:26em;border:1px solid var(--line-strong);border-radius:6px;background:var(--surface);padding:8px 10px;font-family:"IBM Plex Mono",monospace;font-size:15px;color:var(--ink)}
+input.coordin.short{width:10em}
+ol.readas{margin:6px 0 0;padding-left:24px;font-family:"IBM Plex Mono",monospace;font-size:14px;color:var(--ink)}
+ol.readas li{margin:3px 0}
+ol.readas li.bad{color:var(--error)}
+.why{font-family:"Barlow",sans-serif;font-size:13px;color:var(--error)}
+.nm{display:inline-block;background:var(--accent-soft);color:var(--ink);border-radius:5px;padding:0 5px;font-family:"Barlow",sans-serif;font-weight:600}
+.vars{display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:10px}
+.var{display:flex;flex-direction:column;gap:5px;border:1px solid var(--line);border-radius:8px;padding:8px 10px;background:var(--surface-2)}
+.var input{border:1px solid var(--line-strong);border-radius:6px;background:var(--surface);padding:7px 9px;font-family:"IBM Plex Mono",monospace;font-size:15px;color:var(--ink);width:100%}
+.fxrows{display:flex;flex-direction:column;gap:8px;margin:6px 0 12px}
+.fxrow{display:grid;grid-template-columns:2em minmax(0,1fr) auto auto;gap:6px 12px;align-items:center;border:1px solid var(--line);border-radius:8px;padding:8px 10px;background:var(--surface)}
+.fxrow .ln{color:var(--muted);font-variant-numeric:tabular-nums}
+.fxrow .fx{font-family:"IBM Plex Mono",monospace;font-size:14px;overflow-wrap:anywhere;line-height:1.7}
+.fxrow .res{font-family:"IBM Plex Mono",monospace;font-size:15px;white-space:nowrap}
+.fxrow select{border:1px solid var(--line-strong);border-radius:6px;background:var(--surface);padding:4px 6px;font-size:14px;color:var(--ink);max-width:100%}
+@media (max-width:620px){.fxrow{grid-template-columns:2em minmax(0,1fr)}.fxrow .res,.fxrow .slot{grid-column:2}}
+.muted{color:var(--muted);font-size:13px}
+.reading.coord span{white-space:nowrap}
+.ftab select{border:1px solid var(--line-strong);border-radius:6px;background:var(--surface);padding:4px 6px;font-size:14px;color:var(--ink)}
+.omen{max-width:var(--page);margin:0 0 4px;padding:10px 14px;border-left:3px solid var(--brass);font-style:italic;color:var(--ink-2);font-size:15px}
+.sanity{margin-left:auto;font-family:"IBM Plex Mono",monospace;font-size:12.5px;color:var(--brass);border:1px solid var(--brass);border-radius:999px;padding:1px 9px}
+.page{border-top:1px solid var(--line);padding:12px 0 4px}
+.page:first-child{border-top:0;padding-top:4px}
+.page .pname{flex:1;min-width:8em;border:1px solid var(--line-strong);border-radius:6px;background:var(--surface);padding:5px 8px;font-size:15px;color:var(--ink);font-family:"Barlow",system-ui,sans-serif}
+.nw{font-size:12.5px;color:var(--muted)}
+.pgsmall{font-size:12.5px;color:var(--muted)}
+table.nums{table-layout:fixed}
+table.nums th:first-child,table.nums td:first-child{width:6.5em}
+.page textarea{margin-top:6px}
+.stir{border:1px solid var(--line);border-left:4px solid var(--line-strong);border-radius:8px;padding:10px 12px;margin:10px 0;background:var(--surface)}
+.stir.s2{border-left-color:var(--brass)}
+.stir.s3{border-left-color:var(--brass);background:var(--surface-2);box-shadow:0 0 0 1px var(--brass) inset}
+.stir p{margin:6px 0 0;color:var(--ink);line-height:1.55;overflow-wrap:anywhere}
+.stir-head{display:flex;flex-wrap:wrap;gap:6px 10px;align-items:baseline;font-size:13.5px}
+.stir-head .pg{font-weight:600;color:var(--ink)}
+.stir-head .verdict{font-style:italic;color:var(--brass)}
+.stir-head .found{display:flex;gap:4px;flex-wrap:wrap;margin-left:auto}
+.tchip{font-size:12px;border:1px solid var(--line-strong);border-radius:999px;padding:0 7px;color:var(--ink-2)}
+mark.hit{background:var(--accent-soft);color:var(--ink);border-radius:3px;padding:0 2px;font-weight:600}
+mark.glimmer{box-shadow:0 0 0 1px var(--brass),0 0 10px var(--brass);animation:glimmer 2.4s ease-in-out infinite}
+@keyframes glimmer{50%{box-shadow:0 0 0 1px var(--brass),0 0 2px var(--brass)}}
+@media (prefers-reduced-motion:reduce){mark.glimmer{animation:none}}
+mark.num{background:transparent;color:var(--ink);border-bottom:2px solid var(--brass);font-weight:600}
+mark.num.w{border-bottom-style:dashed}
+.wait-msg{color:var(--muted);font-style:italic}
+table.nums td{vertical-align:top}
+table.nums td:last-child{overflow-wrap:anywhere;white-space:normal}
+</style>
+</head>
+<body>
+<header class="band">
+  <svg class="topo" viewBox="0 0 1200 260" preserveAspectRatio="xMaxYMid slice" aria-hidden="true" focusable="false"><path d="M970 60C971 63 970 67 968 69C966 72 962 74 959 76C956 78 953 79 950 81C947 82 944 84 941 85C937 86 934 86 930 86C926 86 923 85 920 83C917 82 914 81 911 80C908 78 905 77 903 75C901 73 899 70 898 68C897 65 897 63 897 60C896 57 895 55 895 52C895 49 895 45 897 42C899 39 902 37 906 35C909 34 915 34 919 34C923 35 927 36 930 36C933 37 936 38 939 39C942 39 945 40 948 42C951 43 953 45 955 46C958 48 961 50 964 52C966 54 969 57 970 60ZM1011 60C1012 66 1010 73 1007 78C1003 84 995 88 989 92C983 96 977 98 970 101C964 104 958 108 952 109C945 111 937 112 930 112C923 111 916 109 910 106C903 104 897 102 892 99C886 96 880 93 876 89C871 85 868 80 866 75C864 71 864 65 863 60C862 55 860 49 860 43C860 37 860 30 863 24C867 19 874 13 882 11C889 8 900 9 908 9C916 9 923 12 930 13C937 14 943 15 949 17C955 19 960 21 966 24C971 26 975 29 981 33C986 36 993 39 998 44C1003 48 1009 54 1011 60ZM1052 60C1054 69 1052 80 1046 88C1040 96 1028 102 1019 108C1010 113 1000 117 990 122C981 126 972 131 962 134C952 136 940 137 930 137C920 136 909 132 900 129C890 126 881 123 873 118C864 114 854 110 848 104C841 98 836 91 833 83C830 76 830 68 829 60C828 52 825 44 825 35C825 26 824 14 830 6C835 -2 847 -10 858 -14C869 -17 885 -17 897 -16C909 -15 920 -12 930 -10C940 -8 949 -7 958 -4C967 -1 975 2 983 6C991 10 998 14 1006 19C1014 24 1024 29 1032 35C1040 42 1050 51 1052 60ZM1094 60C1097 72 1093 87 1086 97C1078 108 1061 116 1049 124C1036 131 1023 136 1011 142C998 148 986 155 973 158C959 161 944 162 930 161C916 160 903 155 890 151C877 147 865 143 854 138C842 133 828 127 819 120C810 112 804 101 800 91C796 81 797 71 795 60C793 49 789 38 789 26C790 14 789 -1 796 -12C804 -23 819 -33 834 -38C849 -43 870 -41 886 -41C902 -40 916 -36 930 -33C944 -31 956 -29 967 -25C979 -22 990 -17 1000 -12C1011 -6 1019 -1 1030 6C1041 12 1056 18 1066 27C1077 36 1091 48 1094 60ZM1181 60C1186 78 1178 101 1166 117C1154 133 1128 145 1108 156C1089 167 1070 175 1051 183C1032 191 1014 201 994 205C974 209 950 210 930 208C910 206 891 199 872 193C852 188 834 184 815 177C797 170 775 162 761 151C747 139 738 123 733 108C727 92 728 76 726 60C723 44 717 27 717 9C718 -9 717 -33 728 -49C740 -64 764 -79 787 -86C810 -93 841 -90 865 -89C889 -88 910 -82 930 -79C950 -75 969 -73 986 -68C1003 -62 1019 -54 1034 -46C1050 -39 1063 -30 1080 -20C1097 -11 1120 -3 1137 10C1154 24 1176 42 1181 60ZM1225 60C1231 81 1221 108 1207 127C1192 145 1161 159 1138 172C1115 185 1093 194 1071 203C1048 213 1027 224 1004 229C981 233 954 233 930 231C906 228 885 220 863 214C840 208 818 204 796 197C774 189 747 180 731 167C715 154 705 134 698 116C691 98 694 79 691 60C688 41 680 21 681 0C682 -21 681 -49 694 -67C708 -85 737 -102 764 -109C790 -117 827 -114 854 -112C882 -111 907 -106 930 -102C953 -98 975 -95 995 -89C1016 -83 1033 -73 1051 -64C1069 -54 1084 -45 1104 -34C1124 -23 1152 -14 1173 2C1193 17 1219 39 1225 60ZM1270 60C1277 84 1265 115 1248 137C1231 158 1194 174 1168 188C1142 203 1116 213 1090 224C1065 234 1041 247 1014 252C987 256 957 255 930 252C903 250 879 240 854 234C828 228 802 225 776 217C751 208 719 199 701 183C682 168 670 145 663 124C655 104 659 82 656 60C652 38 643 15 644 -9C645 -33 644 -64 661 -85C677 -106 710 -124 741 -133C772 -141 813 -137 844 -135C876 -134 903 -128 930 -124C957 -120 982 -117 1005 -110C1028 -103 1047 -91 1068 -81C1089 -70 1105 -59 1128 -47C1152 -35 1185 -25 1209 -7C1233 11 1264 36 1270 60ZM1316 60C1323 87 1309 122 1289 146C1269 170 1227 188 1198 204C1168 220 1139 232 1110 244C1081 255 1054 269 1024 274C994 279 960 277 930 274C900 270 874 260 845 254C816 247 786 246 757 237C727 228 691 218 669 200C648 183 635 156 627 133C619 109 623 85 620 60C616 35 606 9 607 -18C608 -45 608 -80 627 -103C645 -126 684 -146 719 -155C754 -164 799 -159 835 -158C870 -156 900 -151 930 -147C960 -142 988 -139 1014 -131C1040 -123 1062 -110 1085 -98C1108 -86 1126 -74 1153 -60C1180 -46 1219 -36 1246 -16C1273 4 1309 33 1316 60ZM1410 60C1418 93 1397 137 1372 166C1346 196 1294 216 1257 236C1220 255 1185 270 1150 284C1114 298 1080 313 1043 318C1007 323 966 318 930 314C894 309 864 298 828 292C793 286 754 287 716 278C679 268 632 256 605 235C578 214 564 180 554 150C545 121 551 91 547 60C543 29 530 -3 532 -36C534 -69 536 -112 560 -139C584 -167 633 -189 676 -199C719 -209 773 -202 816 -201C858 -200 894 -196 930 -191C966 -187 1001 -184 1033 -174C1064 -164 1090 -146 1118 -131C1146 -117 1168 -103 1202 -87C1236 -70 1288 -59 1322 -34C1357 -10 1401 27 1410 60ZM290 330C290 333 289 336 287 339C285 341 281 344 278 345C275 347 272 348 269 349C266 350 263 351 260 352C256 352 253 352 250 352C247 352 244 352 240 352C237 352 232 353 228 352C224 351 219 350 216 348C213 346 212 342 211 339C211 336 213 333 214 330C215 327 216 325 218 322C219 320 221 317 223 315C225 314 228 312 231 311C234 309 237 308 240 307C243 306 246 305 250 305C254 304 258 304 261 305C265 305 268 307 271 309C273 311 275 313 278 315C280 317 283 319 285 322C287 324 290 327 290 330ZM330 330C331 336 328 343 324 348C320 353 312 357 306 360C300 364 294 366 288 368C281 370 275 372 269 373C263 374 256 374 250 374C244 375 238 375 230 375C223 375 214 376 206 375C198 373 188 371 182 367C176 362 173 355 172 349C171 343 175 336 177 330C180 324 183 319 186 315C189 310 192 305 196 301C201 297 207 294 212 291C218 289 224 287 230 285C237 283 243 281 250 279C257 278 265 278 272 279C279 280 286 284 292 288C297 291 301 296 306 300C310 304 316 308 320 313C324 318 329 324 330 330ZM370 330C371 339 366 349 360 357C354 364 343 370 334 375C325 380 315 384 306 387C297 391 288 394 279 395C269 397 260 396 250 396C240 397 232 397 221 397C210 397 196 399 184 397C172 395 156 392 147 385C139 379 134 367 133 358C132 349 138 339 141 330C145 321 149 314 154 307C159 300 163 293 170 287C177 281 186 277 194 273C202 269 211 266 221 263C230 260 239 256 250 254C261 252 273 251 284 253C294 255 304 261 313 266C321 271 327 278 334 285C341 291 350 297 356 305C362 312 369 321 370 330ZM410 330C411 342 404 355 396 365C388 375 372 383 361 390C349 396 337 402 325 406C313 411 301 415 288 417C276 419 263 418 250 418C237 419 226 419 211 419C196 419 178 423 162 420C145 418 124 413 112 404C101 395 95 380 94 368C92 355 100 341 105 330C110 319 116 309 122 299C129 290 135 280 144 273C153 266 165 260 176 255C188 250 199 246 211 242C224 237 236 231 250 228C264 226 282 223 296 226C310 229 323 237 334 244C345 251 353 261 362 270C372 278 384 286 391 296C399 306 409 318 410 330ZM489 330C489 347 478 367 465 382C452 396 430 407 413 418C396 428 380 437 362 444C344 451 326 458 307 461C289 464 269 462 250 462C231 463 214 463 191 464C169 465 141 471 116 467C90 464 58 456 41 443C24 429 16 405 14 387C13 368 25 347 33 330C40 313 49 298 59 284C69 270 79 256 93 246C107 235 126 228 142 220C159 213 175 207 193 200C211 193 229 181 250 176C271 171 298 167 320 171C341 175 362 188 378 199C395 210 406 225 420 238C434 252 452 263 464 279C475 294 489 313 489 330Z"/><path class="ix" d="M1137 60C1141 75 1136 94 1126 107C1116 120 1094 131 1078 140C1063 149 1046 156 1031 163C1015 170 1000 178 983 182C967 185 947 186 930 185C913 183 897 177 881 172C865 168 850 164 835 157C819 151 802 145 791 135C779 125 772 112 767 99C762 87 763 74 761 60C758 46 753 33 754 18C754 2 753 -17 762 -30C772 -44 791 -56 810 -62C829 -68 855 -66 875 -65C895 -64 913 -59 930 -56C947 -53 962 -51 977 -47C991 -42 1004 -36 1017 -29C1031 -23 1041 -15 1055 -7C1069 1 1088 8 1101 19C1115 30 1133 45 1137 60ZM1363 60C1370 90 1353 130 1330 156C1308 183 1261 202 1227 220C1194 238 1162 251 1130 264C1098 277 1067 291 1034 296C1000 301 963 298 930 294C897 290 869 279 837 273C804 267 770 266 737 257C704 248 662 237 637 217C613 198 600 168 591 142C582 115 587 88 584 60C580 32 568 3 569 -27C571 -57 572 -96 593 -121C614 -146 659 -168 697 -177C736 -187 786 -181 825 -180C864 -178 897 -173 930 -169C963 -164 995 -162 1023 -153C1052 -143 1076 -128 1101 -115C1127 -101 1147 -88 1178 -73C1208 -58 1253 -47 1284 -25C1315 -3 1355 30 1363 60ZM450 330C450 344 441 361 431 374C420 386 402 395 387 404C372 412 358 419 343 425C328 431 313 436 298 439C282 441 266 440 250 440C234 441 220 441 201 441C183 442 159 446 139 443C118 440 91 434 77 423C63 412 55 393 54 377C53 362 63 344 69 330C75 316 82 303 90 292C99 280 107 268 118 259C130 250 145 244 159 237C173 231 187 227 202 221C217 215 232 206 250 202C268 199 290 196 308 199C325 202 342 213 356 222C370 231 379 243 391 254C403 265 418 275 427 287C437 300 449 316 450 330Z"/></svg>
+  <div class="band-in">
+    <nav class="suite" aria-label="Tools of the Trade">
+      <span class="crumbs">
+        <a href="../"><svg class="mark" viewBox="0 0 32 32" aria-hidden="true" focusable="false"><circle cx="16" cy="16" r="14.5" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M16 4.5l4.2 11.5L16 27.5 11.8 16z" fill="currentColor" opacity=".55"/><path d="M16 4.5l4.2 11.5h-8.4z" fill="var(--band-hl)"/></svg><span>Tools of the Trade</span></a>
+      </span>
+      <span class="by">AdequateFootwear</span>
+    </nav>
+    <div class="top">
+      <div class="brand">
+        <h1>Coordinate <span class="hl">Formulas</span></h1>
+        <p>For puzzles that give the final as formulas. Paste them in, fill in the values you’ve found, and see every result, the assembled coordinates, and how far they land from the listed ones. It doesn’t know any cache’s answer.</p>
+      </div>
+      <div class="top-actions"><button class="btn quiet" id="btn-example" type="button">Load example</button><button class="btn quiet" id="btn-clear" type="button">Clear everything</button></div>
+    </div>
+  </div>
+</header>
+
+<main class="wrap">
+  <section class="panel" aria-labelledby="h1-s">
+    <div class="panel-head"><span class="step">Step 1</span><h2 id="h1-s">The formulas</h2></div>
+    <p class="lead">Paste the cache's formulas, one per line, in the order the puzzle gives them. Names can be single words, several words, or hyphenated; a hyphen with spaces around it is a minus sign.</p>
+    <div class="field">
+      <textarea class="numin txt" id="fx-in" rows="7" spellcheck="false" autocomplete="off" aria-labelledby="h1-s" aria-describedby="fx-help"></textarea>
+      <p class="help" id="fx-help">Use + − × ÷ (or x, *, /), ^ for powers, and brackets. “6 x Name”, “6 Name” and “6(Name)” all multiply; an x between two values means times, otherwise it’s a name. Powers go first, then × and ÷, then + and −, and a multiplication with no sign, like 3A or 2(B), goes before a ÷ next to it. The read-back shows the order in brackets. Labels like “A =” at the start of a line are ignored.</p>
+      <label class="inline small"><input type="checkbox" id="fx-hyph"> Treat every hyphen as a minus sign (for formulas like A-B)</label>
+    </div>
+    <div id="fx-read"></div>
+  </section>
+
+  <section class="panel" id="s2" aria-labelledby="h2-s">
+    <div class="panel-head"><span class="step">Step 2</span><h2 id="h2-s">The values you found</h2></div>
+    <p class="lead">One box for each name in the formulas. Fill in what you've found; the results update as you type.</p>
+    <p class="wait"></p>
+    <div class="body"><div class="vars" id="fx-vars"></div></div>
+  </section>
+
+  <section class="panel" id="s3" aria-labelledby="h3-s">
+    <div class="panel-head"><span class="step">Step 3</span><h2 id="h3-s">Results and coordinates</h2></div>
+    <p class="lead">Each line's result, and where it goes. The usual layout is six parts: latitude degrees, minutes and thousandths, then longitude degrees, minutes and thousandths.</p>
+    <p class="wait"></p>
+    <div class="body">
+      <div class="fxrows" id="fx-table"></div>
+      <div class="conv-opts">
+        <label>Latitude <select id="fx-ns"><option>N</option><option>S</option></select></label>
+        <label>Longitude <select id="fx-ew"><option>W</option><option>E</option></select></label>
+      </div>
+      <div id="fx-coord"></div>
+      <ul class="checks" id="fx-checks" aria-live="polite"></ul>
+    </div>
+  </section>
+
+  <section class="panel" id="s4" aria-labelledby="h4-s">
+    <div class="panel-head"><span class="step">Step 4</span><h2 id="h4-s">How far from the listed coordinates?</h2></div>
+    <p class="lead">A puzzle cache's final must be within 2 miles (3.2 km) of its listed coordinates, so a result much farther away means a wrong value somewhere.</p>
+    <div class="field">
+      <label for="fx-posted" class="lbl">Listed coordinates</label>
+      <input type="text" class="coordin" id="fx-posted" spellcheck="false" autocomplete="off" placeholder="N 45° 12.000 W 093° 55.000">
+      <p class="help">Degrees and decimal minutes (like the cache page shows), or decimal degrees.</p>
+    </div>
+    <ul class="checks" id="fx-dist" aria-live="polite"></ul>
+  </section>
+
+  <footer>
+    <span>Coordinate Formulas · <a href="../">all AdequateFootwear tools</a></span>
+    <span class="mono">N __° __.___ W ___° __.___</span>
+  </footer>
+</main>
+
+<script>
+(function(){
+  'use strict';
+  const $ = (s) => document.querySelector(s);
+  const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;' }[c]));
+  const LS = 'coordinate-formulas:v1';
+  const EXAMPLE = { text: '(Quillon / 2) - 2\n(Ost Marrow - Bramblewick) / 2\n(5 x Fen-Dallow) + (Ysolde - Harrowgate)\nHarrowgate + 68\n(Ysolde - Quillon) + 78\n(6 x Ost Marrow) + 135',
+    vals: { 'Quillon':'94', 'Ost Marrow':'31', 'Bramblewick':'7', 'Fen-Dallow':'60', 'Ysolde':'70', 'Harrowgate':'25' }, posted: 'N 45° 12.000 W 093° 55.000', ns: 'N', ew: 'W', hyph: false };
+  let st = { text: '', vals: {}, posted: '', ns: 'N', ew: 'W', hyph: false, slots: null };
+  try { const s = JSON.parse(localStorage.getItem(LS) || 'null'); if (s) st = Object.assign(st, s); } catch (e) {}
+  const save = () => { try { localStorage.setItem(LS, JSON.stringify(st)); } catch (e) {} };
+  const SLOTS = [['latDeg','Latitude degrees'],['latMin','Latitude minutes'],['latThou','Latitude thousandths'],['lonDeg','Longitude degrees'],['lonMin','Longitude minutes'],['lonThou','Longitude thousandths'],['none','Not a coordinate part']];
+
+  /* ---------- reading a formula ---------- */
+  const L = 'A-Za-z\\u00C0-\\u024F';
+  const SPACES = /[\t\u00A0\u1680\u2000-\u200A\u202F\u205F\u3000]/g;
+  const isLetter = (c) => new RegExp(`^[${L}]$`).test(c || '');
+  function tokenize(line, hyph){
+    let s = line.replace(SPACES, ' ').replace(/^\s*[A-Za-z]\s*[=:]\s*/, '').replace(/[×✕]/g, '*').replace(/[÷]/g, '/').replace(/[−–—]/g, ' - ');
+    // A word is letters, then letters, digits or apostrophes (so Q1 and Q2 are names); without the
+    // hyphen option a hyphen between letters joins words (Fen-Dallow). Words with spaces between them
+    // make one name (Ost Marrow).
+    const W = `[${L}][${L}0-9'’]*`, wordRe = new RegExp(hyph ? `^${W}` : `^${W}(?:-${W})*`);
+    const toks = []; let i = 0, joinable = false;
+    const operandEnd = (t) => t && (t.t === 'num' || t.t === 'name' || (t.t === 'op' && t.v === ')'));
+    while (i < s.length) {
+      const ch = s[i];
+      if (/\s/.test(ch)) { i++; continue; }
+      const num = s.slice(i).match(/^\d+(?:\.\d+)?/);
+      if (num) { toks.push({ t:'num', v: parseFloat(num[0]) }); i += num[0].length; joinable = false; continue; }
+      if ('+-*/^()'.includes(ch)) { toks.push({ t:'op', v: ch }); i++; joinable = false; continue; }
+      // x on its own means "times", but only between two operands (6 x Name, A x2, A x(B));
+      // anywhere else (X + 5, 3X, x - 1) it is a name like any other.
+      if ((ch === 'x' || ch === 'X') && operandEnd(toks[toks.length - 1]) && !(isLetter(s[i + 1]) || /['’]/.test(s[i + 1] || '') || (!hyph && s[i + 1] === '-' && isLetter(s[i + 2])))) {
+        const m = s.slice(i + 1).match(/^( *)(.?)(.?)/), gap = m[1].length > 0, nx = m[2];
+        if (/[0-9(]/.test(nx) || (gap && isLetter(nx)) || (nx === '-' && /[0-9(A-Za-z\u00C0-\u024F]/.test(m[3]))) { toks.push({ t:'op', v:'*' }); i++; joinable = false; continue; }
+      }
+      const nm = s.slice(i).match(wordRe);
+      if (nm) {
+        const last = toks[toks.length - 1];
+        if (joinable && last && last.t === 'name') last.v += ' ' + nm[0]; else toks.push({ t:'name', v: nm[0] });
+        i += nm[0].length; joinable = true; continue;
+      }
+      throw new Error(`I can't read “${esc(ch)}” here.`);
+    }
+    return toks;
+  }
+  /* Precedence, tightest first: brackets; powers (right to left, so 2^3^2 = 2^9); a minus sign in front;
+     multiplying with no sign (3A, 2(B)); × and ÷ left to right; + and − left to right.
+     So 3A^2 = 3 × A^2, 2^3(A) = 2^3 × A, and A / 2(B) = A ÷ (2 × B). */
+  function parse(toks){
+    let p = 0;
+    const peek = () => toks[p], take = () => toks[p++];
+    const isOp = (v) => peek() && peek().t === 'op' && peek().v === v;
+    function primary(){
+      const t = take();
+      if (!t) throw new Error('A formula ends too soon.');
+      if (t.t === 'num') return { k:'num', v:t.v };
+      if (t.t === 'name') return { k:'name', v:t.v };
+      if (t.t === 'op' && t.v === '(') { const e = expr(); if (!isOp(')')) throw new Error('A bracket is never closed.'); take(); return { k:'par', e }; }
+      throw new Error(`Unexpected “${t.v}”.`);
+    }
+    function power(){ const a = primary(); if (isOp('^')) { take(); return { k:'bin', op:'^', a, b: exponent() }; } return a; }
+    function exponent(){ if (isOp('-')) { take(); return { k:'neg', e: exponent() }; } return power(); }
+    function implicit(){ // 6(Name), 6 Name, 3A^2
+      let left = power();
+      while (peek() && (peek().t === 'name' || peek().t === 'num' || (peek().t === 'op' && peek().v === '('))) left = { k:'bin', op:'*', imp:true, a:left, b:power() };
+      return left;
+    }
+    function unary(){ if (isOp('-')) { take(); return { k:'neg', e: unary() }; } return implicit(); }
+    function term(){ let a = unary(); while (isOp('*') || isOp('/')) { const op = take().v; a = { k:'bin', op, a, b: unary() }; } return a; }
+    function expr(){ let a = term(); while (isOp('+') || isOp('-')) { const op = take().v; a = { k:'bin', op, a, b: term() }; } return a; }
+    const e = expr(); if (p < toks.length) throw new Error(`Something extra after the formula: “${toks[p].v}”.`); return e;
+  }
+  const names = (e, out) => { if (!e) return out; if (e.k === 'name') out.add(e.v); else if (e.k === 'par' || e.k === 'neg') names(e.e, out); else if (e.k === 'bin') { names(e.a, out); names(e.b, out); } return out; };
+  const OPS = { '+':'+', '-':'−', '*':'×', '/':'÷', '^':'^' };
+  /* The read-back adds brackets wherever the order isn't plain left to right with the usual
+     precedence, so it always shows the grouping that was used. */
+  const LVL = { '+':1, '-':1, '*':2, '/':2, '^':4 };
+  function show(e){
+    if (e.k === 'num') return String(e.v);
+    if (e.k === 'name') return `<span class="nm">${esc(e.v)}</span>`;
+    if (e.k === 'par') return `(${show(e.e)})`;
+    const wrap = (c, need) => need ? `(${show(c)})` : show(c);
+    if (e.k === 'neg') return `−${wrap(e.e, e.e.k === 'bin' && e.e.op !== '^')}`;
+    if (e.op === '^') return `${wrap(e.a, e.a.k !== 'num' && e.a.k !== 'name' && e.a.k !== 'par')}^${wrap(e.b, e.b.k === 'bin')}`;
+    const lv = LVL[e.op], lvl = (c) => (c.k === 'bin' ? LVL[c.op] : 9);
+    const left = wrap(e.a, lvl(e.a) < lv);
+    const right = wrap(e.b, lvl(e.b) < lv || (lvl(e.b) === lv && (e.op === '-' || e.op === '/' || (e.b.imp && !e.imp))) || (e.b.k === 'neg'));
+    return `${left} ${OPS[e.op]} ${right}`;
+  }
+  function evalE(e, vals){
+    if (e.k === 'num') return e.v;
+    if (e.k === 'name') { const v = vals[e.v]; if (v === undefined) throw new Error('missing'); return v; }
+    if (e.k === 'par') return evalE(e.e, vals);
+    if (e.k === 'neg') return -evalE(e.e, vals);
+    const a = evalE(e.a, vals), b = evalE(e.b, vals);
+    return e.op === '+' ? a + b : e.op === '-' ? a - b : e.op === '*' ? a * b : e.op === '/' ? a / b : Math.pow(a, b);
+  }
+  const fmt = (x) => Number.isInteger(x) ? String(x) : String(+x.toFixed(6));
+  const li = (lvl, h) => `<li class="${lvl}"><span class="ic" aria-hidden="true">${{ ok:'✓', info:'i', warn:'!', bad:'✕' }[lvl]}</span><span><span class="sr">${{ ok:'Looks right', info:'Note', warn:'Check this', bad:'Problem' }[lvl]}: </span>${h}</span></li>`;
+
+  /* ---------- coordinates ---------- */
+  function parseCoord(t){
+    t = t.toUpperCase().replace(/[°'′"″,]/g, ' ').trim();
+    let m = t.match(/^([NS])\s*(\d{1,2})\s+(\d{1,2}(?:\.\d+)?)\s+([EW])\s*(\d{1,3})\s+(\d{1,2}(?:\.\d+)?)$/);
+    if (m) return { lat: (m[1] === 'S' ? -1 : 1) * (+m[2] + +m[3] / 60), lon: (m[4] === 'W' ? -1 : 1) * (+m[5] + +m[6] / 60) };
+    m = t.match(/^(-?\d+(?:\.\d+)?)\s+(-?\d+(?:\.\d+)?)$/);
+    if (m) return { lat: +m[1], lon: +m[2] };
+    return null;
+  }
+  function miles(a, b){ const R = 3958.8, r = Math.PI / 180, dLat = (b.lat - a.lat) * r, dLon = (b.lon - a.lon) * r; const h = Math.sin(dLat / 2) ** 2 + Math.cos(a.lat * r) * Math.cos(b.lat * r) * Math.sin(dLon / 2) ** 2; return 2 * R * Math.asin(Math.sqrt(h)); }
+
+  /* ---------- render ---------- */
+  let lines = [];
+  function render(){
+    // read
+    const raw = st.text.split('\n').map((l) => l.trim()).filter(Boolean);
+    lines = raw.map((l) => { try { const e = parse(tokenize(l, st.hyph)); return { l, e }; } catch (err) { return { l, err: err.message }; } });
+    $('#fx-read').innerHTML = lines.length ? `<p class="help">How each line was read:</p><ol class="readas">${lines.map((x) => x.err ? `<li class="bad">${esc(x.l)} <span class="why">${x.err}</span></li>` : `<li>${show(x.e)}</li>`).join('')}</ol>` : '';
+    const all = []; lines.forEach((x) => { if (x.e) names(x.e, new Set()).forEach((n) => { if (!all.includes(n)) all.push(n); }); });
+    // vars
+    const s2 = $('#s2');
+    if (!all.length) { s2.classList.add('waiting'); s2.querySelector('.wait').textContent = 'Needs formulas with at least one name in Step 1.'; }
+    else {
+      s2.classList.remove('waiting');
+      const box = $('#fx-vars'), have = [...box.querySelectorAll('input')].map((i) => i.dataset.name);
+      if (have.join('\u0001') !== all.join('\u0001')) {
+        box.innerHTML = all.map((n, i) => `<label class="var"><span class="nm">${esc(n)}</span><input type="text" inputmode="decimal" data-name="${esc(n)}" value="${esc(st.vals[n] || '')}" aria-label="Value of ${esc(n)}" autocomplete="off"></label>`).join('');
+      }
+    }
+    // results
+    // a comma decimal (45,5) and any kind of minus sign are fine; anything else unreadable is flagged
+    const vals = {}, unread = [];
+    for (const n of all) {
+      const t = String(st.vals[n] || '').trim().replace(/^[−–—]/, '-'), u = /^-?\d+,\d+$/.test(t) ? t.replace(',', '.') : t;
+      if (/^-?\d+(\.\d+)?$/.test(u)) vals[n] = parseFloat(u); else if (t) unread.push(n);
+      const box = $('#fx-vars').querySelector(`input[data-name="${CSS.escape(n)}"]`);
+      if (box) { if (t && !(n in vals)) box.setAttribute('aria-invalid', 'true'); else box.removeAttribute('aria-invalid'); }
+    }
+    // keep each line's choice when lines are edited, added or removed, and give new lines the usual
+    // layout; formulas pasted over the old ones (no line in common) start again from the usual layout
+    if (!Array.isArray(st.slots) || (Array.isArray(st.slotLines) && st.slotLines.length && raw.length && !raw.some((l) => st.slotLines.includes(l)))) st.slots = [];
+    st.slots = lines.map((_, i) => st.slots[i] || (i < 6 ? SLOTS[i][0] : 'none'));
+    if (raw.length) st.slotLines = raw;
+    const s3 = $('#s3');
+    if (!lines.length) { s3.classList.add('waiting'); s3.querySelector('.wait').textContent = 'Needs formulas in Step 1.'; return renderDist(null); }
+    s3.classList.remove('waiting');
+    // snap rounding noise (4.35 × 100 = 434.99999999999994) to the whole number it stands for
+    const snap = (v) => { const r = Math.round(v); return Math.abs(v - r) < 1e-9 * Math.max(1, Math.abs(v)) ? r : v; };
+    const res = lines.map((x) => { if (!x.e) return { err:true }; try { return { v: snap(evalE(x.e, vals)) }; } catch (e) { return { missing:true }; } });
+    $('#fx-table').innerHTML = lines.map((x, i) => {
+      const r = res[i];
+      const out = r.err ? '<span class="why">can’t read</span>' : r.missing ? '<span class="muted">needs values</span>' : `= <b>${fmt(r.v).replace('-', '−')}</b>`;
+      const sel = `<select data-slot="${i}" aria-label="Where line ${i + 1} goes">${SLOTS.map(([k, n]) => `<option value="${k}"${st.slots[i] === k ? ' selected' : ''}>${n}</option>`).join('')}</select>`;
+      return `<div class="fxrow"><span class="ln">${i + 1}</span><span class="fx">${x.e ? show(x.e) : esc(x.l)}</span><span class="res">${out}</span><span class="slot">${sel}</span></div>`;
+    }).join('');
+    // assemble
+    const got = {}; const checks = unread.map((n) => ['warn', `I can’t read the value of <span class="nm">${esc(n)}</span>. Use a number like 45, 4.35 or −5.`]);
+    st.slots.forEach((k, i) => { if (k !== 'none' && res[i] && res[i].v !== undefined) got[k] = { v: res[i].v, line: i + 1 }; });
+    const rng = { latDeg:[0,90,2], latMin:[0,59,2], latThou:[0,999,3], lonDeg:[0,180,3], lonMin:[0,59,2], lonThou:[0,999,3] };
+    let complete = true; const part = {};
+    for (const [k, [lo, hi, w]] of Object.entries(rng)) {
+      const g = got[k], label = SLOTS.find((s) => s[0] === k)[1].toLowerCase();
+      if (!g) { complete = false; continue; }
+      if (!Number.isInteger(g.v)) { checks.push(['bad', `Line ${g.line} gives ${fmt(g.v)}, not a whole number, for the ${label}. A value is probably wrong, or a division doesn’t come out even.`]); complete = false; continue; }
+      if (g.v < lo || g.v > hi) { checks.push(['bad', `Line ${g.line} gives ${String(g.v).replace('-', '−')} for the ${label}, outside ${lo} to ${hi}.`]); complete = false; continue; }
+      part[k] = String(g.v).padStart(w, '0');
+    }
+    const ns = st.ns, ew = st.ew;
+    $('#fx-coord').innerHTML = `<div class="reading coord"><span>${esc(`${ns} ${part.latDeg || '__'}° ${part.latMin || '__'}.${part.latThou || '___'}`)}</span> <span>${esc(`${ew} ${part.lonDeg || '___'}° ${part.lonMin || '__'}.${part.lonThou || '___'}`)}</span></div>`;
+    if (complete) checks.push(['ok', 'Every part is a whole number in range.']);
+    else if (!checks.length) checks.push(['info', 'Fill in the remaining values to finish the coordinates.']);
+    $('#fx-checks').innerHTML = checks.map(([l, h]) => li(l, h)).join('');
+    renderDist(complete ? { lat: (ns === 'S' ? -1 : 1) * (+part.latDeg + +`${part.latMin}.${part.latThou}` / 60), lon: (ew === 'W' ? -1 : 1) * (+part.lonDeg + +`${part.lonMin}.${part.lonThou}` / 60) } : null);
+  }
+  function renderDist(c){
+    const out = [];
+    const p = st.posted.trim() ? parseCoord(st.posted) : null;
+    if (st.posted.trim() && !p) out.push(['warn', 'I can’t read those coordinates. Try the form N 45° 12.000 W 093° 55.000.']);
+    else if (!p) out.push(['info', 'Add the listed coordinates to see how far away your result is.']);
+    else if (!c) out.push(['info', 'Finish the coordinates in Step 3 to see the distance.']);
+    else {
+      const d = miles(p, c);
+      out.push(d <= 2 ? ['ok', `${d.toFixed(2)} miles (${(d * 1.609).toFixed(2)} km) from the listed coordinates: inside the 2-mile limit.`] : ['bad', `${d.toFixed(2)} miles (${(d * 1.609).toFixed(2)} km) from the listed coordinates, beyond the 2-mile limit. At least one value is probably wrong. A check like this can’t tell you the answer is right, only that it can’t be.`]);
+      if (d <= 2) out.push(['info', 'Being within 2 miles doesn’t confirm the answer. Use the cache’s own checker for that.']);
+    }
+    $('#fx-dist').innerHTML = out.map(([l, h]) => li(l, h)).join('');
+  }
+
+  /* ---------- wiring ---------- */
+  const fill = () => { $('#fx-in').value = st.text; $('#fx-posted').value = st.posted; $('#fx-ns').value = st.ns; $('#fx-ew').value = st.ew; $('#fx-hyph').checked = st.hyph; $('#fx-vars').innerHTML = ''; };
+  $('#fx-in').addEventListener('input', (e) => { st.text = e.target.value; save(); render(); });
+  $('#fx-hyph').addEventListener('change', (e) => { st.hyph = e.target.checked; save(); render(); });
+  $('#fx-vars').addEventListener('input', (e) => { const n = e.target.dataset.name; if (n !== undefined) { st.vals[n] = e.target.value; save(); render(); } });
+  $('#fx-table').addEventListener('change', (e) => { const i = e.target.dataset.slot; if (i !== undefined) { st.slots[+i] = e.target.value; save(); render(); } });
+  $('#fx-ns').addEventListener('change', (e) => { st.ns = e.target.value; save(); render(); });
+  $('#fx-ew').addEventListener('change', (e) => { st.ew = e.target.value; save(); render(); });
+  $('#fx-posted').addEventListener('input', (e) => { st.posted = e.target.value; save(); render(); });
+  $('#btn-example').addEventListener('click', () => { st = Object.assign(st, JSON.parse(JSON.stringify(EXAMPLE)), { slots: null }); fill(); save(); render(); });
+  $('#btn-clear').addEventListener('click', () => { st = { text: '', vals: {}, posted: '', ns: 'N', ew: 'W', hyph: false, slots: null }; fill(); save(); render(); });
+  if (!st.text) Object.assign(st, JSON.parse(JSON.stringify(EXAMPLE)));
+  fill(); render();
+})();
+</script>
+</body>
+</html>

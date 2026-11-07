@@ -66,6 +66,27 @@ Make puzzles *slightly* more accessible: take the tedium out, never hand solvers
   file's name and never guesses or names a file's type itself, and its readers are strict: a file
   that doesn't open says why, and nothing is repaired or recovered. It shares its viewer and readers
   with .bison Files, so keep every copy identical. Its built-in example is fictional.
+- **Higher Powers** (`higher-powers/`): a calculator with exact and high-precision arithmetic. Its
+  only short constant names are π (or `pi`), e and i; every other constant it offers goes by its full
+  name (`golden_ratio`, never φ). Its mascot and decorations are secular, multicultural luck symbols,
+  never religious ones.
+- **Higher Powers and Constant Companion** share the number engine, the calculator and Higher Powers'
+  named constants (`higherpowers.num.js`, `higherpowers.calc.js` and `higherpowers.constants.js` in
+  the source repo), inlined in both pages; Constant Companion uses the constants to avoid names Higher
+  Powers reserves. Keep every copy identical: after changing any of them, rebuild both pages together
+  (`python3 build-lessons.py higher-powers constant-companion`).
+- **Constant Companion** (`constant-companion/`): its "Send to Higher Powers" link carries the value
+  only in the page address (`../higher-powers/#set=name=value`); nothing is sent anywhere, and
+  Higher Powers asks before replacing a value the solver already has. A value whose digits go on
+  (a mathematical constant, or a measured or cut-short one) is sent ending in `…`, so Higher Powers
+  treats it as correct only to the digits sent; a complete exact value is sent plain.
+- **Everything in Its Place** (`everything-in-its-place/`) stays understated: its listing says only
+  "For when things need to be just so." Don't explain it further on the index, in `README.md` or on
+  the page's masthead.
+- **Where Are Ewe Going?** (`where-are-ewe-going/`): its encoder and decoder must match the published
+  Reverse Cache Box method exactly, check digits included; never change one without the other.
+- **Monkeying Around** (`monkeying-around/`) never guesses keys or ranks results: it does what the
+  solver sets up, step by step, and leaves the judging to them.
 - **Never rename or move a published tool's folder.** Cache pages link to these addresses, and
   GitHub doesn't redirect Pages URLs.
 

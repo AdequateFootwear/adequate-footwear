@@ -1,0 +1,11 @@
+<!-- Review copy: lines 1589-1598 of asymmetric/paillier/index.html, split so Copilot can review it. Not served. -->
+  const fill = () => { for (const id of IDS) $('#in-' + id).value = st[id]; if (st.p || st.q) $('#more-known').open = true; };
+  $('#btn-example').addEventListener('click', () => { Object.assign(st, EXAMPLE, { cv:{ mode:'ascii3', align:'left', pad:true } }); fill(); S.save(); render(); K.toast('Example loaded'); });
+  $('#btn-clear').addEventListener('click', () => { if (IDS.some((id) => st[id]) && !confirm('Clear every box on this page?')) return; Object.assign(st, JSON.parse(JSON.stringify(DEF))); fill(); S.save(); render(); });
+  if (!st.loaded) $('#howto').open = true;
+  fill(); render();
+})();
+</script>
+</body>
+</html>
+

@@ -111,7 +111,10 @@ can look at them without downloading. Today that is **.bison Files** (`dot-bison
 
 ## How changes land
 Work on a branch and open a pull request. Aegis reviews and merges, and Pages republishes `main`
-within a few minutes.
+within a few minutes. `main` is protected by a ruleset: nothing is pushed to it directly, and a pull
+request merges only once it has an approving review. GitHub Copilot may review pull requests too
+(its instructions are in `.github/copilot-instructions.md`); treat its comments like any review's:
+check each one, fix what's real, and say why when something stays as it is.
 
 ## Linking a tool from a cache page
 Cache pages strip JavaScript, so a cache page only links to a tool. Standard wording:

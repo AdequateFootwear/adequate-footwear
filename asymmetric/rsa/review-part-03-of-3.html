@@ -1,0 +1,261 @@
+<!-- Review copy: lines 1624-1883 of asymmetric/rsa/index.html, split so Copilot can review it. Not served. -->
+    return `<div class="val${opts.big ? ' big' : ''}"><div class="vh"><span class="sym">${sym}</span><span class="formula">${formula}</span><span class="digits">${plural(v.length, 'digit')}</span></div>
+      <output class="num">${v}</output><div class="vfoot"><button class="btn small" type="button" data-copy="${v}">Copy</button>${opts.extra || ''}</div></div>`;
+  }
+  let toastTimer;
+  function toast(msg){ const t = $('#toast'); t.textContent = msg; t.classList.add('show'); clearTimeout(toastTimer); toastTimer = setTimeout(() => t.classList.remove('show'), 1600); }
+  async function copy(text){ try { await navigator.clipboard.writeText(text); toast('Copied'); } catch(e){ toast('Copy failed: select and copy by hand'); } }
+  function lcm(a, b){ return a / NT.gcd(a, b) * b; }
+
+  /* ---------- factoring (in a background worker so the page stays responsive) ---------- */
+  let fc = { n:null, status:'idle' }, worker = null, factorTimer = null;
+  function stopFactor(){ if (worker) { worker.terminate(); worker = null; } }
+  function startFactor(nStr){
+    stopFactor();
+    fc = { n:nStr, status:'running', progress:null, t0:Date.now() };
+    const finish = (r) => { fc = { n:nStr, status:'done', factors:r.factors.map((x) => BigInt(x)), notes:r.notes, ms:r.ms }; worker = null; render(); };
+    const fail = (msg) => { fc = { n:nStr, status:'error', message:msg }; worker = null; render(); };
+    try {
+      const src = `const NT=(${ntModule.toString()})();onmessage=function(ev){try{const r=NT.factor(BigInt(ev.data),function(p){postMessage({type:'progress',p:p})});postMessage({type:'done',factors:r.factors.map(String),notes:r.notes,ms:r.ms});}catch(err){postMessage({type:'error',message:String(err&&err.message||err)});}};`;
+      worker = new Worker(URL.createObjectURL(new Blob([src], { type:'text/javascript' })));
+      worker.onmessage = (ev) => {
+        const m = ev.data;
+        if (fc.n !== nStr) return;
+        if (m.type === 'progress') { fc.progress = m.p; renderProgress(); }
+        else if (m.type === 'done') finish(m);
+        else fail(m.message);
+      };
+      worker.onerror = (ev) => { ev.preventDefault(); worker = null; runInline(); };
+      worker.postMessage(nStr);
+    } catch (e) { runInline(); }
+    function runInline(){ // fallback when workers are unavailable: same engine, on the page itself
+      setTimeout(() => { try { const r = NT.factor(BigInt(nStr)); finish({ factors:r.factors.map(String), notes:r.notes, ms:r.ms }); } catch (err) { fail(String(err.message || err)); } }, 30);
+    }
+    render();
+  }
+  function renderProgress(){
+    const box = $('#prog'); if (fc.status !== 'running') { box.hidden = true; return; }
+    box.hidden = false;
+    const p = fc.progress, bar = $('#prog-bar'), st = $('#prog-status');
+    if (!p) { bar.removeAttribute('value'); st.textContent = 'Trying small primes and quick methods…'; return; }
+    if (p.phase === 'algebra') { bar.value = 1; st.textContent = 'Combining the pieces into a factor…'; return; }
+    bar.value = Math.min(1, p.found / p.needed);
+    st.textContent = `Quadratic sieve: ${p.found} of ${p.needed} relations · ${(p.ms / 1000).toFixed(1)} s`;
+  }
+
+  /* ---------- the worksheet ---------- */
+  function render(){
+    const P = {}; for (const f of FIELDS) P[f] = parseNum(state[f]);
+    for (const f of FIELDS) { const el = $('#dg-' + f); el.textContent = P[f].value !== undefined ? plural(P[f].digits, 'digit') : ''; }
+    const val = (f) => P[f].value;
+    const n = val('n'), e = val('e'), c = val('c');
+    const common = (f, items) => {
+      const r = P[f];
+      if (r.error) items.unshift(['bad', r.error]);
+      else if (r.stripped) items.push(['info', 'Spaces and line breaks removed.']);
+      if (r.leadingZeros) items.push(['info', 'The leading zeros don’t change the number and are ignored here.']);
+      return items;
+    };
+
+    /* --- n --- */
+    const nChecks = [];
+    let nOk = false;
+    if (n !== undefined) {
+      if (n < 4n) nChecks.push(['bad', 'That’s too small to be the product of two primes.']);
+      else if (n % 2n === 0n) nChecks.push(['bad', '<b>n is even</b>, so 2 divides it. An RSA modulus is two odd primes multiplied together, so it’s always odd. Check the last digit, and check that this is really <var>n</var>.']);
+      else if (NT.isProbablePrime(n)) nChecks.push(['bad', '<b>n is prime</b>, so it can’t be <var>p × q</var>. That almost always means a digit was dropped, added, or changed while copying. Compare the digit count with the puzzle.']);
+      else {
+        nOk = true;
+        const sf = NT.smallestFactorBelow(n, 1000);
+        if (sf) nChecks.push(['warn', `<b>n is divisible by ${sf}.</b> A real RSA modulus has only two big prime factors, so a small one like this usually means a mistyped or missing digit. The worksheet will carry on, but double-check <var>n</var> against the puzzle.`]);
+        if (n === e) nChecks.push(['bad', '<var>n</var> and <var>e</var> are the same number. One of them was pasted into the wrong box.']);
+        if (n === c) nChecks.push(['bad', '<var>n</var> and <var>c</var> are the same number. One of them was pasted into the wrong box.']);
+      }
+    } else if (!P.n.error) nChecks.push(['info', 'Waiting for <var>n</var>. It’s usually the longest number in the puzzle.']);
+    setChecks('#ck-n', common('n', nChecks));
+
+    /* --- e --- */
+    const eChecks = [];
+    if (e !== undefined) {
+      if (e < 2n) eChecks.push(['bad', `<var>e = ${e}</var> doesn’t work: raising to the power ${e} doesn’t scramble anything.`]);
+      else if (n !== undefined && e >= n) eChecks.push(['bad', '<b>e is bigger than n.</b> The exponent is normally far smaller, often just 65537. This looks like <var>n</var>, <var>c</var>, or <var>d</var> pasted into the wrong box.']);
+      else if (e % 2n === 0n) eChecks.push(['bad', '<b>e is even.</b> <var>φ(n)</var> is always even, so an even <var>e</var> shares the factor 2 with it and has no inverse, which means no private exponent <var>d</var> could exist. Check the last digit of <var>e</var>.']);
+      if (e !== 65537n && (oneEditAway(e.toString(), '65537') || swapAway(e.toString(), '65537'))) eChecks.push(['warn', `Did you mean <b>65537</b>? It’s the most common <var>e</var> by far, and <var>${e}</var> is one or two digits away from it.`]);
+      if (n !== undefined && e < n && D(e) >= D(n) - 2) eChecks.push(['warn', '<b>e is nearly as long as n.</b> Puzzles almost always use a short <var>e</var>, so this looks like <var>c</var> or <var>d</var> in the wrong box. A huge <var>e</var> is legal, though, so if the puzzle really gives one this long, carry on.']);
+      else if (n !== undefined && e < n && D(e) > D(n) / 2) eChecks.push(['info', 'That’s an unusually large <var>e</var>. It’s allowed, and puzzles sometimes do it on purpose, but make sure it isn’t <var>c</var> or <var>d</var> in the wrong box.']);
+    } else if (!P.e.error) {
+      if (n !== undefined && c !== undefined) eChecks.push(['warn', 'RSA needs a public exponent <var>e</var> as well as <var>n</var>. If the puzzle doesn’t seem to give one, look for a short number (65537, 17, 3) or for a key written as a pair. If it really gives just one public number and no exponent at all, reread how the puzzle describes its system: not every public-key system has an <var>e</var>.']);
+      else eChecks.push(['info', 'Waiting for <var>e</var>. If the puzzle gives the key as a pair <var>(n, e)</var>, it’s the short one.']);
+    }
+    setChecks('#ck-e', common('e', eChecks));
+
+    /* --- c --- */
+    const cChecks = [];
+    if (c !== undefined) {
+      if (n !== undefined && c >= n && D(c) >= 1.8 * D(n)) cChecks.push(['bad', '<b>c is about twice as long as n.</b> In RSA a ciphertext is always smaller than <var>n</var>. If the puzzle’s ciphertext really is this long, it isn’t a copying slip: reread how the puzzle describes its system, because some systems do produce ciphertexts longer than their key.']);
+      else if (n !== undefined && c >= n) cChecks.push(['bad', '<b>c is not smaller than n.</b> A ciphertext is a remainder after dividing by <var>n</var>, so it’s always smaller. Usually that means an extra digit, or <var>c</var> and <var>n</var> in each other’s boxes.']);
+      else if (c < 2n) cChecks.push(['warn', `<var>c = ${c}</var> decrypts to ${c} no matter the key. Is this the whole ciphertext?`]);
+      else if (n !== undefined && D(n) - D(c) >= 3) cChecks.push(['info', `<var>c</var> is ${D(n) - D(c)} digits shorter than <var>n</var>. That can happen, but it’s rare, so if the puzzle shows a longer number, look for dropped digits.`]);
+      if (n !== undefined && c > 1n && c < n && NT.gcd(c, n) !== 1n) cChecks.push(['warn', '<var>c</var> shares a factor with <var>n</var>. A real ciphertext almost never does, so one of the two may have a wrong digit.']);
+    } else if (!P.c.error) cChecks.push(['info', 'Waiting for <var>c</var>, the encrypted number.']);
+    setChecks('#ck-c', common('c', cChecks));
+
+    /* --- optional p, q, d --- */
+    const pq = { p:val('p'), q:val('q') };
+    for (const f of ['p','q']) {
+      const items = [];
+      const v = pq[f];
+      if (v !== undefined) {
+        if (!NT.isProbablePrime(v)) items.push(['bad', `This <var>${f}</var> isn’t prime, so it can’t be one of RSA’s secret primes. Check for a wrong or missing digit.`]);
+        else if (n !== undefined && n % v !== 0n) items.push(['bad', `This <var>${f}</var> is prime but doesn’t divide <var>n</var>. One of them has a wrong digit, or they come from different keys.`]);
+        else if (n !== undefined) items.push(['ok', `Prime, and divides <var>n</var>.`]);
+      }
+      setChecks('#ck-' + f, common(f, items));
+    }
+
+    /* --- factors: from p/q boxes if they fit, else factor n --- */
+    let factors = null, factorSource = '';
+    if (n !== undefined && nOk) {
+      const userP = pq.p, userQ = pq.q;
+      const splits = (x) => x !== undefined && NT.isProbablePrime(x) && n % x === 0n && NT.isProbablePrime(n / x);
+      if (userP !== undefined && userQ !== undefined && NT.isProbablePrime(userP) && NT.isProbablePrime(userQ) && userP * userQ === n) factors = [userP, userQ];
+      else if (splits(userP)) factors = [userP, n / userP];
+      else if (splits(userQ)) factors = [userQ, n / userQ];
+      if (factors) { // the solver's primes: no need to factor, so stop any search already under way
+        factors.sort((a, b) => (a < b ? -1 : 1)); factorSource = 'yours';
+        clearTimeout(factorTimer); stopFactor(); if (fc.status === 'running') fc = { n:null, status:'idle' };
+      }
+      else if (fc.n === n.toString() && fc.status === 'done') { factors = fc.factors; factorSource = 'sieve'; }
+      else if (fc.n !== n.toString() || fc.status === 'idle') { clearTimeout(factorTimer); const s = n.toString(); factorTimer = setTimeout(() => startFactor(s), 350); }
+    } else { clearTimeout(factorTimer); stopFactor(); if (fc.status === 'running') fc = { n:null, status:'idle' }; }
+
+    /* STEP 2 */
+    const s2 = $('#s2'), fOut = $('#factors-out');
+    const fChecks = [];
+    if (!nOk) { s2.classList.add('waiting'); $('#w2').textContent = n === undefined ? 'Needs n from Step 1.' : 'Needs a usable n: see the note under n in Step 1.'; fOut.innerHTML = ''; }
+    else {
+      s2.classList.remove('waiting');
+      if (!factors) {
+        if (fc.status === 'error') fChecks.push(['bad', 'Factoring stopped: ' + esc(fc.message)]);
+        fOut.innerHTML = fc.status === 'error' ? '' : '<p class="explain">Factoring <var>n</var>…</p>';
+      } else {
+        const distinct = [...new Set(factors.map(String))].map(BigInt);
+        if (factors.length === 2 && factors[0] !== factors[1]) {
+          fOut.innerHTML = valBox('p', 'first prime', factors[0]) + valBox('q', 'second prime', factors[1]) +
+            `<p class="explain">Check: <var>p × q</var> gives back <var>n</var> exactly. ${factorSource === 'yours' ? 'These are the primes you entered.' : `Found in ${(fc.ms / 1000).toFixed(2)} s using ${esc(fc.notes.join(' and ') || 'trial division')}.`}</p>`;
+          fChecks.push(['ok', `<var>n</var> is the product of exactly two primes, ${plural(D(factors[0]), 'digit')} and ${plural(D(factors[1]), 'digit')} long, just as RSA expects.`]);
+          if (fc.notes && fc.notes.some((x) => /Fermat/.test(x)) && factorSource === 'sieve') fChecks.push(['info', '<var>p</var> and <var>q</var> are very close together, which made <var>n</var> easy to split with Fermat’s method. That’s a known weakness, and possibly deliberate in the puzzle.']);
+        } else {
+          fOut.innerHTML = `<div class="val"><div class="vh"><span class="sym">n</span><span class="formula">=</span></div><output class="num">${factors.map(String).join(' × ')}</output></div>`;
+          if (distinct.length < factors.length) fChecks.push(['warn', '<b>n has a repeated prime factor.</b> Classic RSA uses two different primes. The worksheet still works it through, using φ for repeated primes, but if the puzzle says two distinct primes, recheck <var>n</var>.']);
+          else fChecks.push(['warn', `<b>n has ${factors.length} prime factors.</b> Classic RSA uses exactly two. Decryption still works (the worksheet adjusts <var>φ(n)</var>), but if the puzzle talks about two primes, a digit in <var>n</var> is probably wrong.`]);
+        }
+      }
+    }
+    setChecks('#ck-f', fChecks);
+    renderProgress();
+
+    /* STEP 3: φ and λ (general formula, so odd cases still work) */
+    let phi = null, lam = null;
+    const s3 = $('#s3');
+    if (factors) {
+      const counts = new Map(); for (const f of factors) counts.set(f, (counts.get(f) || 0n) + 1n);
+      phi = 1n; lam = 1n;
+      for (const [p, k] of counts) { const t = p ** (k - 1n) * (p - 1n); phi *= t; lam = lcm(lam, t); }
+      const formula = factors.length === 2 && factors[0] !== factors[1] ? '= (p − 1) × (q − 1)' : '= product of (prime − 1) × prime<sup>(repeats − 1)</sup>';
+      $('#phi-out').innerHTML = valBox('φ(n)', formula, phi);
+      $('#lambda-out').innerHTML = valBox('λ(n)', '= lcm(p − 1, q − 1)', lam);
+      s3.classList.remove('waiting');
+    } else { s3.classList.add('waiting'); $('#w3').textContent = 'Needs p and q from Step 2.'; }
+
+    /* STEP 4: d */
+    const s4 = $('#s4'), dChecks = [], ddChecks = [];
+    let d = null;
+    const userD = val('d');
+    if (userD !== undefined) {
+      if (phi && e !== undefined) {
+        if (e * userD % phi === 1n) dChecks.push(['ok', '<var>e × d</var> leaves remainder 1 when divided by <var>φ(n)</var>. This <var>d</var> fits the key.']);
+        else if (e * userD % lam === 1n) dChecks.push(['ok', 'This <var>d</var> was made with <var>λ(n)</var> instead of <var>φ(n)</var>. It decrypts exactly the same.']);
+        else dChecks.push(['bad', 'This <var>d</var> doesn’t fit: <var>e × d</var> doesn’t leave remainder 1 after dividing by <var>φ(n)</var> or <var>λ(n)</var>. Check its digits, and check that <var>e</var> and <var>d</var> aren’t swapped.']);
+      } else dChecks.push(['info', 'The worksheet will use your <var>d</var> to decrypt.']);
+      d = userD;
+    }
+    setChecks('#ck-d', common('d', dChecks));
+    if (phi && e !== undefined && e >= 2n) {
+      s4.classList.remove('waiting');
+      const eg = NT.egcdSteps(e % phi, phi);
+      const g = eg.g;
+      if (g !== 1n) {
+        ddChecks.push(['bad', `<b>No d exists:</b> <var>e</var> and <var>φ(n)</var> share the factor ${g}, so <var>e</var> has no inverse. In a working RSA key that never happens, so <var>e</var> or <var>n</var> probably has a wrong digit. If both match the puzzle exactly, reread how the puzzle describes its system; this may not be plain RSA.`]);
+        $('#d-out').innerHTML = '';
+        if (userD === undefined) d = null;
+      } else {
+        const dPhi = NT.mod(eg.x, phi), dLam = NT.modInv(e, lam);
+        $('#d-out').innerHTML = valBox('d', '= e<sup>−1</sup> mod φ(n)', dPhi, { extra: `<span class="explain">Check: <var>e × d mod φ(n) = ${(e * dPhi) % phi}</var> ✓</span>` }) +
+          (dLam !== dPhi ? `<p class="explain">With <var>λ(n)</var> you’d get the smaller <var>d = ${dLam}</var>. It decrypts to exactly the same message.</p>` : '');
+        if (userD === undefined) d = dPhi;
+      }
+      // Euclid table (e vs φ)
+      $('#euclid').innerHTML = '<thead><tr><th>Divide</th><th>by</th><th>Goes in</th><th>Remainder</th></tr></thead><tbody>' +
+        eg.rows.map((r) => `<tr><td class="num">${r.r0}</td><td class="num">${r.r1}</td><td class="num">${r.q}</td><td class="num">${r.rem}</td></tr>`).join('') + '</tbody>';
+    } else if (userD !== undefined) {
+      s4.classList.remove('waiting');
+      $('#d-out').innerHTML = valBox('d', 'the d you entered', userD); $('#euclid').innerHTML = '';
+    } else {
+      s4.classList.add('waiting');
+      $('#w4').textContent = !phi ? 'Needs φ(n) from Step 3.' : 'Needs e from Step 1.';
+    }
+    setChecks('#ck-dd', ddChecks);
+
+    /* STEP 5: m */
+    const s5 = $('#s5'), mChecks = [];
+    let m = null;
+    const cUsable = c !== undefined && n !== undefined && c < n;
+    if (d && cUsable && n !== undefined) {
+      s5.classList.remove('waiting');
+      m = NT.modPow(c, d, n);
+      $('#m-out').innerHTML = valBox('m', '= c<sup>d</sup> mod n', m, { big:true });
+      if (e !== undefined && NT.modPow(m, e, n) === c) mChecks.push(['ok', 'Re-encrypting <var>m</var> with <var>e</var> gives back your <var>c</var>, so the decryption is consistent. Whether it <i>means</i> anything depends on <var>c</var> being copied right.']);
+      else if (e !== undefined) mChecks.push(['bad', 'Re-encrypting this <var>m</var> doesn’t give back <var>c</var>, so <var>d</var> doesn’t match this key. Check <var>d</var>, or clear it and let the worksheet work <var>d</var> out.']);
+    } else {
+      s5.classList.add('waiting');
+      $('#w5').textContent = !d ? 'Needs d from Step 4.' : (c === undefined ? 'Needs c from Step 1.' : 'Needs a c that’s smaller than n: see the note under c in Step 1.');
+      $('#m-out').innerHTML = '';
+    }
+    setChecks('#ck-m', mChecks);
+
+    /* STEP 6: read */
+    renderReading(m);
+  }
+
+  const readMsg = K.reader($('#reader'), state, () => { save(); render(); });
+  function renderReading(m){
+    const s6 = $('#s6');
+    if (m === null) { s6.classList.add('waiting'); $('#w6').textContent = 'Needs m from Step 5.'; return; }
+    s6.classList.remove('waiting');
+    readMsg(m);
+  }
+
+  /* ---------- wiring ---------- */
+  for (const f of FIELDS) {
+    const el = $('#in-' + f);
+    el.addEventListener('input', () => { state[f] = el.value; save(); render(); });
+  }
+  $('#btn-stop').addEventListener('click', () => { stopFactor(); fc = { n:fc.n, status:'error', message:'you stopped it. Change n, or reload the page, to start again.' }; render(); });
+  function fill(){ for (const f of FIELDS) $('#in-' + f).value = state[f]; if (state.p || state.q || state.d) $('#more-known').open = true; }
+  $('#btn-example').addEventListener('click', () => {
+    Object.assign(state, EXAMPLE); state.cv = { mode:'ascii3', align:'left', pad:true, skip:0 };
+    fill(); save(); fc = { n:null, status:'idle' }; render(); toast('Example loaded');
+  });
+  $('#btn-clear').addEventListener('click', () => {
+    if (FIELDS.some((f) => state[f]) && !confirm('Clear every box on this page?')) return;
+    for (const f of FIELDS) state[f] = ''; state.cv = { mode:'ascii3', align:'left', pad:true, skip:0 };
+    stopFactor(); fc = { n:null, status:'idle' }; fill(); save(); render();
+  });
+  if (!load()) $('#howto').open = true;
+  fill(); render();
+})();
+</script>
+</body>
+</html>
+

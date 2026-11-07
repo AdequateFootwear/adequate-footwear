@@ -1,0 +1,793 @@
+<!-- Review copy: lines 1280-2071 of everything-in-its-place/index.html, split so Copilot can review it. Not served. -->
+    if (['door', 'compass'].includes(o.method)) S.method = o.method;
+    if (n(o.north, 0, 360)) S.north = o.north;
+    if (['sectors', 'squares'].includes(o.layout)) S.layout = o.layout;
+    if (o.grid && ['x', 'y', 'w', 'h'].every((k) => n(o.grid[k], -100000, 100000)) && o.grid.w > 0 && o.grid.h > 0) S.grid = { x: o.grid.x, y: o.grid.y, w: o.grid.w, h: o.grid.h };
+    if (o.plan === '' || PLANS.some((q) => q.id === o.plan)) S.plan = o.plan;
+    else if (typeof o.sketch === 'boolean') S.plan = o.sketch ? 'one-a' : ''; // saved by an earlier version of the page
+    if (['both', 'rooms', 'areas'].includes(o.names)) S.names = o.names;
+    ['mirror', 'showSketch', 'showRoom', 'lock', 'gen', 'ctl'].forEach((k) => { if (typeof o[k] === 'boolean') S[k] = o[k]; });
+    if (n(o.imgop, 0.15, 1)) S.imgop = o.imgop;
+    if (has(AREAS, o.area)) S.area = o.area;
+    if (Array.isArray(o.hl)) S.hl = o.hl.filter((k) => has(AREAS, k));
+    if (o.probe && n(o.probe.x, -100000, 100000) && n(o.probe.y, -100000, 100000)) S.probe = { x: o.probe.x, y: o.probe.y };
+    if (typeof o.birth === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(o.birth)) S.birth = o.birth;
+    if (['before', 'after'].includes(o.lcside)) S.lcside = o.lcside;
+    if (has(EL, o.el)) S.el = o.el;
+    if (typeof o.intent === 'string' && (o.intent === '' || has(AREAS, o.intent))) S.intent = o.intent;
+    if (typeof o.item === 'string' && (o.item === '' || (/^\d+$/.test(o.item) && ITEMS[+o.item]))) S.item = o.item;
+    return true;
+  } catch (e) { /* storage unavailable or unreadable */ }
+  return false;
+}
+let saveT = 0;
+function flush() { clearTimeout(saveT); saveT = 0; try { localStorage.setItem(KEY, JSON.stringify(S)); } catch (e) { /* storage unavailable */ } }
+function save() { clearTimeout(saveT); saveT = setTimeout(flush, 150); }
+// keep the last change even when the page is left straight after it
+window.addEventListener('pagehide', () => { if (saveT) flush(); });
+document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'hidden' && saveT) flush(); });
+
+/* ---------- numbers ---------- */
+const num = (t) => {
+  let v = String(t).trim().replace(/\s/g, '').replace(/[−‒–—]/g, '-');
+  if (/^-?\d{1,3}(,\d{3})+(\.\d+)?$/.test(v)) v = v.replace(/,/g, '');
+  else v = v.replace(',', '.');
+  return v === '' || !/^-?(\d+\.?\d*|\.\d+)$/.test(v) ? null : +v;
+};
+const fmt = (x) => String(Math.round(x * 100) / 100);
+const unitWord = () => (S.unit === 'm' ? ' m' : S.unit === 'ft' ? ' ft' : '');
+
+/* ---------- geometry of the plan ---------- */
+const svg = $('ip-svg');
+const G = () => S.grid || { x: 0, y: 0, w: S.W, h: S.D };
+const WALL = { // start point, direction along the wall, inward normal, and the outward screen bearing
+  bottom: () => ({ A: [0, S.D], u: [1, 0], n: [0, -1], out: 180, len: S.W }),
+  top: () => ({ A: [0, 0], u: [1, 0], n: [0, 1], out: 0, len: S.W }),
+  left: () => ({ A: [0, 0], u: [0, 1], n: [1, 0], out: 270, len: S.D }),
+  right: () => ({ A: [S.W, 0], u: [0, 1], n: [-1, 0], out: 90, len: S.D }),
+};
+const screenAngle = (dx, dy) => mod(Math.atan2(dx, -dy) * 180 / Math.PI, 360); // clockwise from the top of the plan
+const sector = (bearing) => DIRS[mod(Math.floor((mod(bearing, 360) + 22.5) / 45), 8)];
+function doorKey(c, r) { // front-door method: the door wall holds Knowledge, Career and Helpful People
+  switch (S.dwall) {
+    case 'bottom': return CANON[r][c];
+    case 'top': return CANON[2 - r][2 - c];
+    case 'left': return CANON[2 - c][r];
+    case 'right': return CANON[c][2 - r];
+  }
+  return 'C';
+}
+function squareKey(c, r) { // compass method, nine squares: each outer square takes the direction it lies closest to
+  if (c === 1 && r === 1) return 'C';
+  return sector(screenAngle(c - 1, r - 1) - S.north);
+}
+function areaAt(x, y) {
+  const g = G();
+  if (x < g.x || y < g.y || x > g.x + g.w || y > g.y + g.h) return null;
+  const c = Math.min(2, Math.floor((x - g.x) / g.w * 3)), r = Math.min(2, Math.floor((y - g.y) / g.h * 3));
+  if (S.method === 'door') return doorKey(c, r);
+  if (S.layout === 'squares') return squareKey(c, r);
+  if (c === 1 && r === 1) return 'C';
+  return sector(screenAngle(x - (g.x + g.w / 2), y - (g.y + g.h / 2)) - S.north);
+}
+function doorFacing() { return mod(WALL[S.dwall]().out - S.north, 360); }
+
+/* ---------- drawing the plan ---------- */
+let VB = { x: 0, y: 0, w: 10, h: 10 }, upp = 0.02; // view box, and plan units per screen pixel
+function bounds() {
+  const g = G();
+  let x0 = Math.min(0, g.x), y0 = Math.min(0, g.y), x1 = Math.max(S.W, g.x + g.w), y1 = Math.max(S.D, g.y + g.h);
+  if (img) { x1 = Math.max(x1, S.W); y1 = Math.max(y1, S.W * img.h / img.w); }
+  return { x0, y0, x1, y1 };
+}
+function setViewBox() {
+  const b = bounds(), M = Math.max(b.x1 - b.x0, b.y1 - b.y0);
+  // leave room around the plan, at least 30 screen pixels, for the door and the sizes, and more above it for the north arrow
+  const wpx = Math.max(200, svg.getBoundingClientRect().width || 600);
+  const pad = Math.max(M * 0.08, 30 * (b.x1 - b.x0) / (wpx - 60)), top = pad * 56 / 30;
+  VB = { x: b.x0 - pad, y: b.y0 - top, w: b.x1 - b.x0 + 2 * pad, h: b.y1 - b.y0 + pad + top };
+  svg.setAttribute('viewBox', `${VB.x} ${VB.y} ${VB.w} ${VB.h}`);
+  const bg = $('ip-bg'); bg.setAttribute('x', VB.x); bg.setAttribute('y', VB.y); bg.setAttribute('width', VB.w); bg.setAttribute('height', VB.h);
+}
+function measure() {
+  const w = svg.getBoundingClientRect().width || 600;
+  const h = svg.getBoundingClientRect().height || 400;
+  upp = Math.max(VB.w / w, VB.h / h);
+}
+const px = (p) => p * upp; // a size in screen pixels, in plan units
+
+function drawRoom() {
+  const g = $('ip-room'); g.textContent = '';
+  if (S.showRoom) {
+    mk('rect', { x: 0, y: 0, width: S.W, height: S.D, class: 'ip-roomrect' }, g);
+    const w = WALL[S.dwall](), p0 = Math.max(0, Math.min(S.dpos, w.len)), p1 = Math.max(0, Math.min(S.dpos + S.dw, w.len));
+    const P = (t) => [w.A[0] + w.u[0] * t, w.A[1] + w.u[1] * t];
+    const corners = { bottom: [[S.W, S.D], [S.W, 0], [0, 0], [0, S.D]], top: [[0, S.D], [S.W, S.D], [S.W, 0]], left: [[0, S.D], [S.W, S.D], [S.W, 0], [0, 0]], right: [[S.W, S.D], [0, S.D], [0, 0], [S.W, 0]] };
+    // walls: from one side of the door, round the room, to the other side
+    const a = P(p1), b = P(p0);
+    let pts;
+    if (S.dwall === 'bottom') pts = [a, [S.W, S.D], [S.W, 0], [0, 0], [0, S.D], b];
+    else if (S.dwall === 'top') pts = [a, [S.W, 0], [S.W, S.D], [0, S.D], [0, 0], b];
+    else if (S.dwall === 'left') pts = [a, [0, S.D], [S.W, S.D], [S.W, 0], [0, 0], b];
+    else pts = [a, [S.W, S.D], [0, S.D], [0, 0], [S.W, 0], b];
+    void corners;
+    mk('polyline', { points: pts.map((q) => q.join(',')).join(' '), class: 'ip-wall', 'vector-effect': 'non-scaling-stroke' }, g);
+    if (p1 > p0) {
+      const r = p1 - p0, H = P(p0), J = P(p1), T = [H[0] + w.n[0] * r, H[1] + w.n[1] * r];
+      const cross = w.n[0] * w.u[1] - w.n[1] * w.u[0];
+      mk('line', { x1: H[0], y1: H[1], x2: T[0], y2: T[1], class: 'ip-door', 'vector-effect': 'non-scaling-stroke' }, g);
+      mk('path', { d: `M${T[0]} ${T[1]} A${r} ${r} 0 0 ${cross > 0 ? 1 : 0} ${J[0]} ${J[1]}`, class: 'ip-doorarc', 'vector-effect': 'non-scaling-stroke' }, g);
+      const mid = P((p0 + p1) / 2), off = px(14);
+      const t = mk('text', { x: mid[0] - w.n[0] * off, y: mid[1] - w.n[1] * off, class: 'ip-doorlbl', 'font-size': px(13), 'text-anchor': 'middle', 'dominant-baseline': 'central' }, g);
+      t.textContent = 'Door';
+    }
+    const dimW = mk('text', { x: S.W / 2, y: (S.dwall === 'top' ? S.D + px(14) : -px(12)), class: 'ip-dim', 'font-size': px(12), 'text-anchor': 'middle', 'dominant-baseline': 'central' }, g);
+    dimW.textContent = fmt(S.W) + unitWord();
+    const lx = S.dwall === 'left' ? S.W + px(14) : -px(14);
+    const dimD = mk('text', { x: lx, y: S.D / 2, class: 'ip-dim', 'font-size': px(12), 'text-anchor': 'middle', 'dominant-baseline': 'central', transform: `rotate(-90 ${lx} ${S.D / 2})` }, g);
+    dimD.textContent = fmt(S.D) + unitWord();
+  }
+}
+/* ---------- the sample plans, turned to put the front door on the chosen wall ---------- */
+const planById = (id) => PLANS.find((q) => q.id === id) || null;
+const curPlan = () => planById(S.plan);
+const plansOf = (kind) => PLANS.filter((q) => q.kind === kind);
+function planFrac(P, x, y) { // a point of the plan as drawn (door on the bottom wall) → fractions of the room on the page
+  let u = x / P.W; const v = y / P.D;
+  if (S.mirror) u = 1 - u;
+  switch (S.dwall) {
+    case 'top': return [1 - u, 1 - v]; // turned half a turn
+    case 'left': return [1 - v, u]; // turned a quarter turn clockwise
+    case 'right': return [v, 1 - u]; // turned a quarter turn anticlockwise
+    default: return [u, v];
+  }
+}
+const planPt = (P, x, y) => { const f = planFrac(P, x, y); return [f[0] * S.W, f[1] * S.D]; };
+function planRect(P, x, y, w, h) {
+  const a = planPt(P, x, y), b = planPt(P, x + w, y + h);
+  return { x0: Math.min(a[0], b[0]), y0: Math.min(a[1], b[1]), x1: Math.max(a[0], b[0]), y1: Math.max(a[1], b[1]) };
+}
+const r3 = (x) => Math.round(x * 1000) / 1000;
+function setPlanDims() { // the room's size and front door from the plan, its turn and its mirroring
+  const P = curPlan(); if (!P) return;
+  const k = S.unit === 'ft' ? 3.28084 : 1, side = S.dwall === 'left' || S.dwall === 'right';
+  S.W = r3((side ? P.D : P.W) * k); S.D = r3((side ? P.W : P.D) * k);
+  let c = (P.door[0] + P.door[1] / 2) / P.W; if (S.mirror) c = 1 - c;
+  const along = S.dwall === 'top' || S.dwall === 'right' ? 1 - c : c; // from the left or top corner
+  const len = S.dwall === 'top' || S.dwall === 'bottom' ? S.W : S.D, dw = P.door[1] / P.W * len;
+  S.dw = r3(dw); S.dpos = r3(along * len - dw / 2);
+  S.grid = null; S.probe = null;
+}
+function roomAt(x, y) {
+  const P = curPlan(); if (!P || x < 0 || y < 0 || x > S.W || y > S.D) return null;
+  for (const [n, rx, ry, rw, rh] of P.rooms) { const r = planRect(P, rx, ry, rw, rh); if (x >= r.x0 && x <= r.x1 && y >= r.y0 && y <= r.y1) return n; }
+  return null;
+}
+function drawSketch() {
+  const g = $('ip-sketch'); g.textContent = '';
+  const P = curPlan();
+  $('ip-sketchrow').hidden = !P;
+  if (!P || !S.showSketch) return;
+  for (const f of P.furn || []) { const r = planRect(P, ...f); mk('rect', { x: r.x0, y: r.y0, width: r.x1 - r.x0, height: r.y1 - r.y0, rx: px(2), class: 'f', 'vector-effect': 'non-scaling-stroke' }, g); }
+  for (const [cls, list] of [['o', P.open], ['w', P.walls]]) for (const [a, b, c, d] of list) {
+    const p = planPt(P, a, b), q = planPt(P, c, d);
+    mk('line', { x1: p[0], y1: p[1], x2: q[0], y2: q[1], class: cls, 'vector-effect': 'non-scaling-stroke' }, g);
+  }
+}
+
+/* ---------- labels: the areas' names, and the rooms' names placed clear of them ---------- */
+let GL = [], hiddenAreas = []; // the area labels on the plan: { el, x, y, rel (box around the anchor), alts () → other anchors to try }
+const hitArea = (a, b) => Math.max(0, Math.min(a.x1, b.x1) - Math.max(a.x0, b.x0)) * Math.max(0, Math.min(a.y1, b.y1) - Math.max(a.y0, b.y0));
+const within = (a, r) => a.x0 >= r.x0 - 1e-9 && a.y0 >= r.y0 - 1e-9 && a.x1 <= r.x1 + 1e-9 && a.y1 <= r.y1 + 1e-9;
+const boxAt = (rel, x, y) => ({ x0: x + rel.x, y0: y + rel.y, x1: x + rel.x + rel.w, y1: y + rel.y + rel.h });
+const grow = (b, d) => ({ x0: b.x0 - d, y0: b.y0 - d, x1: b.x1 + d, y1: b.y1 + d });
+function relBox(el, x, y) {
+  let b = null; try { b = el.getBBox(); } catch (e) { /* not rendered */ }
+  if (!b || !b.width) return null;
+  return { x: b.x - x, y: b.y - y, w: b.width, h: b.height };
+}
+function spotsIn(r, rel, inset) { // anchors that keep a label's box inside a rectangle: the middle first, then the edges and corners
+  const xs = { c: (r.x0 + r.x1) / 2 - rel.x - rel.w / 2, l: r.x0 + inset - rel.x, r: r.x1 - inset - rel.w - rel.x };
+  const ys = { c: (r.y0 + r.y1) / 2 - rel.y - rel.h / 2, t: r.y0 + inset - rel.y, b: r.y1 - inset - rel.h - rel.y };
+  ys.ut = (ys.c + ys.t) / 2; ys.lb = (ys.c + ys.b) / 2;
+  return [['c', 'c'], ['c', 'ut'], ['c', 'lb'], ['c', 't'], ['c', 'b'], ['l', 'c'], ['r', 'c'], ['l', 't'], ['r', 't'], ['l', 'b'], ['r', 'b'], ['l', 'ut'], ['r', 'ut'], ['l', 'lb'], ['r', 'lb']].map(([i, j]) => [xs[i], ys[j]]);
+}
+function moveLabel(L, x, y) { L.x = x; L.y = y; L.el.setAttribute('x', x); L.el.setAttribute('y', y); for (const t of L.el.children) t.setAttribute('x', x); }
+function roomText(g, lines, fs, x, y, up) { // up: turned to read upwards, for a tall, narrow room
+  const t = mk('text', { x, y, class: 'ip-rlbl', 'font-size': px(fs), 'stroke-width': px(3) }, g);
+  lines.forEach((ln, i) => { const s = mk('tspan', { x, dy: i === 0 ? -(lines.length - 1) / 2 * px(fs) * 1.05 : px(fs) * 1.05 }, t); s.textContent = ln; });
+  if (up) t.setAttribute('transform', `rotate(-90 ${x} ${y})`);
+  return t;
+}
+function placeRoomLabels() {
+  const g = $('ip-rlbls'); g.textContent = ''; $('ip-hidden').textContent = '';
+  const P = curPlan();
+  if (!P || !S.showSketch || S.names === 'areas') { showHidden([]); return; }
+  const inset = px(3), gap = px(3), placed = [], hidden = [];
+  if (!S.lock) { const gr = G(), hr = px(10); [[gr.x, gr.y], [gr.x + gr.w, gr.y], [gr.x, gr.y + gr.h], [gr.x + gr.w, gr.y + gr.h]].forEach(([x, y]) => placed.push({ x0: x - hr, y0: y - hr, x1: x + hr, y1: y + hr })); } // the corner dots
+  const glBox = (L) => (L.rel ? boxAt(L.rel, L.x, L.y) : null);
+  // one label per room, the smallest rooms first, since they have the fewest places to put it
+  const seen = new Map();
+  for (const [n, x, y, w, h] of P.rooms) { const r = planRect(P, x, y, w, h), a = (r.x1 - r.x0) * (r.y1 - r.y0); if (!seen.has(n) || seen.get(n).a < a) seen.set(n, { n, r, a }); }
+  const rooms = [...seen.values()].sort((p, q) => p.a - q.a);
+  const probeT = mk('g', {}, g);
+  for (const { n, r } of rooms) {
+    const words = n.split(' '), opts = [[n]];
+    if (words.length > 1) { let best = null; for (let i = 1; i < words.length; i++) { const l = [words.slice(0, i).join(' '), words.slice(i).join(' ')]; if (l[0].length < 3 || l[1].length < 3) continue; const m = Math.max(l[0].length, l[1].length); if (!best || m < best.m) best = { l, m }; } if (best) opts.push(best.l); }
+    const variants = [];
+    for (const fs of [12, 11, 10]) for (const lines of opts) { const t = roomText(probeT, lines, fs, 0, 0); const rel = relBox(t, 0, 0); probeT.removeChild(t); if (rel) variants.push({ fs, lines, rel }); }
+    if (r.y1 - r.y0 > r.x1 - r.x0) for (const fs of [12, 11, 10]) { // last, turned upwards: its box turns a quarter turn about the anchor
+      const t = roomText(probeT, [n], fs, 0, 0); const q = relBox(t, 0, 0); probeT.removeChild(t);
+      if (q) variants.push({ fs, lines: [n], up: true, rel: { x: q.y, y: -(q.x + q.w), w: q.h, h: q.w } });
+    }
+    if (!variants.length) { roomText(g, [n], 11, (r.x0 + r.x1) / 2, (r.y0 + r.y1) / 2); continue; }
+    const others = (skip) => GL.filter((L) => L !== skip && L.rel).map(glBox);
+    let pick = null;
+    for (const v of variants) {
+      const spots = spotsIn(r, v.rel, inset).filter(([x, y]) => within(boxAt(v.rel, x, y), r));
+      // clear of everything as it is
+      for (const [x, y] of spots) { const b = grow(boxAt(v.rel, x, y), gap); if (!placed.some((q) => hitArea(q, b) > 0) && !GL.some((L) => L.rel && hitArea(glBox(L), b) > 0)) { pick = { v, x, y, b }; break; } }
+      if (pick) break;
+      // or clear once the area labels in the way step aside within their own area
+      for (const [x, y] of spots) {
+        const b = grow(boxAt(v.rel, x, y), gap); if (placed.some((q) => hitArea(q, b) > 0)) continue;
+        const inWay = GL.filter((L) => L.rel && hitArea(glBox(L), b) > 0), moves = [];
+        let okAll = true;
+        for (const L of inWay) {
+          const alt = L.alts().find(([ax, ay]) => { const lb = boxAt(L.rel, ax, ay); return hitArea(lb, b) === 0 && !placed.some((q) => hitArea(q, lb) > 0) && !others(L).some((ob) => hitArea(ob, lb) > 0) && !moves.some((m) => hitArea(boxAt(m.L.rel, m.x, m.y), lb) > 0); });
+          if (!alt) { okAll = false; break; }
+          moves.push({ L, x: alt[0], y: alt[1] });
+        }
+        if (okAll) { moves.forEach((m) => moveLabel(m.L, m.x, m.y)); pick = { v, x, y, b }; break; }
+      }
+      if (pick) break;
+    }
+    if (!pick) { hidden.push(n); continue; } // no clear spot at a legible size: leave it off, and say so
+    const t = roomText(g, pick.v.lines, pick.v.fs, pick.x, pick.y, pick.v.up);
+    t.setAttribute('data-room', n);
+    placed.push(pick.b);
+  }
+  g.removeChild(probeT);
+  showHidden(hidden);
+}
+function showHidden(rooms) { // names that don't fit on a small screen are listed here instead
+  const say = [];
+  if (rooms.length) say.push(`${rooms.length === 1 ? 'One room’s name doesn’t' : 'Some rooms’ names don’t'} fit at this size, so ${rooms.length === 1 ? 'it’s' : 'they’re'} left off the plan: ${rooms.join(', ')}. Tap a room to see its name${S.names === 'both' ? ', or show only the rooms’ names' : ''}.`);
+  if (hiddenAreas.length) say.push(`${hiddenAreas.length === 1 ? 'One area’s name doesn’t' : 'Some areas’ names don’t'} fit at this size either: ${hiddenAreas.join(', ')}. Tap the plan to see each area, or use the buttons below.`);
+  $('ip-hidden').textContent = say.join(' ');
+}
+function addLabel(g, x, y, key, alts, size) {
+  const a = AREAS[key], fs = px(size || 12);
+  const lines = a.short.slice();
+  const t = mk('text', { x, y, class: 'ip-glbl', 'font-size': fs, 'stroke-width': px(3.5), 'data-area': key }, g);
+  const total = lines.length + (S.method === 'compass' ? 1 : 0);
+  let dy = -(total - 1) / 2 * fs * 1.1;
+  for (const ln of lines) { const s = mk('tspan', { x, dy: dy === null ? fs * 1.1 : dy }, t); s.textContent = ln; dy = null; }
+  if (S.method === 'compass') { const s = mk('tspan', { x, dy: fs * 1.1, class: 'dir' }, t); s.setAttribute('class', 'ip-glbl dir'); s.textContent = key === 'C' ? '' : key; }
+  const L = { el: t, key, x, y, rel: relBox(t, x, y), alts: () => [] };
+  L.alts = () => (L.rel ? alts(L.rel) : []);
+  GL.push(L);
+}
+function separateAreaLabels() { // on a long, thin grid the compass labels can crowd: step one aside within its own area
+  const gap = px(2), boxOf = (L) => grow(boxAt(L.rel, L.x, L.y), gap);
+  for (let i = 0; i < GL.length; i++) {
+    const L = GL[i]; if (!L.rel) continue;
+    const clash = (b) => GL.some((M) => M !== L && M.rel && hitArea(boxOf(M), b) > 0);
+    if (!clash(boxOf(L))) continue;
+    const alt = L.alts().find(([x, y]) => !clash(grow(boxAt(L.rel, x, y), gap)));
+    if (alt) moveLabel(L, alt[0], alt[1]);
+  }
+  return !GL.some((L, i) => L.rel && GL.some((M, j) => j > i && M.rel && hitArea(boxAt(L.rel, L.x, L.y), boxAt(M.rel, M.x, M.y)) > 0));
+}
+const showAreaNames = () => !curPlan() || !S.showSketch || S.names !== 'rooms';
+function drawGrid() {
+  const g = $('ip-grid'); g.textContent = ''; GL = []; const specs = [];
+  const gr = G(), cw = gr.w / 3, ch = gr.h / 3, hl = new Set(S.hl);
+  const sectors = S.method === 'compass' && S.layout === 'sectors';
+  // a transparent hit area for dragging
+  mk('rect', { x: gr.x, y: gr.y, width: gr.w, height: gr.h, class: 'ip-cell' }, g);
+  if (!sectors) {
+    for (let r = 0; r < 3; r++) for (let c = 0; c < 3; c++) {
+      const k = S.method === 'door' ? doorKey(c, r) : squareKey(c, r);
+      mk('rect', { x: gr.x + c * cw, y: gr.y + r * ch, width: cw, height: ch, class: 'ip-cell' + (hl.has(k) ? ' on' : '') }, g);
+    }
+    for (let i = 1; i < 3; i++) {
+      mk('line', { x1: gr.x + i * cw, y1: gr.y, x2: gr.x + i * cw, y2: gr.y + gr.h, class: 'ip-gline', 'vector-effect': 'non-scaling-stroke' }, g);
+      mk('line', { x1: gr.x, y1: gr.y + i * ch, x2: gr.x + gr.w, y2: gr.y + i * ch, class: 'ip-gline', 'vector-effect': 'non-scaling-stroke' }, g);
+    }
+    if (showAreaNames()) for (let r = 0; r < 3; r++) for (let c = 0; c < 3; c++) {
+      const cell = { x0: gr.x + c * cw, y0: gr.y + r * ch, x1: gr.x + (c + 1) * cw, y1: gr.y + (r + 1) * ch };
+      specs.push([gr.x + (c + 0.5) * cw, gr.y + (r + 0.5) * ch, S.method === 'door' ? doorKey(c, r) : squareKey(c, r), (rel) => spotsIn(cell, rel, px(3)).filter(([x, y]) => within(boxAt(rel, x, y), cell))]);
+    }
+  } else {
+    const cx = gr.x + gr.w / 2, cy = gr.y + gr.h / 2, R = (gr.w + gr.h) * 2;
+    const all = $('ip-mask-all'), hole = $('ip-mask-hole');
+    all.setAttribute('x', gr.x); all.setAttribute('y', gr.y); all.setAttribute('width', gr.w); all.setAttribute('height', gr.h);
+    hole.setAttribute('x', gr.x + cw); hole.setAttribute('y', gr.y + ch); hole.setAttribute('width', cw); hole.setAttribute('height', ch);
+    const m = mk('g', { mask: 'url(#ip-mask)' }, g);
+    const P = (deg, rad) => { const t = deg * Math.PI / 180; return [cx + rad * Math.sin(t), cy - rad * Math.cos(t)]; };
+    DIRS.forEach((k, i) => {
+      const mid = i * 45 + S.north, a = P(mid - 22.5, R), b = P(mid + 22.5, R);
+      mk('path', { d: `M${cx} ${cy} L${a[0]} ${a[1]} L${b[0]} ${b[1]} Z`, class: 'ip-cell' + (hl.has(k) ? ' on' : '') }, m);
+    });
+    DIRS.forEach((k, i) => { const a = P(i * 45 + S.north - 22.5, R); mk('line', { x1: cx, y1: cy, x2: a[0], y2: a[1], class: 'ip-gline', 'vector-effect': 'non-scaling-stroke' }, m); });
+    mk('rect', { x: gr.x + cw, y: gr.y + ch, width: cw, height: ch, class: 'ip-cell' + (hl.has('C') ? ' on' : '') }, g);
+    mk('rect', { x: gr.x + cw, y: gr.y + ch, width: cw, height: ch, class: 'ip-gline', 'vector-effect': 'non-scaling-stroke' }, g);
+    DIRS.forEach((k, i) => {
+      const t = (i * 45 + S.north) * Math.PI / 180, ux = Math.sin(t), uy = -Math.cos(t);
+      const tmax = Math.min(Math.abs(ux) > 1e-9 ? gr.w / 2 / Math.abs(ux) : Infinity, Math.abs(uy) > 1e-9 ? gr.h / 2 / Math.abs(uy) : Infinity);
+      const tc = Math.min(Math.abs(ux) > 1e-9 ? cw / 2 / Math.abs(ux) : Infinity, Math.abs(uy) > 1e-9 ? ch / 2 / Math.abs(uy) : Infinity);
+      const d = (tmax + tc) / 2;
+      const outer = { x0: gr.x, y0: gr.y, x1: gr.x + gr.w, y1: gr.y + gr.h }, mid = { x0: gr.x + cw, y0: gr.y + ch, x1: gr.x + 2 * cw, y1: gr.y + 2 * ch };
+      const ax = cx + ux * d, ay = cy + uy * d, inSector = ([x, y]) => sector(screenAngle(x - cx, y - cy) - S.north) === k;
+      const lattice = []; for (let i = 0; i < 12; i++) for (let j = 0; j < 12; j++) lattice.push([gr.x + (i + 0.5) / 12 * gr.w, gr.y + (j + 0.5) / 12 * gr.h]);
+      lattice.sort((p, q) => Math.hypot(p[0] - ax, p[1] - ay) - Math.hypot(q[0] - ax, q[1] - ay));
+      if (showAreaNames()) specs.push([ax, ay, k, (rel) => [0.5, 0.3, 0.7, 0.15, 0.85].map((f) => { const dd = tc + (tmax - tc) * f; return [cx + ux * dd, cy + uy * dd]; }).concat(lattice.filter(inSector))
+        .filter(([x, y]) => { const b = boxAt(rel, x, y); return within(b, outer) && hitArea(b, mid) === 0; })]);
+    });
+    const midCell = { x0: gr.x + cw, y0: gr.y + ch, x1: gr.x + 2 * cw, y1: gr.y + 2 * ch };
+    if (showAreaNames()) specs.push([cx, cy, 'C', (rel) => spotsIn(midCell, rel, px(3)).filter(([x, y]) => within(boxAt(rel, x, y), midCell))]);
+  }
+  // the area names: smaller only if they can't all be placed clear of each other at full size
+  hiddenAreas = [];
+  for (const fs of [12, 11, 10]) {
+    GL.forEach((L) => L.el.remove()); GL = [];
+    specs.forEach(([x, y, k, alts]) => addLabel(g, x, y, k, alts, fs));
+    if (separateAreaLabels()) break;
+  }
+  // still crowded at the smallest size: leave off any that would overlap one already shown, and say so
+  const kept = [];
+  GL = GL.filter((L) => { const b = L.rel && boxAt(L.rel, L.x, L.y); if (b && kept.some((q) => hitArea(q, b) > 0)) { L.el.remove(); hiddenAreas.push(AREAS[L.key].short.join(' ')); return false; } if (b) kept.push(b); return true; });
+  mk('rect', { x: gr.x, y: gr.y, width: gr.w, height: gr.h, class: 'ip-gline outer', 'vector-effect': 'non-scaling-stroke' }, g);
+  // corner handles
+  const h = $('ip-handles'); h.textContent = '';
+  if (!S.lock) {
+    [['nw', gr.x, gr.y], ['ne', gr.x + gr.w, gr.y], ['sw', gr.x, gr.y + gr.h], ['se', gr.x + gr.w, gr.y + gr.h]].forEach(([k, x, y]) => {
+      mk('circle', { cx: x, cy: y, r: px(9), class: 'ip-handle ' + k, 'data-corner': k, 'vector-effect': 'non-scaling-stroke' }, h);
+    });
+  }
+  $('ip-grid').style.touchAction = S.lock ? 'manipulation' : '';
+  $('ip-grid').style.cursor = S.lock ? 'crosshair' : '';
+  placeRoomLabels();
+}
+function drawRose() {
+  const g = $('ip-rose'); g.textContent = '';
+  const r = px(11), cx = VB.x + VB.w - px(44), cy = VB.y + px(26);
+  const o = mk('g', { transform: `translate(${cx} ${cy})` }, g);
+  mk('circle', { r, class: 'ring', 'vector-effect': 'non-scaling-stroke' }, o);
+  const n = mk('g', { transform: `rotate(${S.north})` }, o);
+  mk('path', { d: `M0 ${-r * 0.82} L${r * 0.22} 0 L${-r * 0.22} 0 Z`, class: 'n' }, n);
+  mk('path', { d: `M0 ${r * 0.82} L${r * 0.22} 0 L${-r * 0.22} 0 Z`, class: 's' }, n);
+  const t = mk('text', { x: 0, y: 0, 'font-size': px(11) }, n);
+  t.setAttribute('transform', `rotate(${-S.north} 0 ${-r - px(7)})`); t.setAttribute('y', -r - px(7));
+  t.textContent = 'N';
+}
+function drawProbe() {
+  const p = $('ip-probe');
+  if (!S.probe) { p.setAttribute('visibility', 'hidden'); return; }
+  p.setAttribute('visibility', 'visible');
+  p.setAttribute('transform', `translate(${S.probe.x} ${S.probe.y})`);
+  p.children[0].setAttribute('r', px(9)); p.children[1].setAttribute('r', px(2.5));
+  p.children[0].setAttribute('vector-effect', 'non-scaling-stroke');
+}
+function drawImage() {
+  const im = $('ip-img');
+  if (!img) { im.setAttribute('visibility', 'hidden'); im.removeAttribute('href'); return; }
+  im.setAttribute('href', img.url); im.setAttribute('x', 0); im.setAttribute('y', 0);
+  im.setAttribute('width', S.W); im.setAttribute('height', S.W * img.h / img.w);
+  im.setAttribute('opacity', S.imgop); im.setAttribute('visibility', 'visible');
+}
+function drawPlan(refit) {
+  if (refit !== false) setViewBox();
+  measure();
+  drawImage(); drawRoom(); drawSketch(); drawGrid(); drawRose(); drawProbe();
+}
+
+/* ---------- the area card ---------- */
+function triSVG(el, key) {
+  el.textContent = '';
+  if (!key) { mk('circle', { cx: 20, cy: 20, r: 12, class: 'none' }, el); return; }
+  const L = TRI[key].lines;
+  for (let i = 0; i < 3; i++) {
+    const y = 30 - i * 10 - 2.5; // bottom line first
+    if (L[i]) mk('rect', { x: 4, y, width: 32, height: 5, rx: 1, class: 'yang' }, el);
+    else { mk('rect', { x: 4, y, width: 13.5, height: 5, rx: 1, class: 'yin' }, el); mk('rect', { x: 22.5, y, width: 13.5, height: 5, rx: 1, class: 'yin' }, el); }
+  }
+}
+const swatches = (e) => EL[e].colours.map(([n, c]) => `<span class="sw" style="background:${c}" aria-hidden="true"></span>${esc(n)}`).join(', ');
+function showCard(key) {
+  const a = AREAS[key], card = $('ip-card');
+  if (!a) { card.hidden = true; return; }
+  card.hidden = false;
+  triSVG($('ip-card-tri'), a.tri);
+  $('ip-card-name').textContent = a.name;
+  $('ip-card-aka').textContent = 'Also called ' + a.aka.join(', ');
+  const e = EL[a.el];
+  const rows = [
+    ['Aspiration', esc(a.asp)],
+    ['Compass method', key === 'C' ? 'The centre of the space' : esc(DIRNAME[key]) + ' (' + esc(key) + ')'],
+    ['Front-door method', esc(DOORPOS[key][0].toUpperCase() + DOORPOS[key].slice(1)) + (key === 'C' ? '' : ', standing in the doorway looking in')],
+    ['Trigram', a.tri ? `${esc(TRI[a.tri].name)}, ${esc(TRI[a.tri].en)} <span class="muted">(${esc(lineWords(TRI[a.tri].lines))})</span>` : 'None: the centre has no trigram'],
+    ['Element', `<span class="sw" style="background:var(--el-${a.el})" aria-hidden="true"></span><span class="ip-elname">${esc(e.name)}</span>`],
+    ['Colours', esc(a.colours)],
+    ['Shapes', esc(e.shapes)],
+    ['Materials', esc(e.materials)],
+    ['Lo Shu number', String(a.lo)],
+    ['Season', a.season ? esc(a.season) : 'None of its own (Earth goes with late summer)'],
+    ['Family member', a.family ? esc(a.family) : 'None'],
+    ['Body part', a.body ? esc(a.body) : 'None'],
+  ];
+  $('ip-card-facts').innerHTML = rows.map(([k, v]) => `<dt>${esc(k)}</dt><dd>${v}</dd>`).join('');
+  $('ip-card-items').innerHTML = a.items.map((t) => `<li>${esc(t)}</li>`).join('');
+  const sup = fedBy(a.el), ctl = ctlBy(a.el);
+  $('ip-card-foot').textContent = `${a.avoid} To strengthen it, people commonly add ${e.name} and ${EL[sup].name} (which feeds ${e.name}), and go easy on ${EL[ctl].name} (which controls it). Suggestions vary between sources; these are the common ones.`;
+  document.querySelectorAll('.ip-areas .btn').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.area === key)));
+}
+function selectArea(key, opts) {
+  S.area = key; S.hl = key ? [key] : [];
+  if (!opts || !opts.keepAdvice) { S.intent = ''; S.item = ''; $('ip-intent').value = ''; $('ip-item').value = ''; $('ip-advice').textContent = ''; }
+  showCard(key); drawGrid(); save();
+}
+
+/* ---------- probing the plan ---------- */
+function probe(x, y, announce) {
+  S.probe = { x, y };
+  const k = areaAt(x, y), room = roomAt(x, y);
+  const where = room ? `${room} (${fmt(x)}${unitWord()} across, ${fmt(y)}${unitWord()} down)` : `${fmt(x)}${unitWord()} across, ${fmt(y)}${unitWord()} down`;
+  if (k) {
+    $('ip-where').textContent = `${where}: ${AREAS[k].name}` + (S.method === 'compass' ? ` (${k === 'C' ? 'centre' : DIRNAME[k].toLowerCase()})` : '') + '.';
+    S.area = k; S.hl = [k]; S.intent = ''; S.item = ''; $('ip-intent').value = ''; $('ip-item').value = ''; $('ip-advice').textContent = '';
+    showCard(k);
+  } else {
+    $('ip-where').textContent = `${where}: outside the grid. A part of a home that sticks out past the grid is usually treated as an extension of the nearest area.`;
+  }
+  void announce;
+  drawGrid(); drawProbe(); save();
+}
+function toPlan(ev) {
+  const pt = svg.createSVGPoint(); pt.x = ev.clientX; pt.y = ev.clientY;
+  const m = svg.getScreenCTM(); if (!m) return { x: 0, y: 0 };
+  const q = pt.matrixTransform(m.inverse()); return { x: q.x, y: q.y };
+}
+let drag = null;
+svg.addEventListener('pointerdown', (ev) => {
+  if (ev.button !== undefined && ev.button !== 0) return;
+  const p = toPlan(ev), corner = ev.target.getAttribute && ev.target.getAttribute('data-corner');
+  const g = G();
+  const inGrid = p.x >= g.x && p.y >= g.y && p.x <= g.x + g.w && p.y <= g.y + g.h;
+  drag = { mode: corner && !S.lock ? 'resize' : (inGrid && !S.lock ? 'maybe' : 'tap'), corner, start: p, sx: ev.clientX, sy: ev.clientY, g0: { ...g } };
+  try { svg.setPointerCapture(ev.pointerId); } catch (e) { /* nothing to capture */ }
+});
+svg.addEventListener('pointermove', (ev) => {
+  if (!drag) return;
+  const p = toPlan(ev);
+  const far = Math.hypot(ev.clientX - drag.sx, ev.clientY - drag.sy) > 6;
+  if (drag.mode === 'maybe' && far) drag.mode = 'move';
+  if (drag.mode === 'resize' && !drag.moved && !far) return; // a tap on a corner dot still shows the area
+  drag.moved = true;
+  if (drag.mode === 'move') {
+    S.grid = { x: drag.g0.x + p.x - drag.start.x, y: drag.g0.y + p.y - drag.start.y, w: drag.g0.w, h: drag.g0.h };
+    clampGrid(); drawGrid(); syncGridInputs(); ev.preventDefault();
+  } else if (drag.mode === 'resize') {
+    const g0 = drag.g0, min = Math.max(S.W, S.D) * 0.06;
+    let x0 = g0.x, y0 = g0.y, x1 = g0.x + g0.w, y1 = g0.y + g0.h;
+    if (drag.corner.includes('w')) x0 = Math.min(p.x, x1 - min); else x1 = Math.max(p.x, x0 + min);
+    if (drag.corner.includes('n')) y0 = Math.min(p.y, y1 - min); else y1 = Math.max(p.y, y0 + min);
+    S.grid = { x: x0, y: y0, w: x1 - x0, h: y1 - y0 };
+    clampGrid(); drawGrid(); syncGridInputs(); ev.preventDefault();
+  }
+});
+function endDrag(ev, cancelled) {
+  if (!drag) return;
+  const d = drag; drag = null;
+  if (cancelled) { drawPlan(); return; }
+  if (d.mode === 'tap' || d.mode === 'maybe' || (d.mode === 'resize' && !d.moved)) { const p = toPlan(ev); probe(p.x, p.y); }
+  else { if (S.probe) probe(S.probe.x, S.probe.y); drawPlan(); save(); }
+}
+svg.addEventListener('pointerup', (ev) => endDrag(ev, false));
+svg.addEventListener('pointercancel', (ev) => endDrag(ev, true));
+svg.addEventListener('keydown', (ev) => {
+  const g = G(), M = Math.max(S.W, S.D), step = M / 40 * (ev.shiftKey ? 5 : 1);
+  let p = S.probe ? { ...S.probe } : { x: g.x + g.w / 2, y: g.y + g.h / 2 };
+  const fresh = !S.probe;
+  if (ev.key === 'ArrowLeft') p.x -= step; else if (ev.key === 'ArrowRight') p.x += step;
+  else if (ev.key === 'ArrowUp') p.y -= step; else if (ev.key === 'ArrowDown') p.y += step;
+  else if (ev.key === 'Home') p = { x: g.x + g.w / 2, y: g.y + g.h / 2 };
+  else if (ev.key === 'Enter' || ev.key === ' ') { if (!fresh) { ev.preventDefault(); return; } }
+  else return;
+  ev.preventDefault();
+  if (fresh && ev.key !== 'Home' && ev.key !== 'Enter' && ev.key !== ' ') p = { x: g.x + g.w / 2, y: g.y + g.h / 2 };
+  const b = bounds();
+  p.x = Math.max(b.x0, Math.min(b.x1, p.x)); p.y = Math.max(b.y0, Math.min(b.y1, p.y));
+  probe(p.x, p.y, true);
+});
+function clampGrid() {
+  const g = S.grid; if (!g) return;
+  const M = Math.max(S.W, S.D) * 2;
+  g.w = Math.min(g.w, M); g.h = Math.min(g.h, M);
+  g.x = Math.max(-M / 2, Math.min(S.W + M / 2 - g.w, g.x)); g.y = Math.max(-M / 2, Math.min(S.D + M / 2 - g.h, g.y));
+}
+function syncGridInputs() {
+  const g = G();
+  [['ip-gx', g.x], ['ip-gy', g.y], ['ip-gw', g.w], ['ip-gh', g.h]].forEach(([id, v]) => { if (document.activeElement !== $(id)) $(id).value = fmt(v); });
+}
+
+/* ---------- the room, door and north inputs ---------- */
+/* Shows why a set of fields can't be used. While a value is still being typed (explain false) the fields are only
+   marked invalid, and an explanation already showing is cleared once they are fine; the explanation itself is
+   written when the reader leaves a field or presses Enter, or after a button, so nothing interrupts the typing. */
+function fieldsWhy(whyId, ids, errs, explain) {
+  const bad = new Set(errs.flatMap(([f]) => f));
+  ids.forEach((id) => { if (bad.has(id)) $(id).setAttribute('aria-invalid', 'true'); else $(id).removeAttribute('aria-invalid'); });
+  if (explain || !errs.length) $(whyId).textContent = errs.map(([, m]) => m).join(' ');
+}
+const ROOM_IDS = ['ip-w', 'ip-d', 'ip-dpos', 'ip-dw'], GRID_IDS = ['ip-gx', 'ip-gy', 'ip-gw', 'ip-gh'];
+function readRoom(explain = true) {
+  const W = num($('ip-w').value), D = num($('ip-d').value), dp = num($('ip-dpos').value), dw = num($('ip-dw').value);
+  const errs = [];
+  if (W === null || W <= 0 || W > 10000) errs.push([['ip-w'], 'The width needs to be a number above 0.']);
+  if (D === null || D <= 0 || D > 10000) errs.push([['ip-d'], 'The depth needs to be a number above 0.']);
+  if (!errs.length) {
+    const len = (S.dwall === 'top' || S.dwall === 'bottom') ? W : D;
+    if (dw === null || dw <= 0) errs.push([['ip-dw'], 'The door width needs to be a number above 0.']);
+    else if (dw > len) errs.push([['ip-dw'], `The door is wider than its wall (${fmt(len)}${unitWord()}).`]);
+    if (dp === null || dp < 0) errs.push([['ip-dpos'], 'The door’s distance from the corner needs to be 0 or more.']);
+    else if (dw !== null && dw > 0 && dp + dw > len + 1e-9) errs.push([['ip-dpos', 'ip-dw'], `The door runs past the end of its wall: its start plus its width is more than ${fmt(len)}${unitWord()}.`]);
+  }
+  fieldsWhy('ip-room-why', ROOM_IDS, errs, explain);
+  if (errs.length) return;
+  const resized = W !== S.W || D !== S.D;
+  if (resized && S.grid) { // keep a fitted grid in proportion with the room
+    const fx = W / S.W, fy = D / S.D;
+    S.grid = { x: S.grid.x * fx, y: S.grid.y * fy, w: S.grid.w * fx, h: S.grid.h * fy };
+    if (S.probe) S.probe = { x: S.probe.x * fx, y: S.probe.y * fy };
+  }
+  S.W = W; S.D = D; S.dpos = dp; S.dw = dw;
+  syncGridInputs(); drawPlan(); refreshProbeText(); showFacing(); renderKua(); save();
+}
+function refreshProbeText() { if (S.probe) { const k0 = S.area; probe(S.probe.x, S.probe.y); if (!areaAt(S.probe.x, S.probe.y) && k0) { S.area = k0; showCard(k0); } } }
+ROOM_IDS.forEach((id) => { $(id).addEventListener('input', () => readRoom(false)); $(id).addEventListener('change', () => readRoom(true)); });
+$('ip-unit').addEventListener('change', () => { S.unit = $('ip-unit').value; drawPlan(); if (S.probe) refreshProbeText(); save(); });
+$('ip-dwall').addEventListener('change', () => setWall($('ip-dwall').value));
+function doorLabel() { $('ip-dpos-lbl').textContent = (S.dwall === 'top' || S.dwall === 'bottom') ? 'Door starts this far from the left corner' : 'Door starts this far from the top corner'; }
+function setMethod(m) {
+  S.method = m;
+  $('ip-compassopt').hidden = m !== 'compass';
+  document.querySelectorAll('input[name=ip-method]').forEach((r) => { r.checked = r.value === m; });
+  $('ip-method-help').textContent = m === 'door'
+    ? 'Front-door method (Black Hat school): the wall with the front door holds Knowledge, Career and Helpful People, left to right as you walk in, whichever way the home faces.'
+    : 'Compass method (classical school): each area sits in its own compass direction from the centre, so set which way north is below.';
+  drawGrid(); refreshProbeText(); refreshAdvice(); save();
+}
+document.querySelectorAll('input[name=ip-method]').forEach((r) => r.addEventListener('change', () => { if (r.checked) setMethod(r.value); }));
+document.querySelectorAll('input[name=ip-layout]').forEach((r) => r.addEventListener('change', () => { if (r.checked) { S.layout = r.value; drawGrid(); refreshProbeText(); refreshAdvice(); save(); } }));
+
+const dial = $('ip-dial');
+{ const t = dial.querySelector('.ip-dial-ticks'); for (let a = 0; a < 360; a += 15) { const big = a % 90 === 0, r1 = big ? 44 : 48, th = a * Math.PI / 180; mk('line', { x1: r1 * Math.sin(th), y1: -r1 * Math.cos(th), x2: 53 * Math.sin(th), y2: -53 * Math.cos(th), class: big ? 'big' : '' }, t); } }
+function setNorth(v, fromInput) {
+  v = mod(Math.round(v * 10) / 10, 360); S.north = v;
+  $('ip-needle').setAttribute('transform', `rotate(${v})`);
+  dial.setAttribute('aria-valuenow', String(Math.round(v)));
+  const side = ['top', 'upper right', 'right', 'lower right', 'bottom', 'lower left', 'left', 'upper left'][mod(Math.round(v / 45), 8)];
+  dial.setAttribute('aria-valuetext', `North points ${fmt(v)}° clockwise from the top of the plan, toward its ${side}`);
+  if (!fromInput) $('ip-north').value = fmt(v);
+  $('ip-north').removeAttribute('aria-invalid');
+  drawGrid(); drawRose(); showFacing(); renderKua(); if (S.method === 'compass') refreshProbeText(); refreshAdvice(); syncPicker(); save();
+}
+$('ip-north').addEventListener('input', () => { const v = num($('ip-north').value); if (v === null) { $('ip-north').setAttribute('aria-invalid', 'true'); return; } setNorth(v, true); });
+dial.addEventListener('keydown', (ev) => {
+  const big = ev.shiftKey ? 15 : 1; let v = S.north;
+  if (ev.key === 'ArrowRight' || ev.key === 'ArrowUp') v += big; else if (ev.key === 'ArrowLeft' || ev.key === 'ArrowDown') v -= big;
+  else if (ev.key === 'PageUp') v += 45; else if (ev.key === 'PageDown') v -= 45; else if (ev.key === 'Home') v = 0; else return;
+  ev.preventDefault(); setNorth(Math.round(v));
+});
+let dialDrag = false;
+const dialAngle = (ev) => { const r = dial.getBoundingClientRect(); return screenAngle(ev.clientX - (r.left + r.width / 2), ev.clientY - (r.top + r.height / 2)); };
+dial.addEventListener('pointerdown', (ev) => { dialDrag = true; try { dial.setPointerCapture(ev.pointerId); } catch (e) { /* nothing */ } setNorth(Math.round(dialAngle(ev))); });
+dial.addEventListener('pointermove', (ev) => { if (dialDrag) setNorth(Math.round(dialAngle(ev))); });
+dial.addEventListener('pointerup', () => { dialDrag = false; });
+dial.addEventListener('pointercancel', () => { dialDrag = false; });
+function facingWords(b) { return `${fmt(b)}° (${POINTS16[mod(Math.round(b / 22.5), 16)]})`; }
+function showFacing() {
+  const b = doorFacing();
+  $('ip-facing').textContent = `With north set like this, the front door faces about ${facingWords(b)} as you step out through it.`;
+}
+
+/* ---------- grid inputs, picture ---------- */
+function readGrid(explain) {
+  const v = GRID_IDS.map((i) => num($(i).value));
+  const bad = GRID_IDS.filter((id, k) => v[k] === null || (k >= 2 && v[k] <= 0));
+  fieldsWhy('ip-grid-why', GRID_IDS, bad.length ? [[bad, 'Each grid value needs to be a number, and the width and depth must be above 0.']] : [], explain);
+  if (bad.length) return;
+  S.grid = { x: v[0], y: v[1], w: v[2], h: v[3] }; clampGrid(); drawPlan(); refreshProbeText(); save();
+}
+GRID_IDS.forEach((id) => { $(id).addEventListener('input', () => readGrid(false)); $(id).addEventListener('change', () => readGrid(true)); });
+$('ip-gfit').addEventListener('click', () => { S.grid = null; fieldsWhy('ip-grid-why', GRID_IDS, [], true); syncGridInputs(); drawPlan(); refreshProbeText(); save(); });
+$('ip-lock').addEventListener('change', () => { S.lock = $('ip-lock').checked; drawGrid(); save(); });
+$('ip-file').addEventListener('change', () => {
+  const f = $('ip-file').files && $('ip-file').files[0]; $('ip-img-why').textContent = '';
+  if (!f) return;
+  const url = URL.createObjectURL(f), im = new Image();
+  im.onload = () => {
+    if (img) URL.revokeObjectURL(img.url);
+    img = { url, w: im.naturalWidth || 1, h: im.naturalHeight || 1, name: f.name };
+    $('ip-img-name').textContent = `Showing ${f.name} (${img.w} × ${img.h} pixels), stretched to the room’s width.`;
+    $('ip-imgmatch').disabled = false; $('ip-imgclear').disabled = false;
+    drawPlan();
+  };
+  im.onerror = () => { URL.revokeObjectURL(url); $('ip-img-why').textContent = `This browser couldn’t open ${f.name} as a picture.`; };
+  im.src = url;
+  $('ip-file').value = '';
+});
+$('ip-imgmatch').addEventListener('click', () => { if (!img) return; $('ip-d').value = fmt(S.W * img.h / img.w); readRoom(); });
+$('ip-imgclear').addEventListener('click', () => { if (img) URL.revokeObjectURL(img.url); img = null; $('ip-img-name').textContent = ''; $('ip-imgmatch').disabled = true; $('ip-imgclear').disabled = true; drawPlan(); });
+$('ip-imgop').addEventListener('input', () => { S.imgop = +$('ip-imgop').value; drawImage(); save(); });
+$('ip-showroom').addEventListener('change', () => { S.showRoom = $('ip-showroom').checked; drawRoom(); save(); });
+$('ip-showsketch').addEventListener('change', () => { S.showSketch = $('ip-showsketch').checked; drawSketch(); drawGrid(); syncPicker(); save(); });
+
+/* ---------- the floor plan picker ---------- */
+function geometryChanged() { // after the plan, its turn or its mirroring changes the room
+  $('ip-w').value = fmt(S.W); $('ip-d').value = fmt(S.D); $('ip-dpos').value = fmt(S.dpos); $('ip-dw').value = fmt(S.dw);
+  $('ip-dwall').value = S.dwall; fieldsWhy('ip-room-why', ROOM_IDS, [], true); fieldsWhy('ip-grid-why', GRID_IDS, [], true);
+  doorLabel(); syncGridInputs();
+  $('ip-where').textContent = 'Tap the plan to see an area.';
+  setNorth(S.north); drawPlan(); syncPicker(); save();
+}
+function setWall(w) {
+  if (!WALL[w] || w === S.dwall) { syncPicker(); return; }
+  if (curPlan()) { // the drawing turns, and north turns with it, so the front still faces the same way
+    const f = doorFacing(); S.dwall = w; S.north = mod(WALL[w]().out - f, 360); setPlanDims(); geometryChanged();
+  } else { // a plain rectangle stays put; only the door moves, so north stays where it was
+    S.dwall = w; $('ip-dwall').value = w; doorLabel(); readRoom(); refreshAdvice(); syncPicker();
+  }
+}
+function usePlan(id) {
+  S.plan = id;
+  if (id) setPlanDims();
+  geometryChanged();
+  if (!id) $('ip-setup-room').open = true;
+}
+function syncPicker() {
+  const P = curPlan(), kind = P ? P.kind : 'rect';
+  document.querySelectorAll('input[name=ip-kind]').forEach((r) => { r.checked = r.value === kind; });
+  document.querySelectorAll('input[name=ip-wall]').forEach((r) => { r.checked = r.value === S.dwall; });
+  const face = DIRS[mod(Math.round(doorFacing() / 45), 8)];
+  document.querySelectorAll('input[name=ip-face]').forEach((r) => { r.checked = r.value === face; });
+  document.querySelectorAll('input[name=ip-names]').forEach((r) => { r.checked = r.value === S.names; });
+  const list = P ? plansOf(kind) : [];
+  $('ip-another').disabled = list.length < 2;
+  $('ip-mirror').disabled = !P; $('ip-mirror').checked = !!(P && S.mirror);
+  $('ip-names').hidden = !P || !S.showSketch;
+  $('ip-planname').textContent = P ? `Plan ${list.indexOf(P) + 1} of ${list.length}: ${P.name}${S.mirror ? ', mirrored' : ''}.` : 'A plain rectangle: set its size and its door under “The room, the door and north” below.';
+}
+document.querySelectorAll('input[name=ip-kind]').forEach((r) => r.addEventListener('change', () => {
+  if (!r.checked) return;
+  if (r.value === 'rect') usePlan('');
+  else { const list = plansOf(r.value); if (list.length) usePlan(list[0].id); }
+}));
+$('ip-another').addEventListener('click', () => {
+  const P = curPlan(); if (!P) return;
+  const list = plansOf(P.kind); usePlan(list[(list.indexOf(P) + 1) % list.length].id);
+});
+$('ip-mirror').addEventListener('change', () => { if (!curPlan()) return; S.mirror = $('ip-mirror').checked; setPlanDims(); geometryChanged(); });
+document.querySelectorAll('input[name=ip-wall]').forEach((r) => r.addEventListener('change', () => { if (r.checked) setWall(r.value); }));
+document.querySelectorAll('input[name=ip-face]').forEach((r) => r.addEventListener('change', () => { if (r.checked) setNorth(mod(WALL[S.dwall]().out - DIRS.indexOf(r.value) * 45, 360)); }));
+document.querySelectorAll('input[name=ip-names]').forEach((r) => r.addEventListener('change', () => { if (r.checked) { S.names = r.value; drawGrid(); save(); } }));
+document.querySelectorAll('.ip-areas .btn').forEach((b) => b.addEventListener('click', () => selectArea(b.dataset.area)));
+
+/* ---------- what goes where ---------- */
+$('ip-item').innerHTML = '<option value="">Choose…</option>' + ITEMS.map((it, i) => `<option value="${i}">${esc(it.n)}</option>`).join('');
+const placeWords = (k) => (S.method === 'door' ? `In the front-door method it is ${DOORPOS[k]}` + (k === 'C' ? '' : ', standing in the doorway looking in') : (k === 'C' ? 'In the compass method it is the centre of the space' : `In the compass method it is the ${dirLower(k)} part of the space`) + (S.method === 'compass' ? '' : ''));
+function refreshAdvice() {
+  const out = $('ip-advice');
+  if (S.intent && AREAS[S.intent]) {
+    const k = S.intent, a = AREAS[k], e = EL[a.el], sup = EL[fedBy(a.el)], ctl = EL[ctlBy(a.el)];
+    out.innerHTML = `<p><b>${esc(a.name)}</b>. ${esc(placeWords(k))}; it’s highlighted on the plan above.</p>`
+      + `<p>Why there: ${esc(a.asp)} ${a.tri ? `The area belongs to the trigram ${esc(TRI[a.tri].name)} (${esc(TRI[a.tri].en)})` : 'The centre has no trigram; it belongs'} ${a.tri ? 'and' : 'to'} the ${esc(e.name)} element.</p>`
+      + `<p>Practical ideas: keep it clean and uncluttered, and fix anything broken there first. Then bring in the area’s colours (${esc(a.colours.toLowerCase())}) and ${esc(e.name)}’s shapes (${esc(e.shapes.charAt(0).toLowerCase() + e.shapes.slice(1))}), add a touch of ${esc(sup.name)}, which feeds ${esc(e.name)}, and go easy on ${esc(ctl.name)}, which controls it. Things commonly suggested: ${esc(a.items.slice(0, 4).map((s) => s.charAt(0).toLowerCase() + s.slice(1)).join('; '))}.</p>`
+      + `<div class="btnrow ip-goto"><a class="btn quiet" href="#plan">See it on the plan</a></div>`;
+  } else if (S.item !== '' && ITEMS[+S.item]) {
+    const it = ITEMS[+S.item];
+    out.innerHTML = `<p><b>${esc(it.n)}</b>: commonly suggested for ${esc(it.a.map((k) => AREAS[k].name + (S.method === 'compass' ? ` (${k === 'C' ? 'centre' : dirLower(k)})` : '')).join(', and for '))}. ${it.a.length > 1 ? 'They are' : 'It is'} highlighted on the plan above.</p><p>${esc(it.why)}</p>`
+      + `<div class="btnrow ip-goto"><a class="btn quiet" href="#plan">See it on the plan</a></div>`;
+  } else out.textContent = '';
+}
+$('ip-intent').addEventListener('change', () => {
+  S.intent = $('ip-intent').value; S.item = ''; $('ip-item').value = '';
+  if (S.intent) { S.area = S.intent; S.hl = [S.intent]; showCard(S.intent); }
+  drawGrid(); refreshAdvice(); save();
+});
+$('ip-item').addEventListener('change', () => {
+  S.item = $('ip-item').value; S.intent = ''; $('ip-intent').value = '';
+  const it = ITEMS[+S.item];
+  if (S.item !== '' && it) { S.hl = it.a.slice(); S.area = it.a[0]; showCard(it.a[0]); }
+  drawGrid(); refreshAdvice(); save();
+});
+
+/* ---------- the five elements ---------- */
+const ELPOS = { fire: 0, earth: 1, metal: 2, water: 3, wood: 4 }; // clockwise from the top
+const RN = 88, NR = 25;
+const nodeXY = (e, r) => { const t = (-90 + 72 * ELPOS[e]) * Math.PI / 180; return [(r || RN) * Math.cos(t), (r || RN) * Math.sin(t)]; };
+function drawElements() {
+  const gen = $('ip-el-gen'), ctl = $('ip-el-ctl'), nodes = $('ip-el-nodes');
+  gen.textContent = ''; ctl.textContent = ''; nodes.textContent = '';
+  const sel = S.el;
+  for (const e of EL_ORDER) {
+    const f = EL[e].feeds, a0 = -90 + 72 * ELPOS[e], a1 = a0 + 72, d = (NR + 6) / RN * 180 / Math.PI;
+    const p0 = [RN * Math.cos((a0 + d) * Math.PI / 180), RN * Math.sin((a0 + d) * Math.PI / 180)], p1 = [RN * Math.cos((a1 - d) * Math.PI / 180), RN * Math.sin((a1 - d) * Math.PI / 180)];
+    const on = sel && (e === sel || f === sel);
+    mk('path', { d: `M${p0[0].toFixed(2)} ${p0[1].toFixed(2)} A${RN} ${RN} 0 0 1 ${p1[0].toFixed(2)} ${p1[1].toFixed(2)}`, 'marker-end': 'url(#ip-ah-gen)', class: sel ? (on ? 'hi' : 'dim') : '' }, gen);
+    const c = EL[e].controls, q0 = nodeXY(e), q1 = nodeXY(c), dx = q1[0] - q0[0], dy = q1[1] - q0[1], L = Math.hypot(dx, dy), ux = dx / L, uy = dy / L;
+    const s = NR + 5;
+    const onc = sel && (e === sel || c === sel);
+    mk('path', { d: `M${(q0[0] + ux * s).toFixed(2)} ${(q0[1] + uy * s).toFixed(2)} L${(q1[0] - ux * s).toFixed(2)} ${(q1[1] - uy * s).toFixed(2)}`, 'marker-end': 'url(#ip-ah-ctl)', class: sel ? (onc ? 'hi' : 'dim') : '' }, ctl);
+  }
+  for (const e of EL_ORDER) {
+    const [x, y] = nodeXY(e), g = mk('g', { class: `ip-elnode ${e}` + (sel === e ? ' on' : ''), 'data-el': e }, nodes);
+    mk('circle', { cx: x.toFixed(2), cy: y.toFixed(2), r: NR }, g);
+    const t = mk('text', { x: x.toFixed(2), y: y.toFixed(2) }, g); t.textContent = EL[e].name;
+  }
+  gen.style.display = S.gen ? '' : 'none'; ctl.style.display = S.ctl ? '' : 'none';
+  $('ip-show-gen').setAttribute('aria-pressed', String(S.gen)); $('ip-show-ctl').setAttribute('aria-pressed', String(S.ctl));
+  document.querySelectorAll('.ip-elbtns .btn').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.el === sel)));
+  document.querySelectorAll('#ip-eltable tbody tr').forEach((tr) => tr.classList.toggle('on', tr.dataset.el === sel));
+  if (sel) {
+    const e = EL[sel];
+    $('ip-elsay').textContent = `${e.name} is fed by ${EL[fedBy(sel)].name} and feeds ${EL[e.feeds].name}. It controls ${EL[e.controls].name}, and is controlled by ${EL[ctlBy(sel)].name}. Its directions: ${elDirs(sel)}.`;
+  } else $('ip-elsay').textContent = 'Choose an element to see how it relates to the others.';
+}
+$('ip-eltable').querySelector('tbody').innerHTML = EL_ORDER.map((e) => {
+  const x = EL[e];
+  return `<tr data-el="${e}"><td data-h="Element"><span class="sw" style="background:var(--el-${e})" aria-hidden="true"></span>${esc(x.name)}</td><td data-h="Colours">${swatches(e)}</td><td data-h="Shapes">${esc(x.shapes)}</td><td data-h="Materials">${esc(x.materials)}</td><td data-h="Directions">${esc(elDirs(e))}</td><td data-h="Season">${esc(x.season)}</td></tr>`;
+}).join('');
+$('ip-el-nodes').addEventListener('click', (ev) => { const g = ev.target.closest('[data-el]'); if (!g) return; S.el = S.el === g.dataset.el ? null : g.dataset.el; drawElements(); save(); });
+document.querySelectorAll('.ip-elbtns .btn').forEach((b) => b.addEventListener('click', () => { S.el = S.el === b.dataset.el ? null : b.dataset.el; drawElements(); save(); }));
+$('ip-show-gen').addEventListener('click', () => { S.gen = !S.gen; drawElements(); save(); });
+$('ip-show-ctl').addEventListener('click', () => { S.ctl = !S.ctl; drawElements(); save(); });
+
+/* ---------- Kua ---------- */
+const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
+const pad2 = (n) => String(n).padStart(2, '0');
+function lichunInfo(y) {
+  const m = LICHUN.moment(y), c = new Date(m.getTime() + 8 * 3600000);
+  const mins = c.getUTCHours() * 60 + c.getUTCMinutes() + c.getUTCSeconds() / 60;
+  const rc = new Date(Math.round(c.getTime() / 60000) * 60000), ru = new Date(Math.round(m.getTime() / 60000) * 60000);
+  return { month: c.getUTCMonth() + 1, day: c.getUTCDate(), cst: `${pad2(rc.getUTCHours())}:${pad2(rc.getUTCMinutes())}`, utc: `${pad2(ru.getUTCHours())}:${pad2(ru.getUTCMinutes())}`, utcDay: ru.getUTCDate(), near: mins < 10 || mins > 1430 };
+}
+function kuaCard(label, r, k5other) {
+  const k = r.k, tri = TRI[{ 1: 'kan', 2: 'kun', 3: 'zhen', 4: 'xun', 6: 'qian', 7: 'dui', 8: 'gen', 9: 'li' }[k]];
+  const home = KUA_HOME[k], el = AREAS[home].el;
+  const row = (d, i) => `<tr class="${STARS[i].good ? 'good' : 'bad'}"><td class="dir">${esc(DIRNAME[d])}</td><td>${esc(STARS[i].n)}<span class="mean">${esc(STARS[i].m)}</span></td></tr>`;
+  const rows = `<tr><th scope="rowgroup" colspan="2" class="kind">Favourable, best first</th></tr>` + MANSION[k].slice(0, 4).map((d, i) => row(d, i)).join('')
+    + `<tr><th scope="rowgroup" colspan="2" class="kind">Unfavourable, mildest first</th></tr>` + MANSION[k].slice(4).map((d, i) => row(d, i + 4)).join('');
+  return `<div class="ip-kua"><h3>${esc(label)}</h3>
+    <div class="big"><b>${k}</b><span>Trigram ${esc(tri.name)} (${esc(tri.en)})<br>${esc(EL[el].name)} element, home direction ${esc(DIRNAME[home].toLowerCase())}</span></div>
+    <p class="work">${esc(r.work)}${r.five ? ` → 5 has no trigram, so ${k5other}` : ''}</p>
+    <p class="grp"><b>${group(k)} group</b>: ${group(k) === 'East' ? 'Kua 1, 3, 4 and 9' : 'Kua 2, 6, 7 and 8'}.</p>
+    <div class="scroll"><table><caption class="sr">The eight directions for Kua ${k}</caption><thead><tr><th scope="col">Direction</th><th scope="col">Traditional name</th></tr></thead><tbody>${rows}</tbody></table></div></div>`;
+}
+function renderKua() {
+  const v = $('ip-birth').value || S.birth;
+  const lc = $('ip-lc'), out = $('ip-kuas'), why = $('ip-birth-why'), day = $('ip-lcday');
+  why.textContent = ''; $('ip-kua-door').textContent = '';
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(v || '');
+  if (!m) { lc.innerHTML = '<p class="muted">Enter a date of birth to see both versions.</p>'; out.innerHTML = ''; day.hidden = true; return; }
+  const Y = +m[1], M = +m[2], Dd = +m[3];
+  if (Y < 1900 || Y > 2100 || M < 1 || M > 12 || Dd < 1 || Dd > 31) { why.textContent = 'Choose a date from 1900 to 2100.'; lc.innerHTML = ''; out.innerHTML = ''; day.hidden = true; return; }
+  const L = lichunInfo(Y);
+  const cmp = M !== L.month ? M - L.month : Dd - L.day;
+  day.hidden = cmp !== 0;
+  let sy;
+  if (cmp < 0) sy = Y - 1; else if (cmp > 0) sy = Y; else sy = S.lcside === 'before' ? Y - 1 : Y;
+  const dstr = `${Dd} ${MONTHS[M - 1]} ${Y}`;
+  let say = `<p>In ${Y}, Li Chun fell on <b>${L.day} February</b>, at about ${L.cst} China Standard Time (${L.utc} UTC${L.utcDay !== L.day ? `, ${L.utcDay} February` : ''}).</p>`;
+  if (L.near) say += '<p>That is within a few minutes of midnight, so almanacs may list it on either date.</p>';
+  if (cmp < 0) say += `<p>${esc(dstr)} is before Li Chun, so it belongs to the solar year <b>${sy}</b>.</p>`;
+  else if (cmp > 0) say += `<p>${esc(dstr)} is after Li Chun, so it belongs to the solar year <b>${sy}</b>.</p>`;
+  else say += `<p>${esc(dstr)} is the day of Li Chun itself, so the solar year depends on the time of birth: before about ${L.cst} China time it is still ${Y - 1}; from then on it is ${Y}. Showing <b>${sy}</b>.</p>`;
+  const K = kua(sy);
+  say += `<p class="muted">The digits of ${sy}: ${esc(K.digits || String(sy))}${K.digits ? '' : ''}, leaving <b>${K.d}</b>.</p>`;
+  lc.innerHTML = say;
+  out.innerHTML = kuaCard('Version A', K.A, 'Version A uses 2') + kuaCard('Version B', K.B, 'Version B uses 8');
+  const b = doorFacing(), d8 = sector(b);
+  const star = (k) => { const i = MANSION[k].indexOf(d8); return `${STARS[i].n} (${STARS[i].good ? 'favourable' : 'unfavourable'})`; };

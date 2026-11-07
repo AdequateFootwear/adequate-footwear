@@ -1,0 +1,53 @@
+<!-- Review copy: lines 2072-2123 of everything-in-its-place/index.html, split so Copilot can review it. Not served. -->
+  $('ip-kua-door').textContent = `With north set as on the plan, the front door faces ${DIRNAME[d8].toLowerCase()}: that is ${star(K.A.k)} for Version A, and ${star(K.B.k)} for Version B.`;
+}
+$('ip-birth').addEventListener('input', () => { S.birth = $('ip-birth').value; renderKua(); save(); });
+$('ip-birth').addEventListener('change', () => { S.birth = $('ip-birth').value; renderKua(); save(); });
+document.querySelectorAll('input[name=ip-lcside]').forEach((r) => r.addEventListener('change', () => { if (r.checked) { S.lcside = r.value; renderKua(); save(); } }));
+
+/* ---------- the plant ---------- */
+const PLANT = ['Everything in its place.', 'A little water, a little light.', 'Still here, quietly growing.', 'Breathe in. Breathe out.', 'Leaves turn toward the light.'];
+let plantI = 0;
+$('ip-plant').addEventListener('click', () => {
+  const g = $('ip-sway');
+  plantI = (plantI + 1) % PLANT.length;
+  if (reduced()) { $('ip-plant-status').textContent = 'The plant stays still, since you prefer less motion. ' + PLANT[plantI]; return; }
+  g.classList.remove('go'); void g.getBoundingClientRect(); g.classList.add('go');
+  $('ip-plant-status').textContent = 'The plant sways. ' + PLANT[plantI];
+});
+
+/* ---------- example (fictional) ---------- */
+$('btn-example').addEventListener('click', () => {
+  S = Object.assign(JSON.parse(JSON.stringify(DEF)), { unit: 'm', dwall: 'bottom', plan: 'one-a', mirror: false, method: 'door', north: 35, birth: '1987-02-03', el: 'wood' });
+  setPlanDims(); syncAll();
+  probe(2.0, 1.6);
+  $('ip-where').textContent = 'Example (made up): a one-bedroom apartment, with the front door at the bottom right and north 35° clockwise from the top. ' + $('ip-where').textContent;
+  $('plan').scrollIntoView({ behavior: reduced() ? 'auto' : 'smooth', block: 'start' });
+});
+
+/* ---------- start ---------- */
+function syncAll() {
+  $('ip-w').value = fmt(S.W); $('ip-d').value = fmt(S.D); $('ip-unit').value = S.unit; $('ip-dwall').value = S.dwall;
+  $('ip-dpos').value = fmt(S.dpos); $('ip-dw').value = fmt(S.dw); fieldsWhy('ip-room-why', ROOM_IDS, [], true);
+  document.querySelectorAll('input[name=ip-layout]').forEach((r) => { r.checked = r.value === S.layout; });
+  $('ip-showroom').checked = S.showRoom; $('ip-showsketch').checked = S.showSketch; $('ip-imgop').value = S.imgop; $('ip-lock').checked = S.lock;
+  $('ip-birth').value = S.birth;
+  document.querySelectorAll('input[name=ip-lcside]').forEach((r) => { r.checked = r.value === S.lcside; });
+  $('ip-intent').value = S.intent; $('ip-item').value = S.item;
+  doorLabel(); syncGridInputs();
+  setMethod(S.method);
+  setNorth(S.north);
+  drawPlan(); drawElements(); showCard(S.area); refreshAdvice(); renderKua(); showFacing();
+  syncPicker();
+  if (S.probe) { const a = areaAt(S.probe.x, S.probe.y), rm = roomAt(S.probe.x, S.probe.y), at = `${fmt(S.probe.x)}${unitWord()} across, ${fmt(S.probe.y)}${unitWord()} down`; $('ip-where').textContent = a ? `${rm ? `${rm} (${at})` : at}: ${AREAS[a].name}.` : 'Tap the plan to see an area.'; }
+}
+if (!load()) setPlanDims();
+syncAll();
+if (document.fonts && document.fonts.ready) document.fonts.ready.then(() => drawPlan(false)).catch(() => {}); // labels are placed by their measured size
+if (window.ResizeObserver) { let rt = 0; new ResizeObserver(() => { clearTimeout(rt); rt = setTimeout(() => drawPlan(false), 60); }).observe(svg); }
+else window.addEventListener('resize', () => drawPlan(false));
+})();
+</script>
+</body>
+</html>
+

@@ -1,0 +1,578 @@
+<!-- Review copy: lines 703-1279 of everything-in-its-place/index.html, split so Copilot can review it. Not served. -->
+          <path class="ip-stem" d="M40 70 C40 58 39 48 36 38 M40 62 C44 54 50 48 56 44 M39 56 C33 50 27 47 20 46 M40 66 C42 58 46 30 46 22"/>
+          <ellipse class="ip-leaf" cx="35" cy="33" rx="7.5" ry="10" transform="rotate(-18 35 33)"/>
+          <ellipse class="ip-leaf alt" cx="59" cy="41" rx="9" ry="6.5" transform="rotate(-28 59 41)"/>
+          <ellipse class="ip-leaf alt" cx="17" cy="44" rx="9" ry="6.5" transform="rotate(20 17 44)"/>
+          <ellipse class="ip-leaf" cx="47" cy="17" rx="6.5" ry="9" transform="rotate(14 47 17)"/>
+          <path class="ip-vein" d="M34 26 L36 40 M53 44 L65 38 M11 41 L23 47 M46 10 L48 24"/>
+        </g>
+        <path class="ip-soil" d="M22 70 Q40 66 58 70 L58 72 L22 72 Z"/>
+        <path class="ip-pot" d="M18 68 H62 V76 H18 Z"/>
+        <path class="ip-pot dark" d="M21 76 H59 L55 92 Q55 94 53 94 H27 Q25 94 25 92 Z"/>
+        <path class="ip-potline" d="M23 82 H57"/>
+      </svg>
+    </button>
+    <p class="note">An optional helper for arranging a room or a home the feng shui way: map the bagua onto a floor plan, look up what each area stands for, see the five elements, and work out a Kua number. It runs entirely in your browser and keeps working once it has loaded, even with no signal. Anything you draw or type stays on this device.</p>
+  </div>
+  <p class="sr" role="status" id="ip-plant-status"></p>
+
+  <section class="panel" id="plan" aria-labelledby="h-plan">
+    <div class="panel-head"><span class="step">1</span><h2 id="h-plan">The floor plan</h2></div>
+    <p class="help">Choose the kind of space and a sample plan appears, turned so the front door is on the wall you pick, with the bagua’s nine areas laid over it. Tap any spot on the plan to see which area it falls in, or click the plan and use the arrow keys. You can also use a plain rectangle, or put a picture of your own plan underneath.</p>
+
+    <div class="ip-picker">
+      <fieldset class="ip-fs">
+        <legend class="ip-lbl">The kind of space</legend>
+        <div class="ip-kinds">
+          <label class="ip-seg"><input type="radio" name="ip-kind" value="studio"> <span>Studio</span></label>
+          <label class="ip-seg"><input type="radio" name="ip-kind" value="one"> <span>One-bedroom apartment</span></label>
+          <label class="ip-seg"><input type="radio" name="ip-kind" value="two"> <span>Two-bedroom apartment</span></label>
+          <label class="ip-seg"><input type="radio" name="ip-kind" value="house"> <span>Small house</span></label>
+          <label class="ip-seg"><input type="radio" name="ip-kind" value="office"> <span>Office</span></label>
+          <label class="ip-seg"><input type="radio" name="ip-kind" value="room"> <span>A single room</span></label>
+          <label class="ip-seg"><input type="radio" name="ip-kind" value="rect"> <span>A plain rectangle</span></label>
+        </div>
+      </fieldset>
+      <div class="ip-pickrow">
+        <fieldset class="ip-fs">
+          <legend class="ip-lbl">The front door is on the plan’s</legend>
+          <div class="ip-pad ip-wallpad">
+            <label class="ip-key" style="grid-area:t"><input type="radio" name="ip-wall" value="top"> <span>Top</span></label>
+            <label class="ip-key" style="grid-area:l"><input type="radio" name="ip-wall" value="left"> <span>Left</span></label>
+            <span class="ip-mid" aria-hidden="true"></span>
+            <label class="ip-key" style="grid-area:r"><input type="radio" name="ip-wall" value="right"> <span>Right</span></label>
+            <label class="ip-key" style="grid-area:b"><input type="radio" name="ip-wall" value="bottom"> <span>Bottom</span></label>
+          </div>
+        </fieldset>
+        <fieldset class="ip-fs">
+          <legend class="ip-lbl">The front faces roughly</legend>
+          <div class="ip-pad ip-facepad">
+            <label class="ip-key"><input type="radio" name="ip-face" value="NW"> <span aria-hidden="true">NW</span><span class="sr">Northwest</span></label>
+            <label class="ip-key"><input type="radio" name="ip-face" value="N"> <span aria-hidden="true">N</span><span class="sr">North</span></label>
+            <label class="ip-key"><input type="radio" name="ip-face" value="NE"> <span aria-hidden="true">NE</span><span class="sr">Northeast</span></label>
+            <label class="ip-key"><input type="radio" name="ip-face" value="W"> <span aria-hidden="true">W</span><span class="sr">West</span></label>
+            <span class="ip-dot" aria-hidden="true"></span>
+            <label class="ip-key"><input type="radio" name="ip-face" value="E"> <span aria-hidden="true">E</span><span class="sr">East</span></label>
+            <label class="ip-key"><input type="radio" name="ip-face" value="SW"> <span aria-hidden="true">SW</span><span class="sr">Southwest</span></label>
+            <label class="ip-key"><input type="radio" name="ip-face" value="S"> <span aria-hidden="true">S</span><span class="sr">South</span></label>
+            <label class="ip-key"><input type="radio" name="ip-face" value="SE"> <span aria-hidden="true">SE</span><span class="sr">Southeast</span></label>
+          </div>
+        </fieldset>
+      </div>
+      <p class="help">The way the front faces is the way you look as you step out through the front door. Only the compass method uses it; set it to the degree under “The room, the door and north” below.</p>
+      <div class="btnrow ip-pickbtns">
+        <button type="button" class="btn quiet" id="ip-another">Show another</button>
+        <label class="ip-check"><input type="checkbox" id="ip-mirror"> Mirror the plan</label>
+      </div>
+      <p class="ip-planname" id="ip-planname" aria-live="polite"></p>
+      <fieldset class="ip-fs ip-names" id="ip-names">
+        <legend class="ip-lbl">Names on the plan</legend>
+        <div class="ip-method">
+          <label class="ip-seg"><input type="radio" name="ip-names" value="both"> <span>Rooms and areas</span></label>
+          <label class="ip-seg"><input type="radio" name="ip-names" value="rooms"> <span>Rooms</span></label>
+          <label class="ip-seg"><input type="radio" name="ip-names" value="areas"> <span>Areas</span></label>
+        </div>
+      </fieldset>
+    </div>
+
+    <div class="ip-method" role="radiogroup" aria-labelledby="ip-method-lbl">
+      <span class="ip-lbl" id="ip-method-lbl">Line up the bagua by</span>
+      <label class="ip-seg"><input type="radio" name="ip-method" value="door" checked> <span>The front door</span></label>
+      <label class="ip-seg"><input type="radio" name="ip-method" value="compass"> <span>The compass</span></label>
+    </div>
+    <p class="help" id="ip-method-help"></p>
+    <div class="ip-compassopt" id="ip-compassopt">
+      <span class="ip-lbl" id="ip-layout-lbl">Divide the space into</span>
+      <div class="ip-method" role="radiogroup" aria-labelledby="ip-layout-lbl">
+        <label class="ip-seg"><input type="radio" name="ip-layout" value="sectors" checked> <span>Eight 45° slices</span></label>
+        <label class="ip-seg"><input type="radio" name="ip-layout" value="squares"> <span>Nine squares</span></label>
+      </div>
+      <p class="help">Eight 45° slices around the centre is how the compass school usually draws it. Nine squares keeps the grid, giving each outer square the direction it lies closest to.</p>
+    </div>
+
+    <div class="ip-planwrap">
+      <svg id="ip-svg" class="ip-svg" tabindex="0" role="application" aria-roledescription="floor plan" aria-label="Floor plan with the bagua grid. Use the arrow keys to move the marker; hold Shift for bigger steps. Press Home for the centre." aria-describedby="ip-where">
+        <defs>
+          <mask id="ip-mask" maskUnits="userSpaceOnUse"><rect id="ip-mask-all" fill="#fff"/><rect id="ip-mask-hole" fill="#000"/></mask>
+        </defs>
+        <rect id="ip-bg" class="ip-bg"/>
+        <image id="ip-img" class="ip-img" preserveAspectRatio="none" visibility="hidden"/>
+        <g id="ip-room"></g>
+        <g id="ip-sketch" class="ip-sketch"></g>
+        <g id="ip-grid" class="ip-grid"></g>
+        <g id="ip-rlbls" class="ip-rlbls"></g>
+        <g id="ip-handles" class="ip-handles"></g>
+        <g id="ip-rose" class="ip-rose" aria-hidden="true"></g>
+        <g id="ip-probe" class="ip-probe" visibility="hidden"><circle r="1" class="ip-probe-ring"/><circle r="1" class="ip-probe-dot"/></g>
+      </svg>
+    </div>
+    <p class="ip-where" id="ip-where" aria-live="polite">Tap the plan to see an area.</p>
+    <p class="help" id="ip-hidden"></p>
+
+    <div class="ip-areas" role="group" aria-label="Show an area">
+      <button type="button" class="btn small" data-area="SE">Wealth</button>
+      <button type="button" class="btn small" data-area="S">Fame</button>
+      <button type="button" class="btn small" data-area="SW">Love</button>
+      <button type="button" class="btn small" data-area="E">Family</button>
+      <button type="button" class="btn small" data-area="C">Health</button>
+      <button type="button" class="btn small" data-area="W">Children</button>
+      <button type="button" class="btn small" data-area="NE">Knowledge</button>
+      <button type="button" class="btn small" data-area="N">Career</button>
+      <button type="button" class="btn small" data-area="NW">Helpful People</button>
+    </div>
+
+    <article class="ip-card" id="ip-card" aria-labelledby="ip-card-name" hidden>
+      <div class="ip-card-head">
+        <svg class="ip-tri" id="ip-card-tri" viewBox="0 0 40 40" aria-hidden="true" focusable="false"></svg>
+        <div>
+          <h3 id="ip-card-name"></h3>
+          <p class="ip-aka" id="ip-card-aka"></p>
+        </div>
+      </div>
+      <dl class="ip-facts" id="ip-card-facts"></dl>
+      <h4 class="ip-sub">Commonly suggested here</h4>
+      <ul class="ip-items" id="ip-card-items"></ul>
+      <p class="help" id="ip-card-foot"></p>
+    </article>
+
+    <details class="more ip-setup" id="ip-setup-room">
+      <summary>The room, the door and north</summary>
+      <div class="fgrid">
+        <label>Width (left to right) <input type="text" id="ip-w" inputmode="decimal" autocomplete="off" value="8"></label>
+        <label>Depth (top to bottom) <input type="text" id="ip-d" inputmode="decimal" autocomplete="off" value="6"></label>
+        <label>Units <select id="ip-unit"><option value="m">metres</option><option value="ft">feet</option><option value="">no units</option></select></label>
+        <label>Front door is on the <select id="ip-dwall"><option value="bottom">bottom wall</option><option value="right">right wall</option><option value="top">top wall</option><option value="left">left wall</option></select></label>
+        <label><span id="ip-dpos-lbl">Door starts this far from the left corner</span> <input type="text" id="ip-dpos" inputmode="decimal" autocomplete="off" value="3.5"></label>
+        <label>Door width <input type="text" id="ip-dw" inputmode="decimal" autocomplete="off" value="0.9"></label>
+      </div>
+      <p class="why" id="ip-room-why" role="status"></p>
+      <div class="ip-north">
+        <div class="ip-dial-wrap">
+          <svg id="ip-dial" class="ip-dial" viewBox="-60 -60 120 120" tabindex="0" role="slider" aria-label="North on the plan" aria-valuemin="0" aria-valuemax="359" aria-valuenow="0" aria-valuetext="North points to the top of the plan (0°)">
+            <circle r="54" class="ip-dial-face"/>
+            <g class="ip-dial-ticks"></g>
+            <g id="ip-needle" class="ip-needle"><path class="n" d="M0 -46 L7 0 L-7 0 Z"/><path class="s" d="M0 46 L7 0 L-7 0 Z"/><circle r="4" class="hub"/><text y="-26" class="ip-dial-n">N</text></g>
+          </svg>
+        </div>
+        <div>
+          <label class="ip-northlbl">North points this many degrees clockwise from the top of the plan <input type="text" id="ip-north" inputmode="decimal" autocomplete="off" value="0"></label>
+          <p class="help">0° means north is toward the top of the drawing, 90° toward its right-hand side. Drag the needle, click it and use the arrow keys (Shift for 15° steps), or type a number. To find it, stand in the space holding a compass or phone, and line it up with the walls. Phone compasses show magnetic north, which can be a few degrees from true north.</p>
+          <p class="ip-facing" id="ip-facing"></p>
+        </div>
+      </div>
+    </details>
+
+    <details class="more ip-setup">
+      <summary>Fit the grid</summary>
+      <p class="help">Drag the grid on the plan to move it, or drag a corner dot to resize it. A tap without dragging still shows the area. Or type the grid’s position here, in the same units as the room.</p>
+      <div class="fgrid">
+        <label>Grid left edge <input type="text" id="ip-gx" inputmode="decimal" autocomplete="off"></label>
+        <label>Grid top edge <input type="text" id="ip-gy" inputmode="decimal" autocomplete="off"></label>
+        <label>Grid width <input type="text" id="ip-gw" inputmode="decimal" autocomplete="off"></label>
+        <label>Grid depth <input type="text" id="ip-gh" inputmode="decimal" autocomplete="off"></label>
+      </div>
+      <div class="btnrow"><button type="button" class="btn quiet" id="ip-gfit">Fit the grid to the room</button></div>
+      <label class="ip-check"><input type="checkbox" id="ip-lock"> Lock the grid, so dragging on the plan scrolls the page instead</label>
+      <p class="why" id="ip-grid-why" role="status"></p>
+    </details>
+
+    <details class="more ip-setup">
+      <summary>A picture of your own floor plan (optional)</summary>
+      <p class="help">Put a picture of a plan under the drawing, then fit the grid to its outline. Choosing “A plain rectangle” above keeps a sample plan out of the way. The picture is read on this device and never uploaded. It isn’t saved, so add it again next time.</p>
+      <div class="btnrow">
+        <label class="btn quiet ip-file">Choose a picture<input type="file" id="ip-file" accept="image/*"></label>
+        <button type="button" class="btn quiet" id="ip-imgmatch" disabled>Match the room’s depth to the picture</button>
+        <button type="button" class="btn quiet" id="ip-imgclear" disabled>Remove the picture</button>
+      </div>
+      <p class="why" id="ip-img-why" role="alert"></p>
+      <p class="muted" id="ip-img-name"></p>
+      <div class="fgrid">
+        <label>Picture strength <input type="range" id="ip-imgop" min="0.15" max="1" step="0.05" value="0.7"></label>
+      </div>
+      <label class="ip-check"><input type="checkbox" id="ip-showroom" checked> Show the drawn rectangle</label>
+      <label class="ip-check" id="ip-sketchrow" hidden><input type="checkbox" id="ip-showsketch" checked> Show the sample plan’s rooms</label>
+    </details>
+  </section>
+
+  <section class="panel" id="where" aria-labelledby="h-where">
+    <div class="panel-head"><span class="step">2</span><h2 id="h-where">What goes where?</h2></div>
+    <p class="help">Choose something you’d like to encourage, or a thing you want to place, and the matching area lights up on the plan.</p>
+    <div class="fgrid">
+      <label>I’d like to encourage <select id="ip-intent">
+        <option value="">Choose…</option>
+        <option value="SE">Wealth and prosperity</option>
+        <option value="S">Recognition and reputation</option>
+        <option value="SW">Love and partnership</option>
+        <option value="E">Family and harmony</option>
+        <option value="C">Health and well-being</option>
+        <option value="W">Children and creativity</option>
+        <option value="NE">Knowledge and self-cultivation</option>
+        <option value="N">Career and life path</option>
+        <option value="NW">Helpful people and travel</option>
+      </select></label>
+      <label>Or, where might this go? <select id="ip-item"><option value="">Choose…</option></select></label>
+    </div>
+    <div class="ip-advice" id="ip-advice" aria-live="polite"></div>
+  </section>
+
+  <section class="panel" id="elements" aria-labelledby="h-elements">
+    <div class="panel-head"><span class="step">3</span><h2 id="h-elements">The five elements</h2></div>
+    <p class="help">Each area belongs to one of five elements. In the generating cycle each element feeds the next; in the controlling cycle each one keeps another in check. Choose an element to see how it relates to the rest.</p>
+    <div class="ip-elwrap">
+      <div class="ip-elstage">
+        <svg id="ip-elsvg" viewBox="-130 -128 260 252" role="img" aria-labelledby="ip-el-title ip-el-desc">
+          <title id="ip-el-title">The five elements in a circle</title>
+          <desc id="ip-el-desc">Wood, Fire, Earth, Metal and Water sit around a circle. Arrows around the circle show the generating cycle; arrows across it, making a star, show the controlling cycle. The same cycles are listed in words beside the diagram.</desc>
+          <defs>
+            <marker id="ip-ah-gen" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0 L10 5 L0 10 Z" class="ip-ah-gen"/></marker>
+            <marker id="ip-ah-ctl" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0 L10 5 L0 10 Z" class="ip-ah-ctl"/></marker>
+          </defs>
+          <g id="ip-el-gen" class="ip-el-gen"></g>
+          <g id="ip-el-ctl" class="ip-el-ctl"></g>
+          <g id="ip-el-nodes"></g>
+        </svg>
+      </div>
+      <div class="ip-elside">
+        <div class="btnrow" role="group" aria-label="Show the cycles">
+          <button type="button" class="btn quiet" id="ip-show-gen" aria-pressed="true">Generating cycle</button>
+          <button type="button" class="btn quiet" id="ip-show-ctl" aria-pressed="true">Controlling cycle</button>
+        </div>
+        <div class="btnrow ip-elbtns" role="group" aria-label="Choose an element">
+          <button type="button" class="btn small" data-el="wood">Wood</button>
+          <button type="button" class="btn small" data-el="fire">Fire</button>
+          <button type="button" class="btn small" data-el="earth">Earth</button>
+          <button type="button" class="btn small" data-el="metal">Metal</button>
+          <button type="button" class="btn small" data-el="water">Water</button>
+        </div>
+        <p class="ip-elsay" id="ip-elsay" aria-live="polite"></p>
+        <h3 class="ip-sub">Generating (feeding)</h3>
+        <ol class="ip-cycle"><li>Wood feeds Fire: it burns.</li><li>Fire makes Earth: it leaves ash.</li><li>Earth bears Metal: ores form in it.</li><li>Metal carries Water: it gathers as condensation (and minerals enrich springs).</li><li>Water nourishes Wood: it makes plants grow.</li></ol>
+        <h3 class="ip-sub">Controlling (checking)</h3>
+        <ol class="ip-cycle"><li>Wood parts Earth: roots break up the soil.</li><li>Earth contains Water: banks and dams hold it.</li><li>Water quenches Fire.</li><li>Fire melts Metal.</li><li>Metal cuts Wood.</li></ol>
+      </div>
+    </div>
+    <div class="scroll">
+      <table class="ip-eltable" id="ip-eltable">
+        <thead><tr><th scope="col">Element</th><th scope="col">Colours</th><th scope="col">Shapes</th><th scope="col">Materials</th><th scope="col">Directions</th><th scope="col">Season</th></tr></thead>
+        <tbody></tbody>
+      </table>
+    </div>
+    <p class="help">To strengthen an area, people commonly add its own element and the one that feeds it, and go easy on the element that controls it. Sources differ a little on materials: stone, for example, is Earth in some books and Metal in others.</p>
+  </section>
+
+  <section class="panel" id="kua" aria-labelledby="h-kua">
+    <div class="panel-head"><span class="step">4</span><h2 id="h-kua">Kua number</h2></div>
+    <p class="help">The Kua number comes from the year you were born, counted the traditional way: the solar year begins at Li Chun, “the start of spring”, around 4 February. Traditional texts give the formula in two versions, one traditionally used for people assigned male at birth (shown here as Version A) and one for people assigned female at birth (Version B). Both are shown side by side, and the page never asks which applies.</p>
+    <div class="fgrid">
+      <label>Date of birth <input type="date" id="ip-birth" min="1900-01-01" max="2100-12-31"></label>
+    </div>
+    <p class="why" id="ip-birth-why" role="alert"></p>
+    <div id="ip-lc"></div>
+    <fieldset class="ip-lcday" id="ip-lcday" hidden>
+      <legend>Born on the day of Li Chun: was it before or after the moment above?</legend>
+      <label class="ip-check"><input type="radio" name="ip-lcside" value="before"> Before</label>
+      <label class="ip-check"><input type="radio" name="ip-lcside" value="after" checked> At or after</label>
+    </fieldset>
+    <div class="ip-kuas" id="ip-kuas"></div>
+    <p class="ip-facing" id="ip-kua-door"></p>
+  </section>
+
+  <section class="panel" id="about" aria-labelledby="h-about">
+    <div class="panel-head"><span class="step">5</span><h2 id="h-about">About</h2></div>
+    <div class="explain">
+      <p><b>Two schools.</b> The <b>Black Hat</b> school (also called BTB, or Western feng shui), developed by Thomas Lin Yun and popularised in the United States from the 1970s and 1980s, lines the bagua up with the front door: whatever the compass says, the wall with the door always holds Knowledge, Career and Helpful People, from left to right as you walk in. It can be laid over a whole home or over a single room, using that room’s door. The <b>classical compass</b> schools, such as Eight Mansions and Flying Stars, use the real compass directions instead, so each area sits where its direction is. The two methods only agree when the front door is on the north side of the home. Neither is “right”; pick one and use it consistently.</p>
+      <p><b>The areas.</b> Each of the eight outer areas belongs to a trigram of the I Ching in the Later Heaven arrangement (attributed to King Wen), which fixes its compass direction, element, family member, season and body part. The family members, body parts and seasons follow the traditional commentary on the trigrams; the centre has no trigram, so it has none of these. The names of the areas, and the colours and things suggested for them, vary from book to book. This page uses one common set and keeps it the same everywhere.</p>
+      <p><b>Lo Shu.</b> The Lo Shu is the 3 × 3 magic square whose rows, columns and diagonals each add up to 15. Each area takes the number in its place. Chinese diagrams put south at the top, so it reads:</p>
+      <div class="scroll"><table class="ip-loshu" aria-label="The Lo Shu square, south at the top">
+        <tr><td>4<span>SE</span></td><td>9<span>S</span></td><td>2<span>SW</span></td></tr>
+        <tr><td>3<span>E</span></td><td>5<span>Centre</span></td><td>7<span>W</span></td></tr>
+        <tr><td>8<span>NE</span></td><td>1<span>N</span></td><td>6<span>NW</span></td></tr>
+      </table></div>
+      <p><b>The Kua formula.</b> Take the solar year (the year before, if the birthday falls before Li Chun) and add up its digits until one digit is left. For Version A, take that digit from 11, and if you get 10, add those digits too (10 becomes 1). For Version B, add 4 to it, and if the total is more than 9, add its digits too. If either comes to 5, which has no trigram of its own, Version A uses 2 and Version B uses 8. This matches the familiar shortcut that uses only the last two digits (for 1900 to 1999, take that digit from 10, or add 5; from 2000, take it from 9, or add 6), and works for any year. The page’s results were checked against the standard tables for every year from 1900 to 2099.</p>
+      <p><b>Groups and directions.</b> Kua numbers 1, 3, 4 and 9 make up the East group, whose favourable directions are north, south, east and southeast; 2, 6, 7 and 8 make up the West group, with west, northwest, southwest and northeast. Each number’s eight directions come from the Eight Mansions method: changing the lines of its trigram one at a time, top, middle, bottom, middle and so on, steps through them in a fixed order.</p>
+      <p><b>Li Chun.</b> Li Chun is the moment the Sun reaches 315° along the ecliptic, measured from the spring equinox, halfway between the winter solstice and the spring equinox. The exact day varies from year to year, falling on 3, 4 or 5 February. The page works it out from the Sun’s position, to within a minute or two, and gives the date in China Standard Time (UTC+8), as the Chinese almanac does. Some practitioners simply use 4 February every year, and some use the moment in their own time zone, so a birthday right at the turn can be read either way.</p>
+      <p>This page describes traditional associations as they are commonly taught. It doesn’t claim anything about their effects, and it isn’t a substitute for a consultation.</p>
+    </div>
+  </section>
+
+  <footer>
+    <span>Everything in Its Place · <a href="../">all AdequateFootwear tools</a></span>
+    <span class="mono">A place for everything</span>
+  </footer>
+</main>
+
+<script>
+(() => {
+'use strict';
+const $ = (id) => document.getElementById(id);
+const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+const reduced = () => !!(window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches);
+const SVGNS = 'http://www.w3.org/2000/svg';
+const mk = (tag, attrs, parent) => { const e = document.createElementNS(SVGNS, tag); for (const k in attrs) e.setAttribute(k, attrs[k]); if (parent) parent.appendChild(e); return e; };
+const mod = (a, n) => ((a % n) + n) % n;
+const has = (o, k) => typeof k === 'string' && Object.prototype.hasOwnProperty.call(o, k);
+
+/* Li Chun: the moment the Sun's apparent geocentric longitude reaches 315 degrees */
+const LICHUN = (() => {
+  // Earth's heliocentric longitude, VSOP87 (truncated, the larger terms as tabulated by Meeus), units 1e-8 rad
+  const L0 = [[175347046,0,0],[3341656,4.6692568,6283.07585],[34894,4.6261,12566.1517],[3497,2.7441,5753.3849],[3418,2.8289,3.5231],[3136,3.6277,77713.7715],[2676,4.4181,7860.4194],[2343,6.1352,3930.2097],[1324,0.7425,11506.7698],[1273,2.0371,529.691],[1199,1.1096,1577.3435],[990,5.233,5884.927],[902,2.045,26.298],[857,3.508,398.149],[780,1.179,5223.694],[753,2.533,5507.553],[505,4.583,18849.228],[492,4.205,775.523],[357,2.92,0.067],[317,5.849,11790.629],[284,1.899,796.298],[271,0.315,10977.079],[243,0.345,5486.778],[206,4.806,2544.314],[205,1.869,5573.143],[202,2.458,6069.777],[156,0.833,213.299],[132,3.411,2942.463],[126,1.083,20.775],[115,0.645,0.98],[103,0.636,4694.003],[102,0.976,15720.839],[102,4.267,7.114],[99,6.21,2146.17],[98,0.68,155.42],[86,5.98,161000.69],[85,1.3,6275.96],[85,3.67,71430.7],[80,1.81,17260.15]];
+  const L1 = [[628331966747,0,0],[206059,2.678235,6283.07585],[4303,2.6351,12566.1517],[425,1.59,3.523],[119,5.796,26.298],[109,2.966,1577.344],[93,2.59,18849.23],[72,1.14,529.69],[68,1.87,398.15],[67,4.41,5507.55],[59,2.89,5223.69],[56,2.17,155.42],[45,0.4,796.3],[36,0.47,775.52],[29,2.65,7.11],[21,5.34,0.98],[19,1.85,5486.78],[19,4.97,213.3],[17,2.99,6275.96],[16,0.03,2544.31]];
+  const L2 = [[52919,0,0],[8720,1.0721,6283.0758],[309,0.867,12566.152],[27,0.05,3.52],[16,5.19,26.3],[16,3.68,155.42],[10,0.76,18849.23],[9,2.06,77713.77],[7,0.83,775.52],[5,4.66,1577.34]];
+  const L3 = [[289,5.844,6283.076],[35,0,0],[17,5.49,12566.15]];
+  const L4 = [[114,3.142,0]];
+  const ser = (S, t) => S.reduce((s, [a, b, c]) => s + a * Math.cos(b + c * t), 0);
+  const D2R = Math.PI / 180;
+  function apparentLongitude(jde) { // degrees, true equinox of date
+    const tau = (jde - 2451545) / 365250, T = tau * 10;
+    const L = (ser(L0, tau) + tau * (ser(L1, tau) + tau * (ser(L2, tau) + tau * (ser(L3, tau) + tau * ser(L4, tau))))) / 1e8;
+    let lon = L / D2R + 180; // geocentric, from the heliocentric longitude of the Earth
+    lon -= 0.09033 / 3600; // VSOP87 to FK5
+    const om = (125.04452 - 1934.136261 * T) * D2R, Ls = (280.4665 + 36000.7698 * T) * D2R, Lm = (218.3165 + 481267.8813 * T) * D2R;
+    const dpsi = -17.20 * Math.sin(om) - 1.32 * Math.sin(2 * Ls) - 0.23 * Math.sin(2 * Lm) + 0.21 * Math.sin(2 * om); // nutation, arcseconds
+    const M = (357.52911 + 35999.05029 * T) * D2R, e = 0.016708634 - 0.000042037 * T;
+    const R = 1.000001018 * (1 - e * e) / (1 + e * Math.cos(M + (1.914602 * Math.sin(M)) * D2R)); // AU, near enough for aberration
+    lon += (dpsi - 20.4898 / R) / 3600;
+    return ((lon % 360) + 360) % 360;
+  }
+  function deltaT(y) { // seconds, Espenak & Meeus (2006) polynomials
+    let t;
+    if (y < 1900) { t = y - 1860; return 7.62 + 0.5737 * t - 0.251754 * t * t + 0.01680668 * t ** 3 - 0.0004473624 * t ** 4 + t ** 5 / 233174; }
+    if (y < 1920) { t = y - 1900; return -2.79 + 1.494119 * t - 0.0598939 * t * t + 0.0061966 * t ** 3 - 0.000197 * t ** 4; }
+    if (y < 1941) { t = y - 1920; return 21.20 + 0.84493 * t - 0.076100 * t * t + 0.0020936 * t ** 3; }
+    if (y < 1961) { t = y - 1950; return 29.07 + 0.407 * t - t * t / 233 + t ** 3 / 2547; }
+    if (y < 1986) { t = y - 1975; return 45.45 + 1.067 * t - t * t / 260 - t ** 3 / 718; }
+    if (y < 2005) { t = y - 2000; return 63.86 + 0.3345 * t - 0.060374 * t * t + 0.0017275 * t ** 3 + 0.000651814 * t ** 4 + 0.00002373599 * t ** 5; }
+    if (y < 2050) { t = y - 2000; return 62.92 + 0.32217 * t + 0.005589 * t * t; }
+    return -20 + 32 * ((y - 1820) / 100) ** 2 - 0.5628 * (2150 - y);
+  }
+  function moment(year) { // Date (UTC instant) of Li Chun in that Gregorian year
+    const jd0 = Date.UTC(year, 1, 4) / 86400000 + 2440587.5;
+    let jde = jd0 + deltaT(year + 0.09) / 86400;
+    for (let i = 0; i < 6; i++) {
+      let d = apparentLongitude(jde) - 315; if (d > 180) d -= 360; if (d < -180) d += 360;
+      jde -= d / 1.0146;
+    }
+    const jd = jde - deltaT(year + 0.09) / 86400;
+    return new Date(Math.round((jd - 2440587.5) * 86400000));
+  }
+  return { moment, apparentLongitude, deltaT };
+})();
+if (typeof module !== 'undefined') module.exports = LICHUN;
+
+/* ---------- sample floor plans (original drawings, all made up) ----------
+   Each plan is drawn once, in metres, with the front door on its bottom wall; the page turns
+   or mirrors it to put the door on the wall the solver picks.
+   rooms: [name, x, y, width, depth], tiling the whole rectangle (a room may take more than one)
+   walls: inner walls, [x1, y1, x2, y2], with gaps left for doorways
+   open:  open-plan edges between rooms, drawn dashed
+   furn:  furniture outlines, [x, y, width, depth], drawn faintly
+   door:  the front door, [distance from the left corner, width] along the bottom wall */
+const KINDS = [
+  ['studio', 'Studio'],
+  ['one', 'One-bedroom apartment'],
+  ['two', 'Two-bedroom apartment'],
+  ['house', 'Small house'],
+  ['office', 'Office'],
+  ['room', 'A single room'],
+  ['rect', 'A plain rectangle'],
+];
+const PLANS = [
+  { id: 'studio-a', kind: 'studio', name: 'a studio with the bath and kitchen along the front', W: 6.4, D: 7.2, door: [5.0, 0.9],
+    rooms: [['Sleeping area', 0, 0, 3.0, 4.4], ['Living area', 3.0, 0, 3.4, 4.4], ['Bath', 0, 4.4, 2.4, 2.8], ['Kitchen', 2.4, 4.4, 2.0, 2.8], ['Entry', 4.4, 4.4, 2.0, 2.8]],
+    walls: [[0, 4.4, 1.4, 4.4], [2.2, 4.4, 2.4, 4.4], [2.4, 4.4, 2.4, 7.2]],
+    open: [[3.0, 0, 3.0, 4.4], [2.4, 4.4, 6.4, 4.4], [4.4, 4.4, 4.4, 7.2]] },
+  { id: 'studio-b', kind: 'studio', name: 'a long, narrow studio', W: 4.2, D: 9.6, door: [2.6, 0.9],
+    rooms: [['Sleeping area', 0, 0, 4.2, 3.2], ['Living area', 0, 3.2, 4.2, 3.0], ['Kitchen', 0, 6.2, 1.9, 3.4], ['Bath', 1.9, 6.2, 2.3, 1.8], ['Entry', 1.9, 8.0, 2.3, 1.6]],
+    walls: [[0, 3.2, 1.6, 3.2], [1.9, 6.2, 4.2, 6.2], [1.9, 6.2, 1.9, 8.0], [1.9, 8.0, 2.9, 8.0], [3.7, 8.0, 4.2, 8.0]],
+    open: [[1.6, 3.2, 4.2, 3.2], [0, 6.2, 1.9, 6.2], [1.9, 8.0, 1.9, 9.6]] },
+  { id: 'one-a', kind: 'one', name: 'a one-bedroom apartment with the bedroom, bath and kitchen across the back', W: 9.6, D: 7.2, door: [6.6, 0.9],
+    rooms: [['Bedroom', 0, 0, 4.2, 3.0], ['Bath', 4.2, 0, 1.8, 3.0], ['Kitchen', 6.0, 0, 3.6, 3.0], ['Living room', 0, 3.0, 6.0, 4.2], ['Dining', 6.0, 3.0, 3.6, 2.6], ['Hall', 6.0, 5.6, 3.6, 1.6]],
+    walls: [[4.2, 0, 4.2, 3.0], [0, 3.0, 3.2, 3.0], [4.2, 3.0, 4.6, 3.0], [5.4, 3.0, 6.0, 3.0], [6.0, 0, 6.0, 3.0], [6.0, 5.6, 6.0, 7.2], [6.0, 3.0, 6.6, 3.0], [8.4, 3.0, 9.6, 3.0]],
+    open: [[6.6, 3.0, 8.4, 3.0], [6.0, 3.0, 6.0, 5.6], [6.0, 5.6, 9.6, 5.6]] },
+  { id: 'one-b', kind: 'one', name: 'a one-bedroom apartment with the kitchen by the front door', W: 8.0, D: 8.4, door: [5.6, 0.9],
+    rooms: [['Bedroom', 0, 0, 4.6, 3.8], ['Bath', 4.6, 0, 3.4, 2.4], ['Hall', 4.6, 2.4, 3.4, 1.4], ['Living room', 0, 3.8, 5.0, 4.6], ['Kitchen', 5.0, 3.8, 3.0, 2.6], ['Entry', 5.0, 6.4, 3.0, 2.0]],
+    walls: [[4.6, 0, 4.6, 2.6], [4.6, 3.4, 4.6, 3.8], [4.6, 2.4, 5.4, 2.4], [6.2, 2.4, 8.0, 2.4], [0, 3.8, 4.6, 3.8]],
+    open: [[4.6, 3.8, 8.0, 3.8], [5.0, 3.8, 5.0, 8.4], [5.0, 6.4, 8.0, 6.4]] },
+  { id: 'two-a', kind: 'two', name: 'a two-bedroom apartment with a hall between the bedrooms', W: 10.0, D: 8.0, door: [8.4, 0.9],
+    rooms: [['Bedroom 1', 0, 0, 3.8, 3.6], ['Bath', 3.8, 0, 2.4, 3.6], ['Bedroom 2', 6.2, 0, 3.8, 3.6], ['Living room', 0, 3.6, 5.0, 4.4], ['Hall', 5.0, 3.6, 5.0, 1.2], ['Kitchen', 5.0, 4.8, 2.8, 3.2], ['Entry', 7.8, 4.8, 2.2, 3.2]],
+    walls: [[3.8, 0, 3.8, 3.6], [6.2, 0, 6.2, 3.6], [0, 3.6, 2.6, 3.6], [3.4, 3.6, 5.2, 3.6], [6.0, 3.6, 6.6, 3.6], [7.4, 3.6, 10.0, 3.6]],
+    open: [[5.0, 3.6, 5.0, 8.0], [5.0, 4.8, 10.0, 4.8], [7.8, 4.8, 7.8, 8.0]] },
+  { id: 'two-b', kind: 'two', name: 'a two-bedroom apartment with a bedroom at each end', W: 12.0, D: 7.0, door: [6.8, 0.9],
+    rooms: [['Bedroom 1', 0, 0, 3.6, 4.2], ['Bath', 0, 4.2, 3.6, 2.8], ['Living room', 3.6, 0, 4.8, 4.2], ['Kitchen', 3.6, 4.2, 2.6, 2.8], ['Entry', 6.2, 4.2, 2.2, 2.8], ['Bedroom 2', 8.4, 0, 3.6, 4.6], ['Study', 8.4, 4.6, 3.6, 2.4]],
+    walls: [[3.6, 0, 3.6, 3.0], [3.6, 3.8, 3.6, 7.0], [0, 4.2, 2.4, 4.2], [3.2, 4.2, 3.6, 4.2], [8.4, 0, 8.4, 3.2], [8.4, 4.0, 8.4, 5.0], [8.4, 5.8, 8.4, 7.0], [8.4, 4.6, 12.0, 4.6]],
+    open: [[3.6, 4.2, 8.4, 4.2], [6.2, 4.2, 6.2, 7.0]] },
+  { id: 'house-a', kind: 'house', name: 'a small house with a dining room and a laundry', W: 11.0, D: 9.0, door: [5.8, 1.0],
+    rooms: [['Bedroom 1', 0, 0, 4.0, 3.8], ['Bath', 4.0, 0, 2.6, 3.8], ['Bedroom 2', 6.6, 0, 4.4, 3.8], ['Living room', 0, 3.8, 5.0, 5.2], ['Hall', 5.0, 3.8, 6.0, 1.2], ['Dining', 5.0, 5.0, 2.6, 2.4], ['Entry', 5.0, 7.4, 2.6, 1.6], ['Kitchen', 7.6, 5.0, 3.4, 2.6], ['Laundry', 7.6, 7.6, 3.4, 1.4]],
+    walls: [[4.0, 0, 4.0, 3.8], [6.6, 0, 6.6, 3.8], [0, 3.8, 2.8, 3.8], [3.6, 3.8, 5.2, 3.8], [6.0, 3.8, 7.0, 3.8], [7.8, 3.8, 11.0, 3.8], [5.0, 7.4, 5.0, 9.0], [7.6, 7.4, 7.6, 9.0], [7.6, 7.6, 8.6, 7.6], [9.4, 7.6, 11.0, 7.6]],
+    open: [[5.0, 3.8, 5.0, 7.4], [5.0, 5.0, 11.0, 5.0], [7.6, 5.0, 7.6, 7.4], [5.0, 7.4, 7.6, 7.4]] },
+  { id: 'house-b', kind: 'house', name: 'a small house with three bedrooms', W: 9.0, D: 11.0, door: [6.6, 1.0],
+    rooms: [['Bedroom 1', 0, 0, 4.2, 3.6], ['Bedroom 2', 4.2, 0, 4.8, 3.6], ['Bath', 0, 3.6, 2.6, 2.6], ['Hall', 2.6, 3.6, 2.4, 2.6], ['Bedroom 3', 5.0, 3.6, 4.0, 2.6], ['Living room', 0, 6.2, 5.4, 4.8], ['Kitchen', 5.4, 6.2, 3.6, 2.6], ['Entry', 5.4, 8.8, 3.6, 2.2]],
+    walls: [[4.2, 0, 4.2, 3.6], [0, 3.6, 2.8, 3.6], [3.6, 3.6, 4.3, 3.6], [5.0, 3.6, 9.0, 3.6], [2.6, 3.6, 2.6, 4.4], [2.6, 5.2, 2.6, 6.2], [5.0, 3.6, 5.0, 4.6], [5.0, 5.4, 5.0, 6.2], [0, 6.2, 2.6, 6.2], [5.0, 6.2, 9.0, 6.2]],
+    open: [[2.6, 6.2, 5.0, 6.2], [5.4, 6.2, 5.4, 11.0], [5.4, 8.8, 9.0, 8.8]] },
+  { id: 'office-a', kind: 'office', name: 'an office suite with a meeting room and open desks', W: 12.0, D: 8.0, door: [9.4, 1.0],
+    rooms: [['Meeting room', 0, 0, 4.2, 3.4], ['Office', 4.2, 0, 3.4, 3.4], ['Store', 7.6, 0, 2.0, 3.4], ['WC', 9.6, 0, 2.4, 3.4], ['Open desks', 0, 3.4, 7.6, 4.6], ['Kitchenette', 7.6, 3.4, 4.4, 2.2], ['Reception', 7.6, 5.6, 4.4, 2.4]],
+    walls: [[4.2, 0, 4.2, 3.4], [7.6, 0, 7.6, 3.4], [9.6, 0, 9.6, 3.4], [0, 3.4, 2.6, 3.4], [3.6, 3.4, 5.0, 3.4], [5.8, 3.4, 8.0, 3.4], [8.8, 3.4, 10.4, 3.4], [11.2, 3.4, 12.0, 3.4]],
+    open: [[7.6, 3.4, 7.6, 8.0], [7.6, 5.6, 12.0, 5.6]] },
+  { id: 'office-b', kind: 'office', name: 'an office with a corridor and two private offices', W: 9.0, D: 12.0, door: [5.6, 1.2],
+    rooms: [['Office 1', 0, 0, 4.5, 4.0], ['Office 2', 4.5, 0, 4.5, 4.0], ['Corridor', 0, 4.0, 9.0, 1.4], ['Meeting room', 0, 5.4, 3.6, 4.0], ['Open desks', 3.6, 5.4, 5.4, 4.0], ['WC', 0, 9.4, 1.6, 2.6], ['Kitchen', 1.6, 9.4, 2.0, 2.6], ['Reception', 3.6, 9.4, 5.4, 2.6]],
+    walls: [[4.5, 0, 4.5, 4.0], [0, 4.0, 3.0, 4.0], [3.8, 4.0, 5.2, 4.0], [6.0, 4.0, 9.0, 4.0], [0, 5.4, 1.4, 5.4], [2.2, 5.4, 3.6, 5.4], [3.6, 5.4, 3.6, 9.4], [0, 9.4, 3.6, 9.4], [1.6, 9.4, 1.6, 10.2], [1.6, 11.0, 1.6, 12.0]],
+    open: [[3.6, 5.4, 9.0, 5.4], [3.6, 9.4, 9.0, 9.4], [3.6, 9.4, 3.6, 12.0]] },
+  { id: 'room-a', kind: 'room', name: 'a bedroom', W: 4.0, D: 4.6, door: [2.9, 0.8],
+    rooms: [['Bed', 0, 0, 2.6, 2.6], ['Wardrobe', 2.6, 0, 1.4, 2.6], ['Desk', 0, 2.6, 1.8, 2.0], ['Open floor', 1.8, 2.6, 2.2, 2.0]],
+    walls: [], open: [],
+    furn: [[0.5, 0.1, 1.6, 2.0], [0.62, 0.2, 0.6, 0.35], [1.38, 0.2, 0.6, 0.35], [3.4, 0.3, 0.55, 1.9], [0.1, 3.85, 1.3, 0.65], [0.5, 3.3, 0.5, 0.45]] },
+  { id: 'room-b', kind: 'room', name: 'a living room', W: 5.6, D: 4.4, door: [4.4, 0.8],
+    rooms: [['Sofa', 0, 0, 3.4, 2.2], ['Reading chair', 3.4, 0, 2.2, 2.2], ['Bookshelf', 0, 2.2, 1.6, 2.2], ['Rug', 1.6, 2.2, 2.4, 2.2], ['Doorway', 4.0, 2.2, 1.6, 2.2]],
+    walls: [], open: [],
+    furn: [[0.4, 0.1, 2.4, 0.85], [4.1, 0.25, 1.0, 1.0], [0.1, 2.5, 0.45, 1.7], [1.5, 1.3, 2.4, 1.8], [2.0, 1.75, 1.4, 0.6]] },
+];
+
+/* ---------- the traditional associations (one consistent set, used everywhere on the page) ---------- */
+// trigram lines run from the bottom line up: 1 = solid (yang), 0 = broken (yin)
+const TRI = {
+  qian: { name: 'Qián', en: 'Heaven', lines: [1, 1, 1] },
+  dui: { name: 'Duì', en: 'Lake', lines: [1, 1, 0] },
+  li: { name: 'Lí', en: 'Fire', lines: [1, 0, 1] },
+  zhen: { name: 'Zhèn', en: 'Thunder', lines: [1, 0, 0] },
+  xun: { name: 'Xùn', en: 'Wind', lines: [0, 1, 1] },
+  kan: { name: 'Kǎn', en: 'Water', lines: [0, 1, 0] },
+  gen: { name: 'Gèn', en: 'Mountain', lines: [0, 0, 1] },
+  kun: { name: 'Kūn', en: 'Earth', lines: [0, 0, 0] },
+};
+const lineWords = (l) => {
+  const w = (b) => (b ? 'solid' : 'broken');
+  return `from the top: ${w(l[2])}, ${w(l[1])}, ${w(l[0])}`;
+};
+const DIRS = ['N', 'NE', 'E', 'SE', 'S', 'SW', 'W', 'NW'];
+const DIRNAME = { N: 'North', NE: 'Northeast', E: 'East', SE: 'Southeast', S: 'South', SW: 'Southwest', W: 'West', NW: 'Northwest', C: 'Centre' };
+const dirLower = (k) => (k === 'C' ? 'the centre' : DIRNAME[k].toLowerCase());
+const POINTS16 = ['north', 'north-northeast', 'northeast', 'east-northeast', 'east', 'east-southeast', 'southeast', 'south-southeast', 'south', 'south-southwest', 'southwest', 'west-southwest', 'west', 'west-northwest', 'northwest', 'north-northwest'];
+
+const EL = {
+  wood: { name: 'Wood', colours: [['green', '#3A8A4E'], ['teal', '#2A8C8C'], ['wood brown', '#8A5A33']], shapes: 'Tall, upright shapes: columns, rectangles standing on end, stripes', materials: 'Wood, living plants, bamboo, cotton and other natural fibres', dirs: ['E', 'SE'], season: 'Spring', feeds: 'fire', controls: 'earth' },
+  fire: { name: 'Fire', colours: [['red', '#C8322B'], ['orange', '#E07B28'], ['bright pink', '#D94C8C'], ['purple', '#7B3F98']], shapes: 'Triangles, points, pyramids, stars and zigzags', materials: 'Candles, lamps and lighting, fireplaces, sunlight; in the Black Hat school, also leather, fur and animal prints', dirs: ['S'], season: 'Summer', feeds: 'earth', controls: 'metal' },
+  earth: { name: 'Earth', colours: [['yellow', '#E2B93B'], ['ochre', '#B7862C'], ['sand', '#D8C39A'], ['terracotta', '#B5603A']], shapes: 'Squares, and low, flat, wide shapes', materials: 'Ceramics, clay, earthenware, brick and tile, and (in many books) stone and crystals', dirs: ['C', 'SW', 'NE'], season: 'Late summer, and the turn of each season', feeds: 'metal', controls: 'water' },
+  metal: { name: 'Metal', colours: [['white', '#FFFFFF'], ['grey', '#9CA3A8'], ['silver', '#C7CCD1'], ['gold', '#C9A13B']], shapes: 'Circles, ovals, arches and domes', materials: 'All metals; in some books, also stone and rock', dirs: ['W', 'NW'], season: 'Autumn', feeds: 'water', controls: 'wood' },
+  water: { name: 'Water', colours: [['black', '#151515'], ['deep blue', '#1D3F7A']], shapes: 'Wavy, flowing and irregular shapes', materials: 'Water itself, glass, mirrors and other reflective surfaces', dirs: ['N'], season: 'Winter', feeds: 'wood', controls: 'fire' },
+};
+const EL_ORDER = ['wood', 'fire', 'earth', 'metal', 'water'];
+const fedBy = (e) => EL_ORDER.find((x) => EL[x].feeds === e);
+const ctlBy = (e) => EL_ORDER.find((x) => EL[x].controls === e);
+const elDirs = (e) => EL[e].dirs.map((k) => (k === 'C' ? 'centre' : DIRNAME[k].toLowerCase())).join(', ');
+
+const AREAS = {
+  SE: { name: 'Wealth and Prosperity', short: ['Wealth'], aka: ['Prosperity', 'Abundance', 'Fortunate Blessings'], asp: 'Abundance, prosperity and the flow of resources, and gratitude for what you have.', tri: 'xun', el: 'wood', lo: 4, season: 'Late spring into early summer', family: 'Eldest daughter', body: 'Thighs', colours: 'Purple, gold and red, with the greens of Wood',
+    items: ['Healthy, thriving plants, especially round-leafed ones such as a jade plant or a money tree', 'A small fountain or other moving water (Water feeds Wood)', 'A bowl of coins, or another symbol of plenty', 'Purple, gold or deep green accents', 'Crystals and gemstones such as citrine, amethyst, green aventurine or pyrite', 'Artwork of lush, growing landscapes'],
+    avoid: 'Clutter, dead or dying plants and leaking taps are commonly said to drain this area.' },
+  S: { name: 'Fame and Reputation', short: ['Fame'], aka: ['Recognition', 'Reputation', 'Fame'], asp: 'How you are seen and remembered: recognition, reputation and integrity.', tri: 'li', el: 'fire', lo: 9, season: 'Summer', family: 'Middle daughter', body: 'Eyes', colours: 'Red, orange and other bright, warm shades',
+    items: ['Good lighting: lamps, candles or a sunny window', 'Awards, certificates and diplomas', 'Red accents, and triangular or pointed shapes', 'Images of people or animals you admire, or of the sun', 'Plants, since Wood feeds Fire', 'Gemstones such as carnelian, red jasper or garnet'],
+    avoid: 'Large water features and a lot of black are often kept out of this area, since Water quenches Fire.' },
+  SW: { name: 'Love and Relationships', short: ['Love'], aka: ['Partnership', 'Marriage', 'Love and Marriage'], asp: 'Partnership, romance and close relationships, including your relationship with yourself.', tri: 'kun', el: 'earth', lo: 2, season: 'Late summer into early autumn', family: 'Mother', body: 'Belly', colours: 'Pink, red and white, with earth tones such as peach and sand',
+    items: ['Pairs of things: two candles, two cushions, two chairs or a pair of figures', 'Artwork of couples or pairs, rather than lone figures', 'Fresh flowers, such as peonies or roses', 'Ceramics, earthenware and square shapes (Earth)', 'Rose quartz', 'Candles or soft lighting (Fire feeds Earth)'],
+    avoid: 'Images of solitary figures, and things set out in odd numbers, are commonly moved elsewhere.' },
+  E: { name: 'Family', short: ['Family'], aka: ['Family and Community', 'Health and Family', 'Ancestors and Elders', 'New Beginnings'], asp: 'Family, ancestors and community, and the strength and support they give you; also new beginnings.', tri: 'zhen', el: 'wood', lo: 3, season: 'Spring', family: 'Eldest son', body: 'Feet', colours: 'Greens, with blues and teals',
+    items: ['Family photographs and heirlooms', 'Healthy plants and fresh flowers', 'Wooden furniture, and tall, upright shapes or stripes', 'Green and blue accents', 'Crystals such as green aventurine, jade or malachite', 'A water feature or artwork of water (Water feeds Wood)'],
+    avoid: 'Lots of metal and sharp-edged things are often kept to a minimum here, since Metal cuts Wood.' },
+  C: { name: 'Health', short: ['Health'], aka: ['Centre', 'Tai Chi', 'Unity', 'Well-being'], asp: 'Overall health and balance. The centre touches every other area and ties them together.', tri: null, el: 'earth', lo: 5, season: null, family: null, body: null, colours: 'Yellow, and earth tones such as ochre, sand and terracotta',
+    items: ['Open, uncluttered space', 'Ceramics, earthenware and square shapes', 'Yellow and earthy accents', 'A bowl of fruit, or a low, wide bowl', 'Crystals such as clear quartz, citrine or yellow calcite', 'Good light (Fire feeds Earth)'],
+    avoid: 'Heavy furniture and clutter in the middle of the space are commonly avoided.' },
+  W: { name: 'Children and Creativity', short: ['Children'], aka: ['Creativity', 'Children', 'Completion', 'Joy'], asp: 'Creativity, children and projects, seeing things through to completion, and joy and playfulness.', tri: 'dui', el: 'metal', lo: 7, season: 'Autumn', family: 'Youngest daughter', body: 'Mouth', colours: 'White, pastels and metallics',
+    items: ['Children’s artwork, or your own creative projects', 'Metal objects and round shapes: bowls, frames or sculptures', 'A metal wind chime', 'Playful things: toys, games, musical instruments', 'White or pastel accents', 'Crystals such as clear quartz, moonstone or selenite'],
+    avoid: 'Lots of red and fiery colours are often toned down here, since Fire melts Metal.' },
+  NE: { name: 'Knowledge and Self-Cultivation', short: ['Knowledge'], aka: ['Wisdom', 'Knowledge', 'Self-Knowledge', 'Spiritual Growth'], asp: 'Learning, study, contemplation and self-understanding.', tri: 'gen', el: 'earth', lo: 8, season: 'Late winter into early spring', family: 'Youngest son', body: 'Hands', colours: 'Deep blue, black and green, with earth tones such as sand and beige',
+    items: ['Books, and a comfortable place to read or study', 'A quiet spot for meditation or reflection', 'Images of mountains', 'Ceramics, stone and square shapes (Earth)', 'Deep blue or earthy accents', 'Crystals such as amethyst, lapis lazuli or sodalite'],
+    avoid: 'Noise and clutter are commonly kept out of this area.' },
+  N: { name: 'Career and Life Path', short: ['Career'], aka: ['Career', 'Life Path', 'Journey'], asp: 'Work, purpose and the path your life is taking.', tri: 'kan', el: 'water', lo: 1, season: 'Winter', family: 'Middle son', body: 'Ears', colours: 'Black and deep blue',
+    items: ['A water feature, such as a small fountain or an aquarium', 'Mirrors and glass', 'Artwork of water: rivers, lakes or the sea', 'Wavy, flowing shapes', 'Black or deep blue accents', 'Metal objects (Metal feeds Water)', 'Gemstones such as black tourmaline, obsidian or hematite'],
+    avoid: 'Lots of earthy colours, ceramics and heavy square shapes are often avoided here, since Earth contains Water.' },
+  NW: { name: 'Helpful People and Travel', short: ['Helpful', 'People'], aka: ['Benefactors', 'Mentors', 'Friends and Travel'], asp: 'Mentors, friends, benefactors and other support, and travel.', tri: 'qian', el: 'metal', lo: 6, season: 'Late autumn into early winter', family: 'Father', body: 'Head', colours: 'Grey, white and silver',
+    items: ['Photos or names of mentors, friends and people who have helped you', 'Pictures or souvenirs of places you have been or would like to go', 'Metal objects and round shapes', 'Grey, white or silver accents', 'Images of spiritual or protective figures, if they mean something to you', 'Crystals such as clear quartz or hematite'],
+    avoid: 'Lots of red and fiery colours are often toned down here, since Fire melts Metal.' },
+};
+// where each area sits in the front-door method, standing in the doorway looking in
+const DOORPOS = { SE: 'the far left corner', S: 'the middle of the far wall', SW: 'the far right corner', E: 'the middle of the left side', C: 'the centre', W: 'the middle of the right side', NE: 'the near left corner, along the door wall', N: 'the middle of the door wall', NW: 'the near right corner, along the door wall' };
+// the nine squares with the door wall at the bottom (front-door method)
+const CANON = [['SE', 'S', 'SW'], ['E', 'C', 'W'], ['NE', 'N', 'NW']];
+
+const ITEMS = [
+  { n: 'Living plants', a: ['E', 'SE'], why: 'Plants carry the Wood element, so they are most at home in the two Wood areas, Family and Wealth. They are also suggested for Fame, because Wood feeds Fire. Healthy plants with soft, rounded leaves are generally preferred, and dead or dying ones are taken away.' },
+  { n: 'Fresh flowers', a: ['SW', 'E'], why: 'Flowers are a classic suggestion for Love and Relationships, often in pairs, and as living things they also suit Family, a Wood area. They are kept fresh and replaced when they fade.' },
+  { n: 'A water feature (fountain or aquarium)', a: ['N', 'SE'], why: 'Water is the element of Career and Life Path, and Water feeds Wood, so moving water is also suggested for Wealth. It is commonly kept out of the Fame area, since Water quenches Fire, and out of bedrooms.' },
+  { n: 'A mirror', a: ['N'], why: 'Mirrors count as Water, the element of Career and Life Path. A common caution is not to hang one facing a bed, or straight opposite the front door.' },
+  { n: 'A wind chime', a: ['W', 'NW'], why: 'A metal chime carries the Metal element, which belongs to Children and Creativity and to Helpful People and Travel. Chimes are also often hung near an entrance.' },
+  { n: 'Candles and lamps', a: ['S', 'SW'], why: 'Light and flame are Fire, the element of Fame and Reputation. Since Fire feeds Earth, candles (often a pair) are also suggested for Love and Relationships.' },
+  { n: 'Pairs of objects', a: ['SW'], why: 'Pairs stand for partnership, so they belong in Love and Relationships: two cushions, two candles, two matching chairs or a pair of figures.' },
+  { n: 'Books', a: ['NE'], why: 'Books and a place to read go with Knowledge and Self-Cultivation, the area of study and reflection.' },
+  { n: 'Family photographs', a: ['E'], why: 'Photos of family and ancestors belong in the Family area. Happy, recent pictures are generally preferred.' },
+  { n: 'Photos of friends and mentors', a: ['NW'], why: 'People who support you belong in Helpful People and Travel.' },
+  { n: 'Travel pictures and souvenirs', a: ['NW'], why: 'Travel is the other half of Helpful People and Travel, so pictures of places you have been, or want to go, are suggested there.' },
+  { n: 'Children’s artwork', a: ['W'], why: 'Children and creative work share one area, Children and Creativity.' },
+  { n: 'Musical instruments and games', a: ['W'], why: 'Play and joy belong to Children and Creativity.' },
+  { n: 'Awards and certificates', a: ['S'], why: 'Things that show recognition belong in Fame and Reputation.' },
+  { n: 'A bowl of coins', a: ['SE'], why: 'Coins are a traditional symbol of plenty for the Wealth and Prosperity area.' },
+  { n: 'Artwork of mountains', a: ['NE'], why: 'Knowledge and Self-Cultivation belongs to Gèn, the Mountain trigram, which stands for stillness and contemplation.' },
+  { n: 'Artwork of water', a: ['N', 'E'], why: 'Water scenes carry the Water element of Career and Life Path. Since Water feeds Wood, they are also suggested for Family.' },
+  { n: 'Artwork of couples', a: ['SW'], why: 'Images of pairs and couples, rather than lone figures, are suggested for Love and Relationships.' },
+  { n: 'Ceramics and earthenware', a: ['SW', 'NE', 'C'], why: 'Clay is Earth, the element of Love and Relationships, Knowledge and Self-Cultivation, and the centre.' },
+  { n: 'Metal objects and sculptures', a: ['W', 'NW'], why: 'Metal is the element of Children and Creativity and of Helpful People and Travel, and it is also suggested for Career, since Metal feeds Water.' },
+  { n: 'Rose quartz', a: ['SW'], why: 'Rose quartz is the crystal most often suggested for Love and Relationships.' },
+  { n: 'Citrine', a: ['SE', 'C'], why: 'Citrine is often called a stone of abundance and is commonly suggested for Wealth and Prosperity; its yellow also suits the Earth of the centre.' },
+  { n: 'Amethyst', a: ['NE', 'SE'], why: 'Amethyst is commonly suggested for Knowledge and Self-Cultivation, for calm and clarity, and its purple also suits Wealth and Prosperity.' },
+  { n: 'Clear quartz', a: ['C'], why: 'Clear quartz is suggested almost anywhere, most often for the centre (Health), and also for the Metal areas.' },
+  { n: 'Black tourmaline', a: ['N'], why: 'Black stones carry the colour of Water, the element of Career and Life Path.' },
+  { n: 'Green aventurine', a: ['E', 'SE'], why: 'Green stones carry the colour of Wood, the element of Family and of Wealth and Prosperity.' },
+  { n: 'Carnelian', a: ['S'], why: 'Red and orange stones carry the colour of Fire, the element of Fame and Reputation.' },
+];
+
+/* ---------- Kua numbers and the Eight Mansions ---------- */
+// The eight directions for each Kua number, in this order (traditional names):
+const STARS = [
+  { n: 'Shēng Qì', m: 'success, wealth and vitality; the best direction', good: true },
+  { n: 'Tiān Yī', m: 'health (“heavenly doctor”)', good: true },
+  { n: 'Yán Nián', m: 'relationships, harmony and long life', good: true },
+  { n: 'Fú Wèi', m: 'stability, calm and personal growth', good: true },
+  { n: 'Huò Hài', m: 'mishaps and minor setbacks', good: false },
+  { n: 'Wǔ Guǐ', m: '“five ghosts”: quarrels, loss and theft', good: false },
+  { n: 'Liù Shà', m: '“six killings”: setbacks in relationships, health or reputation', good: false },
+  { n: 'Jué Mìng', m: '“total loss”; the least favourable', good: false },
+];
+const MANSION = {
+  1: ['SE', 'E', 'S', 'N', 'W', 'NE', 'NW', 'SW'],
+  2: ['NE', 'W', 'NW', 'SW', 'E', 'SE', 'S', 'N'],
+  3: ['S', 'N', 'SE', 'E', 'SW', 'NW', 'NE', 'W'],
+  4: ['N', 'S', 'E', 'SE', 'NW', 'SW', 'W', 'NE'],
+  6: ['W', 'NE', 'SW', 'NW', 'SE', 'E', 'N', 'S'],
+  7: ['NW', 'SW', 'NE', 'W', 'N', 'S', 'SE', 'E'],
+  8: ['SW', 'NW', 'W', 'NE', 'S', 'N', 'E', 'SE'],
+  9: ['E', 'SE', 'N', 'S', 'NE', 'W', 'SW', 'NW'],
+};
+const KUA_HOME = { 1: 'N', 2: 'SW', 3: 'E', 4: 'SE', 6: 'NW', 7: 'W', 8: 'NE', 9: 'S' };
+const digitSteps = (n) => { // "1+9+8+6 = 24 → 2+4 = 6"
+  const parts = []; let s = String(n);
+  while (s.length > 1) { const t = s.split('').reduce((a, c) => a + +c, 0); parts.push(`${s.split('').join('+')} = ${t}`); s = String(t); }
+  return { d: +s, text: parts.join(' → ') };
+};
+function kua(year) { // both traditional versions, with the working
+  const ds = digitSteps(year), d = ds.d;
+  let a = 11 - d; const aw = [`11 − ${d} = ${a}`]; if (a === 10) { a = 1; aw.push('1+0 = 1'); }
+  let a5 = false; if (a === 5) { a = 2; a5 = true; }
+  let b = d + 4; const bw = [`${d} + 4 = ${b}`]; if (b > 9) { b = b - 9; bw.push(`${String(d + 4).split('').join('+')} = ${b}`); }
+  let b5 = false; if (b === 5) { b = 8; b5 = true; }
+  return { d, digits: ds.text, A: { k: a, work: aw.join(' → '), five: a5 }, B: { k: b, work: bw.join(' → '), five: b5 } };
+}
+const group = (k) => ([1, 3, 4, 9].includes(k) ? 'East' : 'West');
+
+/* ---------- state ---------- */
+const KEY = 'aft.everything-in-its-place';
+const DEF = { W: 8, D: 8.4, unit: 'm', dwall: 'bottom', dpos: 5.6, dw: 0.9, method: 'door', north: 0, layout: 'sectors', grid: null, plan: 'one-b', mirror: false, names: 'both', showSketch: true, showRoom: true, imgop: 0.7, lock: false, area: null, hl: [], probe: null, birth: '', lcside: 'after', gen: true, ctl: true, el: null, intent: '', item: '' };
+let S = JSON.parse(JSON.stringify(DEF));
+let img = null; // { url, w, h, name } for a picture the solver added; never stored
+function load() {
+  try {
+    const o = JSON.parse(localStorage.getItem(KEY) || 'null');
+    if (!o || typeof o !== 'object') return false;
+    const n = (v, lo, hi) => typeof v === 'number' && isFinite(v) && v >= lo && v <= hi;
+    if (n(o.W, 0.01, 10000)) S.W = o.W; if (n(o.D, 0.01, 10000)) S.D = o.D;
+    if (['m', 'ft', ''].includes(o.unit)) S.unit = o.unit;
+    if (['bottom', 'right', 'top', 'left'].includes(o.dwall)) S.dwall = o.dwall;
+    if (n(o.dpos, 0, 10000)) S.dpos = o.dpos; if (n(o.dw, 0.01, 10000)) S.dw = o.dw;

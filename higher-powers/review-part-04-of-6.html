@@ -1,0 +1,827 @@
+<!-- Review copy: lines 2396-3221 of higher-powers/index.html, split so Copilot can review it. Not served. -->
+    v = c.exact ? C(q) : approxValue(q, (ip.replace(/^0+/, '') + fp).replace(/^0+/, '').length);
+  }
+  memo.set(key, v); return v;
+}
+/** A value known only to `sig` significant digits: a decimal whose error bound covers what was cut off. */
+function approxValue(q, sig) { const f = N.q2f(q, N.bits + 16); return C({ ...f, a: Math.min(f.a, sig * 3.3219 - 4) }); }
+function validName(s) { // '' when fine, else why not
+  if (!s) return 'Give it a name.';
+  let toks; try { toks = tokenize(s); } catch (e) { return 'A name is letters (and digits after the first letter), or one Greek letter.'; }
+  if (toks.length !== 1 || toks[0].t !== 'id' || toks[0].text !== s) return isGreek(s[0]) ? 'A Greek-letter name is one Greek letter, optionally followed by digits.' : 'A name is letters (and digits after the first letter), or one Greek letter.';
+  if (s === 'pi' || s === 'π') return 'π is built in.';
+  if (s === 'e') return 'e is built in (2.71828…).';
+  if (s === 'i') return 'i is built in: it is the imaginary unit.';
+  if (CONSTS.has(s)) return `${s} is one of the named constants.`;
+  if (FN[s.toLowerCase()]) return `${s} is the name of a function.`;
+  return '';
+}
+function parseDecimal(s) { // the exact value of a plain decimal string, as a complex, or null
+  const m = /^([+-]?)(\d+(?:\.\d*)?|\.\d+)(?:[eE]([+-]?\d{1,7}))?$/.exec(typeof s === 'string' ? s.trim() : '');
+  if (!m) return null;
+  const [ip, fp = ''] = m[2].split('.'), ex = m[3] ? Number(m[3]) : 0;
+  if (Math.abs(ex) > 100000) return null;
+  let q = Q(BigInt((ip || '0') + fp), N.pow10(fp.length));
+  if (ex) q = ex > 0 ? N.rmul(q, qi(N.pow10(ex))) : N.rdiv(q, qi(N.pow10(-ex)));
+  return C(m[1] === '-' ? N.rneg(q) : q);
+}
+function freeNames(ast, out = new Set()) {
+  if (!ast) return out;
+  if (ast.t === 'id' && !isBuiltinName(ast.name)) out.add(ast.name);
+  for (const c of [ast.a, ast.b, ...(ast.args || [])]) if (c) freeNames(c, out);
+  return out;
+}
+
+/* ---------- printing ---------- */
+const OPS = { '+': '+', '-': '−', '*': '×', '/': '÷', '%': 'mod', '^': '^' };
+function show(n, vals) {
+  switch (n.t) {
+    case 'num': return n.text;
+    case 'id': return vals && vals.has(n.name) ? vals.get(n.name) : n.name;
+    case 'group': return show(n.a, vals);
+    case 'neg': return '−' + wrap(n.a, vals);
+    case 'bin': return wrap(n.a, vals) + ' ' + OPS[n.op] + ' ' + wrap(n.b, vals);
+    case 'fact': case 'dfact': { // (3!)! and (3!!)! keep their brackets: 3!! is the double factorial
+      const s = wrap(n.a, vals), inner = unGroup(n.a).t;
+      return (inner === 'fact' || inner === 'dfact' ? '(' + s + ')' : s) + (n.t === 'fact' ? '!' : '!!');
+    }
+    case 'deg': return wrap(n.a, vals) + '°';
+    case 'call': return n.name + '(' + n.args.map((a) => show(a, vals)).join(', ') + ')';
+  }
+  return '?';
+}
+function unGroup(n) { while (n.t === 'group') n = n.a; return n; }
+function wrap(n, vals) {
+  n = unGroup(n);
+  if (n.t === 'bin' || n.t === 'neg') return '(' + show(n, vals) + ')';
+  if (n.t === 'id' && vals && vals.has(n.name)) { const s = vals.get(n.name); return /[\s/−]/.test(s) ? '(' + s + ')' : s; }
+  if (n.t === 'num' && /e/i.test(n.text)) return '(' + n.text + ')';
+  return show(n, vals);
+}
+
+/* ---------- evaluation helpers ---------- */
+let CTX = null; // {lookup(name) -> C | undefined, angle: 'rad'|'deg', ds: {neg, dec}}
+const fmtShort = (x) => N.fmtReal(x, 'dec', 12);
+function real(z, fname, node) {
+  if (!N.isRealC(z)) fail(`${fname} needs a real number, not a complex one.`, node);
+  return z.re;
+}
+function snapInt(x) { // a float within its own error of a whole number: that whole number, else null
+  if (x.k === 'q') return x.d === 1n ? x.n : null;
+  if (N.isNZ(x)) return 0n;
+  const ee = N.errExp(x);
+  if (ee >= -1) return null;
+  const m = x.m, e = x.e;
+  const near = e >= 0 ? m << BigInt(e) : N.rdivB(m, 1n << BigInt(-e));
+  const diff = N.rsub(x, qi(near));
+  if (N.isNZ(diff) || N.rmag(diff) <= ee + 1) return near;
+  return null;
+}
+function intArg(z, fname, node, what) {
+  const x = real(z, fname, node);
+  if (x.k === 'q') { if (x.d === 1n) return x.n; fail(`${fname} needs ${what || 'a whole number'}; ${N.fmtReal(x, 'exact')} isn’t one.`, node); }
+  const s = snapInt(x);
+  if (s === null) fail(`${fname} needs ${what || 'a whole number'}; ${fmtShort(x)} isn’t one.`, node);
+  N.note(`A value within the working precision of the whole number ${N.fmtReal(qi(s), 'exact')} was taken as exactly ${N.fmtReal(qi(s), 'exact')}.`);
+  return s;
+}
+function floorR(x) {
+  if (x.k === 'q') return N.fdivB(x.n, x.d);
+  const s = snapInt(x);
+  if (s !== null) { if (x.k === 'f' && !N.isNZ(x)) N.note('A value within the working precision of a whole number was taken as exactly that whole number.'); return s; }
+  if (N.errExp(x) >= -1) fail('That value is too imprecise to round to a whole number. Raise the precision.');
+  return x.e >= 0 ? x.m << BigInt(x.e) : x.m >> BigInt(-x.e);
+}
+const ceilR = (x) => -floorR(N.rneg(x));
+const truncR = (x) => (N.rsign(x) < 0 ? ceilR(x) : floorR(x));
+function roundHalfAway(x, node) { // nearest whole number, halves away from zero
+  if (x.k === 'q') { const t = N.rabs(x); const f = N.fdivB(2n * t.n + t.d, 2n * t.d); return N.rsign(x) < 0 ? -f : f; }
+  const s = snapInt(x);
+  if (s !== null) return s;
+  const twice = N.rmul(Q2, x), h = snapInt(twice);
+  if (h !== null) { N.note('A value within the working precision of a halfway point was taken as exactly halfway, and rounded away from zero.'); return h > 0n ? (h + 1n) / 2n : -((-h + 1n) / 2n); }
+  return floorR(N.radd(x, Q(1n, 2n)));
+}
+function toRad(z) {
+  if (CTX.angle !== 'deg') return z;
+  return N.withPrec(12, () => N.cmul(z, C(N.rdiv(N.rpi(), qi(180)))));
+}
+function fromRad(z, fname, node) {
+  if (CTX.angle !== 'deg') return z;
+  if (!N.isRealC(z)) fail(`${fname} of that is not a real angle. Switch angles to radians to see its complex value.`, node);
+  return N.withPrec(12, () => N.cmul(z, C(N.rdiv(qi(180), N.rpi()))));
+}
+function degReduce(x) { const d = 360n * x.d; return Q(((x.n % d) + d) % d, x.d); } // exact x mod 360
+const DEG_SIN = { 0: [0, 1], 30: [1, 2], 90: [1, 1], 150: [1, 2], 180: [0, 1], 210: [-1, 2], 270: [-1, 1], 330: [-1, 2] };
+const DEG_COS = { 0: [1, 1], 60: [1, 2], 90: [0, 1], 120: [-1, 2], 180: [-1, 1], 240: [-1, 2], 270: [0, 1], 300: [1, 2] };
+function trig(z, which, node) { // which: 'sin' | 'cos' | 'tan'
+  if (CTX.angle === 'deg' && N.isExactC(z) && N.isZeroExact(z.im)) {
+    const r = degReduce(z.re);
+    if (r.d === 1n) {
+      const a = Number(r.n);
+      if (which === 'tan') {
+        if (a === 90 || a === 270) fail(`tan(${N.fmtReal(z.re, 'exact')}°) is undefined: the cosine there is zero.`, node);
+        if (a % 180 === 0) return N.C0;
+        if (a === 45 || a === 225) return N.C1;
+        if (a === 135 || a === 315) return C(qi(-1));
+      } else {
+        const t = (which === 'sin' ? DEG_SIN : DEG_COS)[a];
+        if (t) return C(Q(BigInt(t[0]), BigInt(t[1])));
+      }
+    }
+    z = C(N.withPrec(12, () => N.rmul(r, N.rdiv(N.rpi(), qi(180)))));
+  } else z = toRad(z);
+  if (which === 'tan') return N.ctan(z);
+  const [s, c] = N.csinCos(z);
+  if (which === 'sin') return s;
+  if (which === 'cos') return c;
+  if (N.isZero(c.re) && N.isZero(c.im)) fail('tan is undefined here: the cosine is zero' + (N.isZeroExact(c.re) ? '.' : ' to within the working precision.'), node);
+  return N.withPrec(8, () => N.cdiv(s, c));
+}
+function exactLog(x, b) { // log_b(x) exactly when x = b^(p/q) for small q, else null
+  if (!(x.k === 'q' && b.k === 'q' && x.n > 0n && b.n > 0n)) return null;
+  if (b.n === b.d) return null;
+  const est = logApprox(x) / logApprox(b);
+  if (!isFinite(est) || Math.abs(est) > 1e6) return null;
+  for (let q = 1; q <= 12; q++) {
+    const p = Math.round(est * q);
+    if (Math.abs(est * q - p) > 1e-6 * q) continue;
+    const P = BigInt(p), Qn = BigInt(q);
+    const bits = Math.max(N.blen(x.n), N.blen(x.d)) * q + Math.max(N.blen(b.n), N.blen(b.d)) * Math.abs(p);
+    if (bits > 200000) return null;
+    const lhs = [x.n ** Qn, x.d ** Qn], rhs = P >= 0n ? [b.n ** P, b.d ** P] : [b.d ** -P, b.n ** -P];
+    if (lhs[0] === rhs[0] && lhs[1] === rhs[1]) return Q(P, Qn);
+  }
+  return null;
+}
+function logApprox(x) { // natural log of a positive rational, as a double, for any size
+  const ln = (n) => { const L = N.blen(n), s = Math.max(0, L - 60); return Math.log(Number(n >> BigInt(s))) + s * Math.LN2; };
+  return ln(x.n) - ln(x.d);
+}
+function logBase(z, b, node) {
+  if (N.isZero(b.re) && N.isZero(b.im)) fail('A logarithm to base 0 is undefined.', node);
+  if (N.isExactC(b) && N.isZeroExact(b.im) && b.re.n === b.re.d) fail('A logarithm to base 1 is undefined.', node);
+  if (N.isExactC(z) && N.isZeroExact(z.im) && N.isExactC(b) && N.isZeroExact(b.im)) {
+    if (z.re.n === z.re.d) return N.C0;
+    const ex = exactLog(z.re, b.re); if (ex) return C(ex);
+  }
+  return N.withPrec(16, () => N.cdiv(N.cln(z), N.cln(b)));
+}
+function listReals(args, fname, node) { return args.map((z, i) => real(z, fname, node.args[i])); }
+function sortReals(xs) { return xs.slice().sort((a, b) => N.rcmp(a, b)); }
+function digitInfo(z, fname, node) { // the digits of a value, following the choices made on the page
+  const x = real(z, fname, node.args[0]);
+  let q = x;
+  if (x.k === 'f') {
+    const s = snapInt(x);
+    if (s === null) fail(`${fname} works on exact numbers. ${fmtShort(x)} is a decimal approximation whose digits never end.`, node);
+    q = qi(s);
+  }
+  const neg = q.n < 0n;
+  if (neg && !CTX.ds.neg) throw new HPAsk('neg', fname, node);
+  let digits;
+  if (q.d === 1n) digits = N.babs(q.n).toString();
+  else {
+    if (!N.terminates(q.d)) fail(`${N.fmtReal(q, 'exact')} has decimal digits that never end, so ${fname} can’t use them.`, node);
+    if (!CTX.ds.dec) throw new HPAsk('dec', fname, node);
+    if (CTX.ds.dec === 'whole') digits = (N.babs(q.n) / q.d).toString();
+    else digits = N.fmtReal(N.rabs(q), 'exact').replace('.', '').replace(/^0+(?=\d)/, '');
+  }
+  return { digits, neg: neg && CTX.ds.neg === 'keep' };
+}
+function sizeCheck(digits, what) { if (digits > 100000) fail(`${what} would have more than 100,000 digits, beyond what this calculator handles.`); }
+function lnFact(n) { n = Number(n); return n < 2 ? 0 : n * Math.log(n) - n + Math.log(2 * Math.PI * n) / 2; }
+
+/* ---------- the function table ---------- */
+def('sqrt', 1, 1, ([z]) => N.csqrt(z));
+def('cbrt', 1, 1, ([z]) => N.cnroot(z, 3));
+def('root', 2, 2, ([z, n], node) => { const k = intArg(n, 'root', node.args[1], 'a whole number for the root'); if (k === 0n) fail('root(x, 0) is undefined.', node); if (N.babs(k) > 1000000n) fail('That root is too high to work out here.', node); return N.cnroot(z, Number(k)); });
+def('exp', 1, 1, ([z]) => N.cexp(z));
+def('ln', 1, 1, ([z], node) => { if (N.isZero(z.re) && N.isZero(z.im)) fail('ln(0) is undefined: the logarithm goes to minus infinity at 0.', node); return N.cln(z); });
+def('log', 1, 2, ([z, b], node) => { if (N.isZero(z.re) && N.isZero(z.im)) fail('log(0) is undefined: the logarithm goes to minus infinity at 0.', node); return logBase(z, b || C(qi(10)), node); });
+def('log10', 1, 1, ([z], node) => { if (N.isZero(z.re) && N.isZero(z.im)) fail('log10(0) is undefined: the logarithm goes to minus infinity at 0.', node); return logBase(z, C(qi(10)), node); });
+def('log2', 1, 1, ([z], node) => { if (N.isZero(z.re) && N.isZero(z.im)) fail('log2(0) is undefined: the logarithm goes to minus infinity at 0.', node); return logBase(z, C(Q2), node); });
+def('sin', 1, 1, ([z], node) => trig(z, 'sin', node));
+def('cos', 1, 1, ([z], node) => trig(z, 'cos', node));
+def('tan', 1, 1, ([z], node) => trig(z, 'tan', node));
+def('asin arcsin', 1, 1, ([z], node) => fromRad(asinX(z), node.name, node));
+def('acos arccos', 1, 1, ([z], node) => fromRad(acosX(z), node.name, node));
+def('atan arctan', 1, 1, ([z], node) => fromRad(N.catan(z), 'atan', node));
+def('atan2', 2, 2, ([y, x], node) => fromRad(C(N.ratan2(real(y, 'atan2', node.args[0]), real(x, 'atan2', node.args[1]))), 'atan2', node));
+def('sinh', 1, 1, ([z]) => N.csinh(z));
+def('cosh', 1, 1, ([z]) => N.ccosh(z));
+def('tanh', 1, 1, ([z]) => N.ctanh(z));
+def('abs', 1, 1, ([z]) => C(N.cabs(z)));
+
+/* the reciprocal trig and hyperbolic functions, and the inverse hyperbolic functions (principal values, with
+   the same branch cuts as the usual references) */
+const zeroC = (z) => N.isZero(z.re) && N.isZero(z.im);
+const exactZeroC = (z) => N.isZeroExact(z.re) && N.isZeroExact(z.im);
+const halfPi = () => N.withPrec(4, () => N.rdiv(N.rpi(), Q2));
+const smallCut = () => -(N.bits / 2 + 8), bigCut = () => N.bits / 2 + 8;
+const plusErr = (x, E) => N.radd(x, N.nz(E)); // x, give or take 2^E: for a term too small to matter that is left out
+const tinyReal = (z) => N.isRealC(z) && !N.isZero(z.re) && N.rmag(z.re) < smallCut();
+const tinyC = (z, k) => { // z(1 + O(|z|²)), each part with its own error, for a function that starts z + k z³
+  const m = Math.max(N.rmag(z.re), N.rmag(z.im)), part = (x) => (N.isZeroExact(x) ? x : plusErr(x, N.rmag(x) + 2 * m + k));
+  return C(part(z.re), part(z.im));
+};
+const HALF_RANGE = 160000; // bits: a part beyond about 10^±48000 can't be squared within the range
+function crecip(w) { // 1/w. A part whose square would leave the range is divided out first (Smith's method), so the reciprocal of a huge or tiny w stays in range.
+  const mr = N.rmag(w.re), mi = N.rmag(w.im), out = (m) => isFinite(m) && Math.abs(m) > HALF_RANGE;
+  if (N.isZeroExact(w.re) || N.isZeroExact(w.im) || !(out(mr) || out(mi))) return N.withPrec(8, () => N.cdiv(N.C1, w));
+  const quot = (x, y) => (N.rmag(x) - N.rmag(y) < -330000 ? N.nz(N.rmag(x) - N.rmag(y) + 2) : N.rdiv(x, y)); // a part below the range is left as zero, give or take its size
+  return N.withPrec(10, () => {
+    const big = N.rcmp(N.rabs(w.re), N.rabs(w.im)) >= 0, p = big ? w.re : w.im, q = big ? w.im : w.re;
+    const r = quot(q, p), m2 = 2 * N.rmag(r); // 1/(p + qi) = (1 − ri)/(p + qr) when |p| >= |q|, with r = q/p
+    const den = m2 < -(N.bits + 40) ? plusErr(p, N.rmag(p) + m2 + 1) : N.radd(p, N.rmul(q, r));
+    const x = quot(Q1, den), y = quot(r, den);
+    return big ? C(x, N.rneg(y)) : C(y, N.rneg(x));
+  });
+}
+function recipOf(z, why, node) { // 1/z, or why there is none ("sec is undefined here: the cosine is zero")
+  if (zeroC(z)) fail(why + (exactZeroC(z) ? '.' : ' to within the working precision.'), node);
+  return crecip(z);
+}
+function inv0(z, fname, node) { // 1/z for an inverse function of 1/z
+  if (exactZeroC(z)) fail(`${fname}(0) is undefined.`, node);
+  if (zeroC(z)) fail(`${fname} is undefined here: the value is zero to within the working precision.`, node);
+  return crecip(z);
+}
+function extraFor(z) { // working bits to add for a complex z: for its size, and for a part much smaller than the other
+  const mr = N.rmag(z.re), mi = N.rmag(z.im), m = Math.max(mr, mi);
+  const spread = mr === -Infinity || mi === -Infinity ? 0 : Math.min(Math.abs(mr - mi), N.bits + 40);
+  return { m, extra: 20 + (isFinite(m) ? Math.min(Math.abs(m), 4 * N.bits) : 0) + spread };
+}
+const withExtra = (z, fn) => (N.isRealC(z) ? fn() : N.withPrec(extraFor(z).extra, fn));
+function asinX(z) { // asin; on the real line beyond ±1 worked out without cancellation
+  if (N.isRealC(z) && !N.isNZ(z.re) && N.rcmp(N.rabs(z.re), Q1) > 0) { const r = acoshR1(N.rabs(z.re)), h = halfPi(); return N.rsign(z.re) > 0 ? C(h, N.rneg(r)) : C(N.rneg(h), r); }
+  return N.casin(z);
+}
+function acosX(z) {
+  if (N.isRealC(z) && !N.isNZ(z.re) && N.rcmp(N.rabs(z.re), Q1) > 0) { const r = acoshR1(N.rabs(z.re)); return N.rsign(z.re) > 0 ? C(Q0, r) : C(N.rpi(), N.rneg(r)); }
+  return N.cacos(z);
+}
+function tooSmall(z, fname, node, part = 're') { if (N.rmag(z[part]) > 17 && Math.abs(N.toNum(z[part])) > 230200) fail(`${fname} of that is smaller than about 10^-100000, beyond what this calculator handles.`, node); }
+function shch(z) { // [sinh z, cosh z], each part to full precision
+  if (N.isZeroExact(z.im)) return [C(N.rsinh(z.re)), C(N.rcosh(z.re))];
+  return N.withPrec(14, () => {
+    const sa = N.rsinh(z.re), ca = N.rcosh(z.re), [sb, cb] = N.sinCosR(z.im);
+    return [C(N.rmul(sa, cb), N.rmul(ca, sb)), C(N.rmul(ca, cb), N.rmul(sa, sb))];
+  });
+}
+function cothC(z, node, fname = 'coth') {
+  if (zeroC(z) || (N.isRealC(z) && N.isZero(z.re))) fail(`${fname} is undefined here: it goes to infinity` + (exactZeroC(z) ? '.' : ', to within the working precision.'), node);
+  if (N.isRealC(z)) return C(N.withPrec(8, () => N.rdiv(Q1, N.rtanh(z.re))));
+  const a = z.re, b = z.im;
+  if (N.rmag(a) > 8 && Math.abs(N.toNum(a)) > (N.bits + 20) * Math.LN2 / 2) { // a large real part
+    if (N.rsign(a) < 0) return N.cneg(cothC(N.cneg(z), node, fname)); // odd
+    // coth z = 1 + 2e^(−2z) + 2e^(−4z) + …, and e^(−2z) = e^(−2a)(cos 2b − i sin 2b): past the precision the real part is 1,
+    // and the imaginary part is −2e^(−2a) sin 2b, give or take the e^(−4a) term (or, below the range, just its size)
+    const L = Math.min(2 * N.toNum(a) / Math.LN2, 4e6); // log2 of e^(2a) (past 4e6 any value does for the bounds below)
+    const im = L > 330000 ? N.nz(2 - L) : N.withPrec(14, () => {
+      const [s2b] = N.sinCosR(N.rmul(Q2, b)), top = N.rmag(s2b) + 2 - L;
+      if (top < -330000) return N.nz(top);
+      return plusErr(N.rneg(N.rmul(Q2, N.rmul(s2b, N.rexp(N.rneg(N.rmul(Q2, a)))))), 2 - 2 * L);
+    });
+    return C(plusErr(Q1, 2 - L), im);
+  }
+  // coth(a + bi) = (sinh 2a − i sin 2b) / (2(sinh² a + sin² b)), with no cancellation in the denominator
+  return N.withPrec(16, () => {
+    const s2a = N.rsinh(N.rmul(Q2, a)), [s2b] = N.sinCosR(N.rmul(Q2, b)), sa = N.rsinh(a), [sb] = N.sinCosR(b);
+    const den = N.rmul(Q2, N.radd(N.rmul(sa, sa), N.rmul(sb, sb)));
+    if (N.isZero(den)) fail(`${fname} is undefined here: it goes to infinity.`, node);
+    return C(N.rdiv(s2a, den), N.rneg(N.rdiv(s2b, den)));
+  });
+}
+function asinhR(x) {
+  if (N.isZeroExact(x) || N.isNZ(x)) return x;
+  const neg = N.rsign(x) < 0, ax = N.rabs(x), m = N.rmag(ax);
+  let r;
+  if (m < smallCut()) r = plusErr(ax, 3 * m); // x − x³/6, and the x³ term is below the precision
+  else if (m > bigCut()) r = N.withPrec(8, () => N.rln(N.rmul(Q2, ax))); // ln 2x: what is left is below the precision
+  else r = N.withPrec(Math.max(0, -m) + 16, () => N.rln(N.radd(ax, N.rsqrt(N.radd(N.rmul(ax, ax), Q1)))));
+  return neg ? N.rneg(r) : r;
+}
+function acoshR1(x) { // x >= 1
+  const d = N.rsub(x, Q1);
+  if (N.isZeroExact(d)) return Q0;
+  if (N.isNZ(d)) return N.nz(d.e / 2 + 1);
+  if (N.rmag(x) > bigCut()) return N.withPrec(8, () => N.rln(N.rmul(Q2, x)));
+  return N.withPrec(Math.max(0, -N.rmag(d) / 2) + 16, () => N.rln(N.radd(x, N.rsqrt(N.rmul(d, N.radd(x, Q1))))));
+}
+function atanhR(x, node, fname = 'atanh') { // fname: the function the reader typed (acoth comes here with 1/x)
+  if (N.isZeroExact(x) || N.isNZ(x)) return C(x);
+  const c = N.rcmp(N.rabs(x), Q1);
+  if (c === 0) fail(`${fname}(${N.rsign(x) > 0 ? '' : '−'}1) is undefined: it goes to infinity.`, node);
+  if (c > 0) { const r = atanhR(N.withPrec(8, () => N.rdiv(Q1, x)), node, fname).re, h = halfPi(); return C(r, N.rsign(x) > 0 ? N.rneg(h) : h); }
+  const m = N.rmag(x);
+  if (m < smallCut()) return C(plusErr(x, 3 * m)); // x + x³/3, and the x³ term is below the precision
+  return C(N.withPrec(Math.max(0, -m) + 16, () => N.rdiv(N.rln(N.rdiv(N.radd(Q1, x), N.rsub(Q1, x))), Q2)));
+}
+function asinhC(z) {
+  if (N.isRealC(z)) return C(asinhR(z.re));
+  const a = z.re, b = z.im;
+  if (N.isZeroExact(a)) { // asinh(iy) = i·asin(y) for |y| <= 1, else ±acosh|y| ± iπ/2
+    if (N.rcmp(N.rabs(b), Q1) <= 0) return C(Q0, N.casin(C(b)).re);
+    const r = acoshR1(N.rabs(b)), h = halfPi();
+    return N.rsign(b) > 0 ? C(r, h) : C(N.rneg(r), N.rneg(h));
+  }
+  if (N.rsign(a) < 0 || (N.isNZ(a) && N.rsign(b) < 0)) return N.cneg(asinhC(N.cneg(z))); // odd
+  const { m, extra } = extraFor(z);
+  if (m < smallCut()) return tinyC(z, 0);
+  if (m > bigCut()) return N.withPrec(8, () => N.cln(N.cmul(C(Q2), z)));
+  return N.withPrec(extra, () => N.cln(N.cadd(z, N.csqrt(N.cadd(N.cmul(z, z), N.C1)))));
+}
+function acoshC(z) {
+  if (N.isRealC(z)) {
+    const x = z.re;
+    if (N.rcmp(x, Q1) >= 0) return C(acoshR1(x));
+    if (N.rcmp(x, qi(-1)) <= 0) return C(acoshR1(N.rneg(x)), N.rpi());
+    return C(Q0, N.cacos(C(x)).re); // −1 < x < 1: i·acos(x)
+  }
+  // acosh z = 2 ln(√((z + 1)/2) + √((z − 1)/2))
+  const d = N.csub(z, N.C1), { extra } = extraFor(z), md = Math.max(N.rmag(d.re), N.rmag(d.im));
+  return N.withPrec(extra + Math.max(0, -md / 2), () => N.cmul(C(Q2), N.cln(N.cadd(N.csqrt(N.cdiv(N.cadd(z, N.C1), C(Q2))), N.csqrt(N.cdiv(d, C(Q2)))))));
+}
+function atanhC(z, node, fname = 'atanh') {
+  if (N.isRealC(z)) return atanhR(z.re, node, fname);
+  if (N.isZeroExact(z.re)) return C(Q0, N.ratan(z.im)); // atanh(iy) = i·atan(y)
+  const { m, extra } = extraFor(z);
+  if (m < smallCut()) return tinyC(z, 0);
+  return N.withPrec(extra, () => N.cdiv(N.csub(N.cln(N.cadd(N.C1, z)), N.cln(N.csub(N.C1, z))), C(Q2)));
+}
+function nearZero(z, node, recip) { // a function of a tiny real angle or value: 1/x or 1, give or take what is below the precision
+  const x = z.re, m = N.rmag(x);
+  return C(recip ? plusErr(N.withPrec(8, () => N.rdiv(Q1, x)), m) : plusErr(Q1, 2 * m));
+}
+const tinyAngle = (z) => { if (!N.isRealC(z)) return null; const w = toRad(z); return tinyReal(w) ? w : null; };
+def('sec', 1, 1, ([z], node) => { const w = tinyAngle(z); if (w) return nearZero(w, node, false); tooSmall(toRad(z), 'sec', node, 'im'); return recipOf(trig(z, 'cos', node), 'sec is undefined here: the cosine is zero', node); });
+def('csc cosec', 1, 1, ([z], node) => { const w = tinyAngle(z); if (w) return nearZero(w, node, true); tooSmall(toRad(z), node.name, node, 'im'); return recipOf(trig(z, 'sin', node), `${node.name} is undefined here: the sine is zero`, node); });
+def('cot', 1, 1, ([z], node) => {
+  const t = tinyAngle(z); if (t) return nearZero(t, node, true);
+  if (N.isRealC(z)) {
+    const s = trig(z, 'sin', node), c = trig(z, 'cos', node);
+    if (zeroC(s)) fail('cot is undefined here: the sine is zero' + (exactZeroC(s) ? '.' : ' to within the working precision.'), node);
+    return N.withPrec(8, () => N.cdiv(c, s));
+  }
+  const w = toRad(z), r = cothC(C(N.rneg(w.im), w.re), node, 'cot'); // cot z = i·coth(iz)
+  return C(N.rneg(r.im), r.re);
+});
+def('asec arcsec', 1, 1, ([z], node) => { const w = inv0(z, node.name, node); return fromRad(withExtra(w, () => acosX(w)), node.name, node); });
+def('acsc arccsc arccosec', 1, 1, ([z], node) => { const w = inv0(z, node.name, node); return fromRad(withExtra(w, () => asinX(w)), node.name, node); });
+def('acot arccot', 1, 1, ([z], node) => {
+  if (exactZeroC(z)) return fromRad(C(halfPi()), node.name, node);
+  if (zeroC(z)) fail(`${node.name} jumps at 0, and this value is zero to within the working precision, so which side it is on can’t be told.`, node);
+  const w = crecip(z);
+  if (N.isZero(w.re) && N.isExactC(w) && N.babs(w.im.n) === w.im.d) fail(`${node.name}(±i) is undefined: it goes to infinity.`, node);
+  if (!N.isRealC(w) && extraFor(w).m < smallCut()) return fromRad(tinyC(w, 0), node.name, node); // atan w = w − w³/3 + …, for the 1/z of a huge z
+  return fromRad(withExtra(w, () => N.catan(w)), node.name, node);
+});
+def('sech', 1, 1, ([z], node) => { if (tinyReal(z)) return nearZero(z, node, false); tooSmall(z, 'sech', node); return recipOf(shch(z)[1], 'sech is undefined here: cosh is zero', node); });
+def('csch cosech', 1, 1, ([z], node) => { if (tinyReal(z)) return nearZero(z, node, true); tooSmall(z, node.name, node); return recipOf(shch(z)[0], `${node.name} is undefined here: sinh is zero`, node); });
+def('coth', 1, 1, ([z], node) => (tinyReal(z) ? nearZero(z, node, true) : cothC(z, node)));
+def('asinh arsinh arcsinh', 1, 1, ([z]) => asinhC(z));
+def('acosh arcosh arccosh', 1, 1, ([z]) => acoshC(z));
+def('atanh artanh arctanh', 1, 1, ([z], node) => atanhC(z, node));
+def('asech arsech arcsech', 1, 1, ([z], node) => acoshC(inv0(z, node.name, node)));
+def('acsch arcsch arccsch', 1, 1, ([z], node) => asinhC(inv0(z, node.name, node)));
+def('acoth arcoth arccoth', 1, 1, ([z], node) => {
+  if (exactZeroC(z)) return C(Q0, halfPi());
+  return atanhC(inv0(z, node.name, node), node, node.name);
+});
+def('cis', 1, 1, ([z], node) => (N.isRealC(z) ? N.cadd(trig(z, 'cos', node), N.cmul(N.CI, trig(z, 'sin', node))) : N.cexp(N.cmul(N.CI, toRad(z)))));
+def('hypot', 2, Infinity, (a, node) => { // scaled by the largest value, so huge or tiny values don't overflow on the way
+  const xs = listReals(a, 'hypot', node).map((x) => N.rabs(x));
+  let m = xs[0]; for (const x of xs) if (N.rcmp(x, m) > 0) m = x;
+  if (N.rsign(m) === 0) return C(Q0);
+  return C(N.withPrec(8, () => N.rmul(m, N.rsqrt(xs.reduce((s, x) => { const r = N.rdiv(x, m); return N.radd(s, N.rmul(r, r)); }, Q0)))));
+});
+def('sign sgn', 1, 1, ([z]) => {
+  if (N.isRealC(z)) { if (N.isNZ(z.re)) { N.note('The value is zero to within the working precision, so its sign is taken as 0.'); return N.C0; } return C(qi(N.rsign(z.re))); }
+  return N.withPrec(8, () => N.cdiv(z, C(N.cabs(z))));
+});
+def('floor', 1, 1, ([z], node) => C(qi(floorR(real(z, 'floor', node)))));
+def('ceil', 1, 1, ([z], node) => C(qi(ceilR(real(z, 'ceil', node)))));
+def('trunc', 1, 1, ([z], node) => C(qi(truncR(real(z, 'trunc', node)))));
+def('frac', 1, 1, ([z], node) => { const x = real(z, 'frac', node); return C(N.rsub(x, qi(truncR(x)))); });
+def('round', 1, 2, ([z, p], node) => {
+  const x = real(z, 'round', node.args[0]);
+  const k = p ? intArg(p, 'round', node.args[1], 'a whole number of places') : 0n;
+  if (N.babs(k) > 100000n) fail('That many places is beyond what this calculator handles.', node);
+  const s = k >= 0n ? qi(N.pow10(Number(k))) : Q(1n, N.pow10(Number(-k)));
+  const y = N.withPrec(Math.max(0, Number(k)) * 3.33 + 8, () => N.rmul(x, s));
+  return C(N.rdiv(qi(roundHalfAway(y, node)), s));
+});
+def('min', 1, Infinity, (a, node) => C(sortReals(listReals(a, 'min', node))[0]));
+def('max', 1, Infinity, (a, node) => { const s = sortReals(listReals(a, 'max', node)); return C(s[s.length - 1]); });
+def('sum', 1, Infinity, (a) => a.reduce((s, z) => N.cadd(s, z), N.C0));
+def('prod product', 1, Infinity, (a) => a.reduce((p, z) => N.cmul(p, z), N.C1));
+def('mean', 1, Infinity, (a) => N.cdiv(a.reduce((s, z) => N.cadd(s, z), N.C0), C(qi(a.length))));
+def('median', 1, Infinity, (a, node) => { const s = sortReals(listReals(a, 'median', node)), n = s.length; return C(n % 2 ? s[(n - 1) / 2] : N.rdiv(N.radd(s[n / 2 - 1], s[n / 2]), Q2)); });
+def('gcd', 1, Infinity, (a, node) => C(qi(a.reduce((g, z, i) => N.bgcd(g, intArg(z, 'gcd', node.args[i])), 0n))));
+def('lcm', 1, Infinity, (a, node) => C(qi(a.reduce((l, z, i) => { const v = N.babs(intArg(z, 'lcm', node.args[i])); if (l === 0n || v === 0n) return 0n; return l / N.bgcd(l, v) * v; }, 1n))));
+function modR(x, y, node) {
+  if (N.isZero(y)) fail('mod by zero is undefined.', node);
+  const q = N.withPrec(16, () => N.rdiv(x, y));
+  const f = floorR(q);
+  const r = N.rsub(x, N.rmul(y, qi(f)));
+  return r;
+}
+def('mod', 2, 2, ([a, b], node) => C(modR(real(a, 'mod', node.args[0]), real(b, 'mod', node.args[1]), node)));
+def('nCr choose binomial', 2, 2, ([a, b], node) => {
+  let n = intArg(a, node.name, node.args[0]), k = intArg(b, node.name, node.args[1]);
+  if (k < 0n) return N.C0;
+  let sign = 1n;
+  if (n < 0n) { n = k - n - 1n; if (k & 1n) sign = -1n; }
+  if (k > n) return N.C0;
+  if (n - k < k) k = n - k;
+  if (k > 3000000n) fail('That is too large to work out here.', node);
+  sizeCheck((lnFact(n) - lnFact(k) - lnFact(n - k)) / Math.LN10, 'The result');
+  let r = 1n; for (let j = 1n; j <= k; j++) r = r * (n - k + j) / j;
+  return C(qi(sign * r));
+});
+def('nPr', 2, 2, ([a, b], node) => {
+  const n = intArg(a, 'nPr', node.args[0]), k = intArg(b, 'nPr', node.args[1]);
+  if (n < 0n || k < 0n) fail('nPr needs whole numbers that are 0 or more.', node);
+  if (k > n) return N.C0;
+  if (k > 3000000n) fail('That is too large to work out here.', node);
+  sizeCheck((lnFact(n) - lnFact(n - k)) / Math.LN10, 'The result');
+  const prod = (lo, hi) => { if (hi - lo < 16n) { let p = 1n; for (let i = lo; i <= hi; i++) p *= i; return p; } const m = (lo + hi) >> 1n; return prod(lo, m) * prod(m + 1n, hi); };
+  return C(qi(k === 0n ? 1n : prod(n - k + 1n, n)));
+});
+function factorialC(z, node, label) {
+  const n = intArg(z, label, node, 'a whole number that is 0 or more');
+  if (n < 0n) fail(`${label} needs a whole number that is 0 or more.`, node);
+  if (n > 30000n) fail(`${n}! is larger than about 10^100000, beyond what this calculator handles.`, node);
+  return C(N.factorialR(n));
+}
+def('factorial', 1, 1, ([z], node) => factorialC(z, node.args[0], 'factorial'));
+function dfactB(n) { // n!! for a whole n >= 0: the product n × (n − 2) × …, by splitting it in halves
+  const prod = (lo, hi) => {
+    if (hi < lo) return 1n;
+    if (hi - lo < 64n) { let p = 1n; for (let i = lo; i <= hi; i += 2n) p *= i; return p; }
+    let mid = (lo + hi) >> 1n; if ((mid - lo) & 1n) mid -= 1n;
+    return prod(lo, mid) * prod(mid + 2n, hi);
+  };
+  return n < 2n ? 1n : prod(n & 1n ? 1n : 2n, n);
+}
+function lnDfact(n) { n = Number(n); if (n < 2) return 0; return n % 2 === 0 ? (n / 2) * Math.LN2 + lnFact(n / 2) : lnFact(n) - lnDfact(n - 1); }
+function doubleFactorialC(z, node, label) {
+  const n = intArg(z, label, node, 'a whole number');
+  if (n < -1n) { // n = −(2j + 1): n!! = (−1)^j / (2j − 1)!!
+    if (!(n & 1n)) fail(`The double factorial of a negative even number is undefined.`, node);
+    const j = (-n - 1n) / 2n;
+    if (j > 25000n || lnDfact(2n * j - 1n) / Math.LN10 > 100000) fail(`(−${-n})!! is smaller than about 10^-100000, beyond what this calculator handles.`, node);
+    return C(Q(j & 1n ? -1n : 1n, dfactB(2n * j - 1n)));
+  }
+  if (n > 60000n) fail(`${n}!! is larger than about 10^100000, beyond what this calculator handles.`, node);
+  sizeCheck(lnDfact(n) / Math.LN10, `${n}!!`);
+  return C(qi(dfactB(n)));
+}
+def('doublefactorial', 1, 1, ([z], node) => doubleFactorialC(z, node.args[0], 'doublefactorial'));
+def('gamma', 1, 1, ([z], node) => C(N.rgamma(real(z, 'gamma', node))));
+def('isprime', 1, 1, ([z], node) => {
+  const x = real(z, 'isprime', node);
+  if (x.k === 'q' && x.d !== 1n) return N.C0;
+  const n = intArg(z, 'isprime', node);
+  const r = N.isPrimeB(n);
+  if (r === 2) N.note('Probable prime: it passes the Baillie–PSW test, which no known composite number passes, but that isn’t a proof.');
+  return r ? N.C1 : N.C0;
+});
+function nextPrime(n, node) {
+  if (n < 2n) return 2n;
+  let m = n + 1n; if (m === 2n) return 2n; if (!(m & 1n)) m += 1n;
+  for (;;) { const r = N.isPrimeB(m); if (r) { if (r === 2) N.note('Probable prime: it passes the Baillie–PSW test, which no known composite number passes, but that isn’t a proof.'); return m; } m += 2n; if (timeUp()) fail('That took too long to search.', node); }
+}
+let T_END = Infinity; const timeUp = () => Date.now() > T_END;
+def('nextprime', 1, 1, ([z], node) => { const x = real(z, 'nextprime', node); T_END = Date.now() + 4000; return C(qi(nextPrime(floorR(x), node))); });
+def('prevprime', 1, 1, ([z], node) => {
+  const x = real(z, 'prevprime', node); let n = ceilR(x);
+  if (n <= 2n) fail('There is no prime below 2.', node);
+  T_END = Date.now() + 4000;
+  let m = n - 1n; if (m > 2n && !(m & 1n)) m -= 1n;
+  for (;;) { const r = N.isPrimeB(m); if (r) { if (r === 2) N.note('Probable prime: it passes the Baillie–PSW test, which no known composite number passes, but that isn’t a proof.'); return C(qi(m)); } m -= m === 3n ? 1n : 2n; if (timeUp()) fail('That took too long to search.', node); }
+});
+def('factor', 1, 1, ([z], node) => {
+  const n = intArg(z, 'factor', node);
+  if (N.blen(n) > 3400) fail('That number is too large to factor here (over 1,000 digits).', node);
+  const res = C(qi(n));
+  if (N.babs(n) < 2n) { res.fac = { sign: n < 0n, list: [], rest: [], one: n !== 0n, zero: n === 0n }; return res; }
+  N.setBudget(3000);
+  let f; try { f = N.factorB(n); } finally { N.clearBudget(); }
+  const list = [...f.fs.entries()].sort((a, b) => (a[0] < b[0] ? -1 : 1));
+  if (f.probable) N.note('Some factors are probable primes: they pass the Baillie–PSW test, which no known composite number passes, but that isn’t a proof.');
+  if (f.rest.length) N.note('Part of the number couldn’t be split in the time allowed. That part is composite (it has smaller factors), but they are too large to find quickly.');
+  res.fac = { sign: n < 0n, list, rest: f.rest.sort((a, b) => (a < b ? -1 : 1)) };
+  return res;
+});
+def('digitsum', 1, 1, (a, node) => { const d = digitInfo(a[0], 'digitsum', node); let s = 0n; for (const ch of d.digits) s += BigInt(ch); return C(qi(d.neg ? -s : s)); });
+def('digitalroot', 1, 1, (a, node) => { const d = digitInfo(a[0], 'digitalroot', node); let s = 0n; for (const ch of d.digits) s += BigInt(ch); const r = s === 0n ? 0n : 1n + (s - 1n) % 9n; return C(qi(d.neg ? -r : r)); });
+def('reverse', 1, 1, ([z], node) => {
+  const n = intArg(z, 'reverse', node);
+  const s = N.babs(n).toString(), r = [...s].reverse().join('');
+  if (/0$/.test(s)) N.note('Reversing moves the trailing zeros to the front, where they drop away.');
+  const v = BigInt(r); return C(qi(n < 0n ? -v : v));
+});
+def('concat', 1, Infinity, (a, node) => {
+  let s = '';
+  a.forEach((z, i) => { const v = intArg(z, 'concat', node.args[i]); if (v < 0n) fail('concat joins whole numbers that are 0 or more.', node.args[i]); s += v.toString(); });
+  if (s.length > 100000) fail('That would have more than 100,000 digits.', node);
+  return C(qi(BigInt(s)));
+});
+def('digits', 1, 1, ([z], node) => { const n = intArg(z, 'digits', node); return C(qi(N.babs(n).toString().length)); });
+def('triangle', 1, 1, ([z], node) => { const n = intArg(z, 'triangle', node); return C(qi(n * (n + 1n) / 2n)); });
+def('fib', 1, 1, ([z], node) => {
+  const n = intArg(z, 'fib', node);
+  if (N.babs(n) > 478000n) fail('That Fibonacci number would have more than 100,000 digits.', node);
+  const k = Number(N.babs(n)), [f] = N.fibB(k);
+  return C(qi(n < 0n && k % 2 === 0 ? -f : f));
+});
+def('re', 1, 1, ([z]) => C(z.re));
+def('im', 1, 1, ([z]) => C(z.im));
+def('arg', 1, 1, ([z], node) => fromRad(C(N.carg(z)), 'arg', node));
+def('conj', 1, 1, ([z]) => C(z.re, N.rneg(z.im)));
+def('deg', 1, 1, ([z]) => N.withPrec(12, () => N.cmul(z, C(N.rdiv(qi(180), N.rpi())))));
+def('rad', 1, 1, ([z]) => N.withPrec(12, () => N.cmul(z, C(N.rdiv(N.rpi(), qi(180))))));
+
+/* ---------- evaluation ---------- */
+function ev(n) {
+  switch (n.t) {
+    case 'num': return n.approx ? approxValue(n.v, n.approx) : C(n.v);
+    case 'group': return ev(n.a);
+    case 'id': {
+      if (isBuiltinName(n.name)) return constValue(n.name);
+      const v = CTX.lookup(n.name);
+      if (!v) fail(`${n.name} has no value yet.`, n);
+      return v;
+    }
+    case 'neg': return N.cneg(ev(n.a));
+    case 'fact': return factorialC(ev(n.a), n, '!');
+    case 'dfact': return doubleFactorialC(ev(n.a), n, '!!');
+    case 'deg': return CTX.angle === 'deg' ? ev(n.a) : N.withPrec(12, () => N.cmul(ev(n.a), C(N.rdiv(N.rpi(), qi(180)))));
+    case 'bin': {
+      const a = ev(n.a), b = ev(n.b);
+      try {
+        switch (n.op) {
+          case '+': return N.cadd(a, b);
+          case '-': return N.csub(a, b);
+          case '*': return N.cmul(a, b);
+          case '/': if (N.isZero(b.re) && N.isZero(b.im)) fail('Division by zero' + (N.isZeroExact(b.re) && N.isZeroExact(b.im) ? '.' : ': the divisor is zero to within the working precision.'), n); return N.cdiv(a, b);
+          case '%': return C(modR(real(a, 'The remainder (%)', n.a), real(b, 'The remainder (%)', n.b), n));
+          case '^': return N.cpow(a, b);
+        }
+      } catch (e) { if (e instanceof HPError && !e.node) e.node = n; throw e; }
+      break;
+    }
+    case 'call': {
+      const fn = FN[n.name.toLowerCase()], args = n.args.map(ev);
+      try { return fn.f(args, n); } catch (e) { if (e instanceof HPError && !e.node) e.node = n; throw e; }
+    }
+  }
+  fail('Something went wrong reading that.', n);
+}
+function evaluate(ast, ctx) {
+  const save = CTX; CTX = ctx;
+  try { return ev(ast); } finally { CTX = save; }
+}
+
+return { tokenize, parse, show, evaluate, freeNames, validName, setConstants, isBuiltinName, HPAsk, FN, constValue, snapInt, parseDecimal };
+})();
+/* Higher Powers: the Constants picker. Generated by higherpowers/make-constants.py with mpmath; do not edit by hand. */
+const HP_CONSTANTS = [{"id":"golden_ratio","name":"Golden ratio","value":"1.618033988749894848204586834365638117720309179805762862135448622705260462818902449707207204189391137484754088075386891752126633862223536931793180060766726354433389086595939582905638322661319928290267880675208766892501712"},{"id":"golden_conjugate","name":"Golden ratio conjugate (1 ÷ golden ratio, also golden ratio − 1)","value":"0.6180339887498948482045868343656381177203091798057628621354486227052604628189024497072072041893911374847540880753868917521266338622235369317931800607667263544333890865959395829056383226613199282902678806752087668925017117"},{"id":"silver_ratio","name":"Silver ratio (1 + square root of 2)","value":"2.414213562373095048801688724209698078569671875376948073176679737990732478462107038850387534327641572735013846230912297024924836055850737212644121497099935831413222665927505592755799950501152782060571470109559971605970275"},{"id":"plastic_ratio","name":"Plastic ratio (the real root of x³ = x + 1)","value":"1.324717957244746025960908854478097340734404056901733364534015050302827851245547594054699347981787280329910920994742207425108902639045897795594314757096723471754166839038867418751736931584253549908246622354533727350458988"},{"id":"sqrt_2","name":"Square root of 2","value":"1.414213562373095048801688724209698078569671875376948073176679737990732478462107038850387534327641572735013846230912297024924836055850737212644121497099935831413222665927505592755799950501152782060571470109559971605970275"},{"id":"sqrt_3","name":"Square root of 3","value":"1.732050807568877293527446341505872366942805253810380628055806979451933016908800037081146186757248575675626141415406703029969945094998952478811655512094373648528093231902305582067974820101084674923265015312343266903322887"},{"id":"sqrt_5","name":"Square root of 5","value":"2.236067977499789696409173668731276235440618359611525724270897245410520925637804899414414408378782274969508176150773783504253267724447073863586360121533452708866778173191879165811276645322639856580535761350417533785003423"},{"id":"ln_2","name":"Natural logarithm of 2","value":"0.6931471805599453094172321214581765680755001343602552541206800094933936219696947156058633269964186875420014810205706857336855202357581305570326707516350759619307275708283714351903070386238916734711233501153644979552391205"},{"id":"ln_10","name":"Natural logarithm of 10","value":"2.302585092994045684017991454684364207601101488628772976033327900967572609677352480235997205089598298341967784042286248633409525465082806756666287369098781689482907208325554680843799894826233198528393505308965377732628846"},{"id":"euler_mascheroni","name":"Euler–Mascheroni constant","value":"0.5772156649015328606065120900824024310421593359399235988057672348848677267776646709369470632917467495146314472498070824809605040144865428362241739976449235362535003337429373377376739427925952582470949160087352039481656709"},{"id":"catalan","name":"Catalan’s constant","value":"0.9159655941772190150546035149323841107741493742816721342664981196217630197762547694793565129261151062485744226191961995790358988033258590594315947374811584069953320287733194605190387274781640878659090247064841521630002287"},{"id":"apery","name":"Apéry’s constant (the zeta function at 3)","value":"1.202056903159594285399738161511449990764986292340498881792271555341838205786313090186455873609335258146199157795260719418491995998673283213776396837207900161453941782949360066719191575522242494243961563909664103291159096"},{"id":"khinchin","name":"Khinchin’s constant","value":"2.685452001065306445309714835481795693820382293994462953051152345557218859537152002801141174931847697995153465905288090082897677716410963051792533483259668381852315421332119499626039328522044819409618068664166428930847788"},{"id":"glaisher_kinkelin","name":"Glaisher–Kinkelin constant","value":"1.282427129100622636875342568869791727767688927325001192063740021740406308858826461129736491958202374394206461203990007489331577913627752804041590725738617275221433432714343978733506791525736685690787656114668644999778496"},{"id":"twin_prime","name":"Twin prime constant","value":"0.6601618158468695739278121100145557784326233602847334133194484233354056423044952771437600314138398679117790052266933040029658477551233662277471657132139869687410976206302141537354348531315960978036699321352552997671993025"},{"id":"feigenbaum_delta","name":"First Feigenbaum constant","value":"4.669201609102990671853203820466201617258185577475768632745651343004134330211314737138689744023948013817165984855189815134408627142027932522312442988890890859944935463236713411532481714219947455644365823793202009561058331"},{"id":"feigenbaum_alpha","name":"Second Feigenbaum constant","value":"2.502907875095892822283902873218215786381271376727149977336192056779235463179590206703299649746433834129595231869995854723942182377785445179272863314993372578112163594879503744781260997380598671239711737328927665404401031"},{"id":"standard_gravity","name":"Standard gravity, in metres per second squared (exact by definition)","value":"9.80665","exact":true},{"id":"speed_of_light","name":"Speed of light in vacuum, in metres per second (exact by definition)","value":"299792458","exact":true}];
+
+const N = HPN;
+const $ = (id) => document.getElementById(id);
+const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+const reduced = () => !!(window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches);
+const KEY = 'higher-powers';
+HPC.setConstants(HP_CONSTANTS);
+
+/* ---------- state, kept in this browser only ---------- */
+const fresh = () => ({ digits: 30, angle: 'rad', mode: 'exact', ds: { neg: '', dec: '' }, lines: [''], vars: [{ name: '', src: '' }],
+  table: { formula: '', cols: {}, rows: [{}, {}, {}] }, rg: { lo: '', hi: '', list: '' }, lt: '', co: { text: '', part: 'lat', op: '+', amt: '', unit: 'min' } });
+let st = fresh();
+try {
+  const raw = localStorage.getItem(KEY);
+  if (raw) { const s = JSON.parse(raw); if (s && typeof s === 'object') st = Object.assign(fresh(), s); }
+} catch (e) { /* storage may be unavailable */ }
+const sane = () => {
+  st.digits = Math.min(200, Math.max(20, Math.round(+st.digits) || 30));
+  if (!['rad', 'deg'].includes(st.angle)) st.angle = 'rad';
+  if (!['exact', 'dec'].includes(st.mode)) st.mode = 'exact';
+  if (!Array.isArray(st.lines) || !st.lines.length) st.lines = [''];
+  st.lines = st.lines.map(String);
+  if (!Array.isArray(st.vars) || !st.vars.length) st.vars = [{ name: '', src: '' }];
+  st.vars = st.vars.map((v) => ({ name: String((v && v.name) || ''), src: String((v && v.src) || '') }));
+  if (!st.table || typeof st.table !== 'object') st.table = fresh().table;
+  st.table.formula = String(st.table.formula || '');
+  if (!st.table.cols || typeof st.table.cols !== 'object') st.table.cols = {};
+  if (!Array.isArray(st.table.rows)) st.table.rows = [{}];
+  st.table.rows = st.table.rows.map((r) => { const o = {}; if (r && typeof r === 'object') for (const k of Object.keys(r)) o[k] = String(r[k]); return o; });
+  st.ds = Object.assign({ neg: '', dec: '' }, st.ds || {});
+  if (!['', 'ignore', 'keep'].includes(st.ds.neg)) st.ds.neg = '';
+  if (!['', 'all', 'whole'].includes(st.ds.dec)) st.ds.dec = '';
+  st.rg = Object.assign(fresh().rg, st.rg || {}); st.co = Object.assign(fresh().co, st.co || {}); st.lt = String(st.lt || '');
+};
+sane();
+let saveT = 0;
+const save = () => { clearTimeout(saveT); saveT = setTimeout(() => { try { localStorage.setItem(KEY, JSON.stringify(st)); } catch (e) { /* not kept */ } }, 300); };
+
+/* ---------- small helpers ---------- */
+const toast = (() => { let el = null, t = 0; return (msg) => { if (!el) { el = document.createElement('div'); el.className = 'toast'; el.setAttribute('role', 'status'); document.body.appendChild(el); } el.textContent = msg; el.classList.add('show'); clearTimeout(t); t = setTimeout(() => el.classList.remove('show'), 1600); }; })();
+async function copyText(text) {
+  try { await navigator.clipboard.writeText(text); toast('Copied'); return; } catch (e) { /* fall back */ }
+  const ta = document.createElement('textarea'); ta.value = text; ta.setAttribute('readonly', ''); ta.style.position = 'fixed'; ta.style.opacity = '0'; document.body.appendChild(ta); ta.select();
+  let ok = false; try { ok = document.execCommand('copy'); } catch (e) { ok = false; }
+  ta.remove(); toast(ok ? 'Copied' : 'Couldn’t copy: select the text and copy it yourself');
+}
+const numHTML = (s) => esc(s).replace(/10\^([−-]?\d+)/g, '10<sup>$1</sup>'); // powers of ten, raised
+const plain = (s) => s.replace(/−/g, '-').replace(/ × 10\^/g, 'e'); // a form other programs can read back
+const ctxFor = (lookup) => ({ lookup, angle: st.angle, ds: st.ds });
+
+/* ---------- working one expression out ---------- */
+// returns {empty} | {err, pos, end} | {unset: [...]} | {ask: kind, fn} | {value, ast, notes}
+/** Whether an expression uses a value known only to its digits: a number marked …, or a variable worked out from one. */
+function approxIn(ast, approxOf) {
+  if (!ast) return false;
+  if (ast.t === 'num') return !!ast.approx;
+  if (ast.t === 'id' && approxOf(ast.name)) return true;
+  return [ast.a, ast.b, ...(ast.args || [])].some((c) => c && approxIn(c, approxOf));
+}
+const varApprox = (nm) => { const r = VARS.get(nm); return !!(r && r.approx); };
+function work(src, lookup, isVar, approxOf = varApprox) {
+  if (!src || !src.trim()) return { empty: true };
+  let ast;
+  N.startNotes();
+  try {
+    ast = HPC.parse(src, isVar);
+    if (!ast) { N.takeNotes(); return { empty: true }; }
+    const missing = [...HPC.freeNames(ast)].filter((nm) => !lookup(nm));
+    if (missing.length) { N.takeNotes(); return { unset: missing, ast }; }
+    const value = HPC.evaluate(ast, ctxFor(lookup));
+    return { value, ast, notes: N.takeNotes(), approx: approxIn(ast, approxOf) };
+  } catch (e) {
+    const notes = N.takeNotes();
+    if (e instanceof HPC.HPAsk) return { ask: e.kind, fn: e.fn, ast, notes };
+    if (e instanceof N.HPError) return { err: e.message, pos: e.node ? e.node.pos : null, end: e.node ? e.node.end : null, ast, notes };
+    if (e instanceof RangeError) return { err: 'That is too deeply nested or too large to work out.', ast };
+    return { err: 'Something went wrong working that out.', ast };
+  }
+}
+
+/* ---------- formatting a value for the page ---------- */
+const fmt = (z, mode) => N.fmtC(z, mode || st.mode, st.digits);
+function describe(z, approx) { // {main, alt, notes, plainMain}; approx: it uses a value marked …
+  const notes = [], parts = [z.re, z.im];
+  const r = fmt(z);
+  let main = r.text, alt = '';
+  if (z.fac) {
+    const f = z.fac;
+    if (f.zero) main = '0';
+    else if (!f.list.length && !f.rest.length) main = f.sign ? '−1' : '1';
+    else {
+      const items = f.list.map(([p, k]) => (k > 1 ? `${p}^${k}` : `${p}`)).concat(f.rest.map((c) => `${c} (not split)`));
+      main = (f.sign ? '−1 × ' : '') + items.join(' × ');
+      if (f.list.length === 1 && f.list[0][1] === 1 && !f.rest.length && !f.sign) notes.push('It is prime.');
+    }
+    alt = (main !== N.fmtReal(z.re, 'exact')) ? '= ' + N.fmtReal(z.re, 'exact') : '';
+    return { main, alt, notes, copy: main.replace(/ \(not split\)/g, '').replace(/−/g, '-') };
+  }
+  if (r.dropped === 'im') notes.push(`The imaginary part (about 10^${String(Math.round(N.rmag(z.im) * 0.30103)).replace('-', '−')}) is too small to show at ${st.digits} digits, so the result is shown as a real number.`);
+  if (r.dropped === 're') notes.push(`The real part (about 10^${String(Math.round(N.rmag(z.re) * 0.30103)).replace('-', '−')}) is too small to show at ${st.digits} digits, so the result is shown as purely imaginary.`);
+  const isRealV = N.isZero(z.im) || r.dropped === 'im';
+  if (N.isNZ(z.im) && !N.isZero(z.re)) notes.push('The imaginary part is zero to within the working precision, so the result is shown as a real number.');
+  if (N.isNZ(z.re) && !N.isZero(z.im)) notes.push('The real part is zero to within the working precision, so the result is shown as purely imaginary.');
+  for (const x of parts) {
+    if (N.isNZ(x) && !(x === z.im && isRealV)) {
+      if (x === z.re && N.isZero(z.im)) notes.push(`Zero to within ${approx ? 'the digits given' : 'the working precision'}: what’s left is smaller than about 10^${String(Math.ceil(x.e * 0.30103)).replace('-', '−')}${approx ? ', and it uses a value marked …, which is correct only to its digits' : ''}.`);
+    } else if (x.k === 'f' && !N.isNZ(x)) {
+      const rd = N.reliableDigits(x);
+      if (rd < st.digits && approx) notes.push(rd < 1 ? 'This value isn’t reliable: it uses a value marked …, which is correct only to the digits given, and those are too few for this.' : `Only ${rd} digit${rd === 1 ? ' is' : 's are'} reliable here: it uses a value marked …, which is correct only to the digits given (raising the digits setting won’t add to those).`);
+      else if (rd < st.digits) notes.push(rd < 1 ? 'Precision ran out along the way, so this value isn’t reliable. Raise the digits setting and try again.' : `Only ${rd} digit${rd === 1 ? ' is' : 's are'} reliable here: precision was lost along the way. Raise the digits setting to see more.`);
+    }
+  }
+  if (isRealV && z.re.k === 'q') {
+    const q = z.re;
+    if (q.d !== 1n) {
+      if (st.mode === 'exact') {
+        const frac = (q.n < 0n ? '−' : '') + N.babs(q.n) + '/' + q.d;
+        if (main !== frac) alt = '= ' + frac;
+        else { const rep = N.repeating(q); alt = rep ? '= ' + rep.text + ` (the digits in brackets repeat)` : '≈ ' + N.fmtReal(q, 'dec', st.digits); }
+      } else {
+        const ex = N.fmtReal(q, 'exact');
+        const rep = N.repeating(q);
+        alt = 'exactly ' + ex + (rep ? ' = ' + rep.text + ' (the digits in brackets repeat)' : '');
+      }
+    } else {
+      const len = N.babs(q.n).toString().length;
+      if (st.mode === 'dec' && len > st.digits) alt = `The exact value has ${len.toLocaleString('en-GB')} digits: choose Exact to see them all.`;
+      else if (len > 30) alt = `${len.toLocaleString('en-GB')} digits`;
+    }
+  } else if (N.isExactC(z) && st.mode === 'dec') {
+    const ex = fmt(z, 'exact').text; if (ex !== main) alt = 'exactly ' + ex;
+  } else if (N.isExactC(z) && st.mode === 'exact') {
+    const dc = fmt(z, 'dec').text; if (dc !== main) alt = '≈ ' + dc;
+  }
+  return { main, alt, notes, copy: plain(main) };
+}
+function errHTML(src, res) {
+  let shown = '';
+  if (res.pos !== null && res.pos !== undefined && src) {
+    const a = res.pos, b = Math.max(res.end, a);
+    shown = b > a ? esc(src.slice(0, a)) + '<mark class="hp-bad">' + esc(src.slice(a, b)) + '</mark>' + esc(src.slice(b))
+      : esc(src) + '<mark class="hp-bad end" aria-label="the end">&nbsp;</mark>';
+    shown = `<br><code>${shown}</code>`;
+  }
+  return `<p class="hp-err">${esc(res.err)}${shown}</p>`;
+}
+const convHTML = (ast) => (ast && ast.notes && ast.notes.length ? `<ul class="hp-conv">${ast.notes.map((n) => `<li>${esc(n)}</li>`).join('')}</ul>` : '');
+function workLines(res, lookup) { // "Read as", the conventions it used, and "With values"
+  if (!res.ast) return '';
+  let out = `<p class="hp-work"><span class="wl">Read as</span><code>${esc(HPC.show(res.ast))}</code></p>` + convHTML(res.ast);
+  const names = [...HPC.freeNames(res.ast)];
+  if (names.length && !res.unset) {
+    const vals = new Map();
+    for (const nm of names) { const v = lookup(nm); if (v) vals.set(nm, shortVal(v)); }
+    out += `<p class="hp-work"><span class="wl">With values</span><code>${esc(HPC.show(res.ast, vals))}</code></p>`;
+  }
+  return out;
+}
+function shortVal(z) {
+  const ex = fmt(z, 'exact').text;
+  if (ex.length <= 40) return ex;
+  return N.fmtC(z, 'dec', 12).text + '…';
+}
+
+/* ---------- variables ---------- */
+let VARS = new Map(); // name -> {value} | {err}
+function evalVars() {
+  const defs = new Map(), errs = new Map();
+  st.vars.forEach((v, i) => {
+    const nm = v.name.trim();
+    if (!nm) return;
+    const why = HPC.validName(nm);
+    if (why) { errs.set(i, why); return; }
+    if (defs.has(nm)) { errs.set(i, `${nm} is already given a value above.`); return; }
+    defs.set(nm, { i, src: v.src });
+  });
+  const out = new Map(), busy = new Set();
+  const isVar = (nm) => defs.has(nm);
+  function get(nm) {
+    if (out.has(nm)) return out.get(nm).value || null;
+    const d = defs.get(nm); if (!d) return null;
+    if (busy.has(nm)) return null;
+    busy.add(nm);
+    let r;
+    if (!d.src.trim()) r = { empty: true };
+    else {
+      // find cycles before working anything out
+      let ast = null; try { ast = HPC.parse(d.src, isVar); } catch (e) { /* reported below */ }
+      const uses = ast ? [...HPC.freeNames(ast)] : [];
+      const loop = uses.find((u) => busy.has(u));
+      if (loop) r = { err: loop === nm ? `${nm} can’t be defined using itself.` : `${nm} and ${loop} are each defined using the other.` };
+      else r = work(d.src, get, isVar, (u) => !!(out.get(u) && out.get(u).approx));
+    }
+    busy.delete(nm);
+    out.set(nm, r);
+    return r.value || null;
+  }
+  for (const nm of defs.keys()) get(nm);
+  VARS = out;
+  return { defs, errs, isVar };
+}
+const varLookup = (nm) => { const r = VARS.get(nm); return r && r.value ? r.value : null; };
+
+function renderVars() {
+  const list = $('var-list');
+  list.innerHTML = st.vars.map((v, i) => `
+    <div class="hp-var" data-i="${i}">
+      <input type="text" class="vname" data-i="${i}" value="${esc(v.name)}" placeholder="name" aria-label="Name of variable ${i + 1}" autocomplete="off" spellcheck="false" autocapitalize="off">
+      <span class="eqs" aria-hidden="true">=</span>
+      <input type="text" class="vval hp-expr" data-i="${i}" value="${esc(v.src)}" placeholder="value" aria-label="Value of ${esc(v.name || 'variable ' + (i + 1))}" autocomplete="off" spellcheck="false" autocapitalize="off">
+      <button type="button" class="btn quiet small vdel" data-del="${i}" aria-label="Remove ${esc(v.name || 'variable ' + (i + 1))}" title="Remove this variable">✕</button>
+      <div class="vout" id="vout-${i}" aria-live="polite"></div>
+    </div>`).join('');
+}
+function updateVarOutputs(info) {
+  st.vars.forEach((v, i) => {
+    const el = $('vout-' + i); if (!el) return;
+    const nm = v.name.trim();
+    if (info.errs.has(i)) { el.innerHTML = `<p class="hp-err">${esc(info.errs.get(i))}</p>`; return; }
+    if (!nm) { el.innerHTML = v.src.trim() ? '<span class="hp-wait">Give it a name.</span>' : ''; return; }
+    const r = VARS.get(nm);
+    if (!r || r.empty) { el.innerHTML = '<span class="hp-wait">No value yet.</span>'; return; }
+    if (r.value) { const d = describe(r.value); el.innerHTML = `${esc(nm)} = ${numHTML(d.main)}${d.alt ? ` <span class="muted">(${numHTML(d.alt)})</span>` : ''}`; return; }
+    if (r.unset) { el.innerHTML = `<span class="hp-wait">Waiting for ${r.unset.map(esc).join(', ')}.</span>`; return; }
+    if (r.ask) { el.innerHTML = `<span class="hp-wait">${esc(r.fn)} needs a choice: see the calculator’s digit-sum settings.</span>`; return; }
+    if (r.err) el.innerHTML = errHTML(v.src, r);
+  });
+}
+
+/* ---------- lines ---------- */
+let lastField = null; // the box the symbol keys and the directory insert into
+function renderLines() {
+  $('lines').innerHTML = st.lines.map((s, i) => `
+    <div class="hp-line" id="line-${i}">
+      <div class="hp-in"><span class="ln" aria-hidden="true">${i + 1}</span>
+        <input type="text" class="hp-expr line" data-i="${i}" value="${esc(s)}" aria-label="Calculation ${i + 1}" aria-describedby="res-${i}" autocomplete="off" spellcheck="false" autocapitalize="off" ${i === 0 ? 'placeholder="e.g. 2^100 or sqrt(3^2 + 4^2)"' : ''}>

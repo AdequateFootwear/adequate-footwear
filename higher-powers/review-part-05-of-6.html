@@ -1,0 +1,653 @@
+<!-- Review copy: lines 3222-3873 of higher-powers/index.html, split so Copilot can review it. Not served. -->
+        ${st.lines.length > 1 ? `<button type="button" class="btn quiet small ldel" data-ldel="${i}" aria-label="Remove calculation ${i + 1}" title="Remove this line">✕</button>` : ''}
+      </div>
+      <div class="hp-res" id="res-${i}" aria-live="polite"></div>
+    </div>`).join('');
+}
+const lastVals = [];
+function updateLines(info) {
+  st.lines.forEach((src, i) => {
+    const el = $('res-' + i); if (!el) return;
+    const res = work(src, varLookup, info.isVar);
+    el.innerHTML = resultHTML(src, res, varLookup, i);
+    const line = $('line-' + i);
+    const sig = res.value ? signsOf(res.value) : [];
+    if (line) line.classList.toggle('lucky', sig.length > 0);
+    const key = res.value ? fmt(res.value, 'exact').text : '';
+    if (res.value && key !== lastVals[i]) happen(sig, res.value);
+    lastVals[i] = key;
+  });
+}
+function resultHTML(src, res, lookup, i) {
+  if (res.empty) return '';
+  let h = workLines(res, lookup);
+  if (res.unset) {
+    h += `<p class="hp-wait">${res.unset.map((nm) => `<b>${esc(nm)}</b>`).join(', ')} ${res.unset.length === 1 ? 'has' : 'have'} no value yet. Give ${res.unset.length === 1 ? 'it' : 'them'} one in Variables.</p>`;
+    h += `<div class="btnrow">${res.unset.map((nm) => `<button type="button" class="btn small" data-setvar="${esc(nm)}">Give ${esc(nm)} a value</button>`).join('')}</div>`;
+    return h;
+  }
+  if (res.ask) {
+    const q = res.ask === 'neg'
+      ? `${esc(res.fn)} has met a negative number. Should it ignore the minus sign, or keep it and give a negative result?`
+      : `${esc(res.fn)} has met a decimal. Should it use every digit, ignoring the decimal point, or only the whole-number part?`;
+    const opts = res.ask === 'neg' ? [['ignore', 'Ignore the sign'], ['keep', 'Keep the sign']] : [['all', 'Every digit'], ['whole', 'Only the whole-number part']];
+    h += `<div class="hp-ask"><p>${q}</p><div class="btnrow">${opts.map(([v, t]) => `<button type="button" class="btn small" data-ask="${res.ask}" data-v="${v}">${t}</button>`).join('')}</div><p class="help">You can change this later under “Digit sums of negative numbers and decimals”.</p></div>`;
+    return h;
+  }
+  if (res.err) return h + errHTML(src, res);
+  const d = describe(res.value, res.approx);
+  const conv = (res.ast && res.ast.notes) || [];
+  const notes = [...(res.notes || []).filter((n) => !conv.includes(n)), ...d.notes];
+  const sig = signsOf(res.value);
+  h += `<div class="hp-val"><output>${numHTML(d.main)}</output><button type="button" class="btn quiet small" data-copy="${esc(d.copy)}" aria-label="Copy the result of calculation ${i + 1}">Copy</button></div>`;
+  if (d.alt) h += `<p class="hp-alt">${numHTML(d.alt)}</p>`;
+  if (sig.length) h += sig.map((s) => `<span class="hp-sign">${esc(SIGN_LABEL[s])}</span>`).join('');
+  if (notes.length) h += `<ul class="hp-notes">${notes.map((n) => `<li>${numHTML(n)}</li>`).join('')}</ul>`;
+  return h;
+}
+
+/* ---------- small favourable signs ---------- */
+const SIGN_LABEL = { prime: 'a prime', perfect: 'a perfect number', palindrome: 'a palindrome', fib: 'a Fibonacci number', pow2: 'a power of two' };
+function signsOf(z) {
+  if (!(N.isZeroExact(z.im) && z.re.k === 'q' && z.re.d === 1n) || z.fac) return [];
+  const n = z.re.n;
+  if (n < 6n || N.blen(n) > 600) return [];
+  const out = [];
+  const s = n.toString();
+  if (n >= 10n && N.isPrimeB(n)) out.push('prime');
+  { let k = 0n, m = n; while (!(m & 1n)) { m >>= 1n; k++; } if (k > 0n && m === (1n << (k + 1n)) - 1n && N.isPrimeB(m)) out.push('perfect'); }
+  if (n >= 10n && s === [...s].reverse().join('')) out.push('palindrome');
+  if (n >= 10n) { const sq = (x) => { const r = N.isqrt(x); return r * r === x; }; if (sq(5n * n * n + 4n) || sq(5n * n * n - 4n)) out.push('fib'); }
+  if (n >= 16n && (n & (n - 1n)) === 0n) out.push('pow2');
+  return out;
+}
+const OMENS = ['Fortune smiles on this sum.', 'A favourable sign.', 'Fair skies ahead.', 'The sun is warm on your working.', 'A good omen, gently given.', 'The clouds part a little.', 'Somewhere, a wind chime sounds once.', 'All is well in the sky above.', 'A little luck for your working.', 'The light agrees with you.'];
+const SIGN_OMENS = {
+  prime: ['A prime: whole and indivisible, like good fortune.', 'A prime. Fortune favours things that cannot be broken.'],
+  perfect: ['A perfect number: the sum of its own divisors. Rare, and lovely.'],
+  palindrome: ['It reads the same both ways. Auspicious.', 'A palindrome: the same coming as going.'],
+  fib: ['A Fibonacci number. The spiral approves.', 'A Fibonacci number, growing as things grow.'],
+  pow2: ['A power of two: doubling, as good luck does.'],
+};
+const SUN_WORDS = ['The sun beams at you.', 'The sun warms your working.', 'Sunny, with a good chance of exact results.', 'The sun turns its rays your way, for luck.', 'The sun has no opinion on rounding. It is above such things.', 'The sun shines on careful arithmetic.'];
+const pick = (a) => a[Math.floor(Math.random() * a.length)];
+let lastOmen = 0, lastHap = Date.now() - 60000, lastBright = 0, loaded = false, lastKind = '', hapT = 0;
+function omen(text) { $('hp-omen').textContent = text; lastOmen = Date.now(); }
+function brighten() { const s = $('hp-sky'); if (!s || reduced()) return; s.classList.add('bright'); lastBright = Date.now(); setTimeout(() => s.classList.remove('bright'), 2600); }
+// [drawing, how it moves, width in px, how long it lasts in ms]
+const HAPS = { crane: ['glide', 52, 11000], koi: ['swim', 48, 14000], clover: ['fall', 26, 7000], ladybug: ['crawl', 22, 17000], cat: ['rise', 34, 7000], star: ['streak', 64, 1900],
+  rainbow: ['peek', 96, 6500], elephant: ['walk', 52, 19000], eight: ['peek', 28, 6500], horseshoe: ['peek', 28, 6500], acorn: ['fall', 18, 7000], humming: ['dart', 42, 10000] };
+function passBy() {
+  const box = $('hp-hap'); if (!box || reduced() || document.hidden) return;
+  const kinds = Object.keys(HAPS).filter((k) => k !== lastKind), kind = pick(kinds), [move, wpx, ms] = HAPS[kind];
+  const sym = document.getElementById('hp-h-' + kind); if (!sym) return;
+  const vb = sym.getAttribute('viewBox').split(' ').map(Number), hpx = Math.round(wpx * vb[3] / vb[2]);
+  const NS = 'http://www.w3.org/2000/svg', svg = document.createElementNS(NS, 'svg'), g = document.createElementNS(NS, 'g');
+  svg.setAttribute('viewBox', vb.join(' ')); svg.setAttribute('width', wpx); svg.setAttribute('height', hpx); svg.setAttribute('focusable', 'false');
+  svg.setAttribute('class', 'hp-h'); svg.dataset.move = move; g.setAttribute('class', 'h-all');
+  for (const c of sym.childNodes) g.appendChild(c.cloneNode(true)); // the page's own drawing, copied
+  svg.appendChild(g);
+  box.replaceChildren(svg); // shown first, so the band can be measured
+  const W = box.clientWidth, H = box.clientHeight, room = Math.max(0, W - wpx), y = (a, b) => Math.round(a + Math.random() * (b - a)) + 'px';
+  svg.style.setProperty('--w', W + 'px');
+  if (move === 'glide' || move === 'swim' || move === 'walk' || move === 'dart') { svg.style.setProperty('--y0', y(4, H - hpx - 4)); svg.style.setProperty('--y1', y(2, H - hpx - 2)); }
+  else if (move === 'crawl') { svg.style.setProperty('--y0', '2px'); svg.style.setProperty('--y1', '3px'); }
+  else if (move === 'fall') { svg.style.left = Math.round(room * (0.3 + Math.random() * 0.5)) + 'px'; svg.style.top = y(4, 14); svg.style.setProperty('--rot', (Math.random() < 0.5 ? -1 : 1) * (20 + Math.random() * 30) + 'deg'); }
+  else if (move === 'streak') { svg.style.left = Math.round(W * Math.random() * 0.35) + 'px'; }
+  else { svg.style.left = Math.round(room * (0.35 + Math.random() * 0.45)) + 'px'; svg.style.setProperty('--y0', move === 'rise' ? Math.max(0, H - hpx) + 'px' : y(2, Math.max(2, H - hpx - 2))); }
+  lastKind = kind; lastHap = Date.now();
+  clearTimeout(hapT); hapT = setTimeout(() => box.replaceChildren(), ms + 200);
+}
+function happen(sig, z) {
+  if (!loaded) return;
+  const now = Date.now();
+  if (sig.length) {
+    brighten();
+    if (now - lastOmen > 12000 && Math.random() < 0.5) omen(pick(SIGN_OMENS[pick(sig)]));
+    if (now - lastHap > 90000 && Math.random() < 0.2) passBy();
+    return;
+  }
+  if (now - lastOmen > 45000 && Math.random() < 0.04) omen(pick(OMENS));
+  if (now - lastBright > 30000 && Math.random() < 0.06) brighten();
+  if (now - lastHap > 120000 && Math.random() < 0.05) passBy();
+}
+$('hp-sun').addEventListener('click', () => {
+  const b = $('hp-sun');
+  omen(Math.random() < 0.5 ? pick(SUN_WORDS) : pick(OMENS));
+  if (!reduced()) { b.classList.remove('turn'); void b.getBoundingClientRect(); b.classList.add('turn'); }
+});
+$('hp-sun').addEventListener('animationend', (e) => { if (e.target === $('hp-sun').querySelector('svg')) $('hp-sun').classList.remove('turn'); });
+
+/* ---------- table ---------- */
+let TB = { names: [], cols: [], ast: null, err: null };
+function tableInfo(info) {
+  const t = st.table; TB = { names: [], cols: [], ast: null, err: null };
+  if (!t.formula.trim()) return;
+  try { TB.ast = HPC.parse(t.formula, info.isVar); }
+  catch (e) { TB.err = { err: e.message, pos: e.node ? e.node.pos : null, end: e.node ? e.node.end : null }; return; }
+  if (!TB.ast) return;
+  TB.names = [...HPC.freeNames(TB.ast)];
+  TB.cols = TB.names.filter((nm) => (nm in t.cols ? t.cols[nm] : !varLookup(nm)));
+}
+function renderTable(info) {
+  tableInfo(info);
+  const t = st.table;
+  $('tb-read').innerHTML = TB.err ? errHTML(t.formula, TB.err) : TB.ast ? `<span class="hp-work"><span class="wl">Read as</span><code>${esc(HPC.show(TB.ast))}</code></span>${convHTML(TB.ast)}` : '';
+  $('tb-cols').innerHTML = TB.names.length ? '<span>Columns:</span>' + TB.names.map((nm) => `<label><input type="checkbox" data-col="${esc(nm)}" ${TB.cols.includes(nm) ? 'checked' : ''}> ${esc(nm)}</label>`).join('') +
+    (TB.names.some((nm) => !TB.cols.includes(nm)) ? '<span class="help">Unticked names take their value from Variables.</span>' : '') : '';
+  const cols = TB.cols;
+  let h = '<thead><tr><th class="rn" scope="col"><span class="sr">Row</span></th>' + cols.map((c) => `<th scope="col">${esc(c)}</th>`).join('') + '<th scope="col">Result</th><th scope="col"><span class="sr">Remove</span></th></tr></thead><tbody>';
+  t.rows.forEach((r, i) => {
+    h += `<tr><td class="rn">${i + 1}</td>` + cols.map((c) => `<td><input type="text" data-r="${i}" data-c="${esc(c)}" value="${esc(r[c] || '')}" aria-label="${esc(c)}, row ${i + 1}" autocomplete="off" spellcheck="false" autocapitalize="off"></td>`).join('') +
+      `<td class="res" id="tbres-${i}"></td><td><button type="button" class="btn quiet small rdel" data-rdel="${i}" aria-label="Remove row ${i + 1}" title="Remove row ${i + 1}">✕</button></td></tr>`;
+  });
+  h += '</tbody>';
+  $('tb-grid').innerHTML = h;
+  updateTable(info);
+}
+let TB_RESULTS = [];
+function updateTable(info) {
+  const t = st.table; TB_RESULTS = [];
+  t.rows.forEach((r, i) => {
+    const el = $('tbres-' + i); if (!el) return;
+    if (!TB.ast) { el.innerHTML = '<span class="muted">—</span>'; TB_RESULTS.push(''); return; }
+    const cellVals = new Map(); let bad = null, empty = false;
+    for (const c of TB.cols) {
+      const src = (r[c] || '').trim();
+      if (!src) { empty = true; continue; }
+      const cr = work(src, varLookup, info.isVar);
+      if (cr.value) cellVals.set(c, cr.value); else bad = bad || { c, cr };
+    }
+    if (bad) { el.innerHTML = `<p class="hp-err">${esc(bad.c)}: ${esc(bad.cr.err || (bad.cr.unset ? 'needs ' + bad.cr.unset.join(', ') : 'can’t be worked out'))}</p>`; TB_RESULTS.push(''); return; }
+    if (empty) { el.innerHTML = '<span class="muted">—</span>'; TB_RESULTS.push(''); return; }
+    const lookup = (nm) => cellVals.get(nm) || (TB.cols.includes(nm) ? null : varLookup(nm));
+    const res = work(t.formula, lookup, (nm) => info.isVar(nm) || TB.cols.includes(nm));
+    if (res.value) { const d = describe(res.value); el.innerHTML = numHTML(d.main); TB_RESULTS.push(d.copy); }
+    else if (res.unset) { el.innerHTML = `<span class="muted">needs ${res.unset.map(esc).join(', ')}</span>`; TB_RESULTS.push(''); }
+    else if (res.ask) { el.innerHTML = `<span class="muted">${esc(res.fn)}: make its choice in the calculator settings</span>`; TB_RESULTS.push(''); }
+    else { el.innerHTML = `<p class="hp-err">${esc(res.err)}</p>`; TB_RESULTS.push(''); }
+  });
+}
+function fillRows(text, startRow = 0, startCol = 0) {
+  const lines = text.replace(/\r/g, '').split('\n'); while (lines.length && !lines[lines.length - 1].trim()) lines.pop();
+  if (!lines.length) return 0;
+  const tab = lines.some((l) => l.includes('\t'));
+  const rows = lines.map((l) => (tab ? l.split('\t') : l.split(/[,;]/)).map((s) => s.trim()));
+  rows.forEach((cells, k) => {
+    const ri = startRow + k;
+    while (st.table.rows.length <= ri) st.table.rows.push({});
+    cells.forEach((v, j) => { const c = TB.cols[startCol + j]; if (c) st.table.rows[ri][c] = v; });
+  });
+  return rows.length;
+}
+
+/* ---------- ranges and lists ---------- */
+function splitList(s) {
+  const t = s.trim(); if (!t) return [];
+  const parts = /[,;\n]/.test(t) ? t.split(/[,;\n]/) : t.split(/\s+/);
+  return parts.map((p) => p.trim()).filter(Boolean);
+}
+function statsHTML(rows) { return `<dl class="hp-stats">${rows.map(([k, v]) => `<dt>${esc(k)}</dt><dd>${v}</dd>`).join('')}</dl>`; }
+const vtext = (z) => { const d = describe(z); return numHTML(d.main) + (d.alt ? ` <span class="muted">(${numHTML(d.alt)})</span>` : ''); };
+function updateRanges(info) {
+  const lo = st.rg.lo, hi = st.rg.hi;
+  const a = work(lo, varLookup, info.isVar), b = work(hi, varLookup, info.isVar);
+  let h = '';
+  if (a.empty || b.empty) h = lo.trim() || hi.trim() ? '<p class="hp-wait">Fill in both ends.</p>' : '';
+  else if (!a.value || !b.value) { const bad = !a.value ? [lo, a, 'From'] : [hi, b, 'To']; h = bad[1].err ? `<p class="hp-err">${bad[2]}: ${esc(bad[1].err)}</p>` : `<p class="hp-wait">${bad[2]}: needs ${esc((bad[1].unset || []).join(', ') || 'a choice')}.</p>`; }
+  else {
+    try {
+      N.startNotes();
+      const mid = N.cdiv(N.cadd(a.value, b.value), N.C(N.Q2)), w = N.csub(b.value, a.value), hw = N.cdiv(w, N.C(N.Q2));
+      N.takeNotes();
+      h = statsHTML([['Midpoint', vtext(mid)], ['Half the width', vtext(hw)], ['Width', vtext(w)]]);
+    } catch (e) { N.takeNotes(); h = `<p class="hp-err">${esc(e.message)}</p>`; }
+  }
+  $('rg-out').innerHTML = h;
+  const items = splitList(st.rg.list);
+  let l = '';
+  if (items.length) {
+    const vals = []; let bad = null;
+    items.forEach((s, k) => { const r = work(s, varLookup, info.isVar); if (r.value) vals.push(r.value); else if (!bad) bad = { k, s, r }; });
+    if (bad) l = bad.r.err ? `<p class="hp-err">Item ${bad.k + 1} (${esc(bad.s)}): ${esc(bad.r.err)}</p>` : `<p class="hp-wait">Item ${bad.k + 1} (${esc(bad.s)}) needs ${esc((bad.r.unset || []).join(', ') || 'a choice')}.</p>`;
+    else {
+      try {
+        N.startNotes();
+        const sum = vals.reduce((s, z) => N.cadd(s, z), N.C0), mean = N.cdiv(sum, N.C(N.qi(vals.length)));
+        const rows = [['Count', String(vals.length)], ['Sum', vtext(sum)], ['Mean', vtext(mean)]];
+        if (vals.every((z) => N.isRealC(z))) {
+          const s = vals.map((z) => z.re).sort((x, y) => N.rcmp(x, y)), n = s.length;
+          const med = n % 2 ? s[(n - 1) / 2] : N.rdiv(N.radd(s[n / 2 - 1], s[n / 2]), N.Q2);
+          rows.push(['Median', vtext(N.C(med))], ['Smallest', vtext(N.C(s[0]))], ['Largest', vtext(N.C(s[n - 1]))]);
+        } else rows.push(['Median', '<span class="muted">Only real numbers have a median.</span>']);
+        N.takeNotes();
+        l = statsHTML(rows);
+      } catch (e) { N.takeNotes(); l = `<p class="hp-err">${esc(e.message)}</p>`; }
+    }
+  }
+  $('ls-out').innerHTML = l;
+}
+
+/* ---------- letter values ---------- */
+function updateLetters() {
+  const text = st.lt;
+  if (!text.trim()) { $('lt-out').innerHTML = ''; return; }
+  const words = text.split(/\s+/).filter(Boolean);
+  let total = 0, letters = 0; const skipped = new Set(), folded = new Set();
+  const parts = words.map((w) => {
+    const chips = []; let sum = 0;
+    for (const ch of w) {
+      const base = ch.normalize('NFD').replace(/[̀-ͯ]/g, '');
+      if (/^[A-Za-z]$/.test(base)) {
+        const v = base.toUpperCase().charCodeAt(0) - 64; sum += v; letters++;
+        if (base !== ch) folded.add(ch);
+        chips.push(`<span class="chip"><span class="t">${esc(ch.toUpperCase())}</span><span class="d">${v}</span></span>`);
+      } else if (/\p{L}/u.test(ch)) skipped.add(ch);
+    }
+    total += sum;
+    return chips.length ? `<div class="hp-word"><div class="wh"><span>${esc(w)}</span><b>${sum}</b></div><div class="chips">${chips.join('')}</div></div>` : '';
+  }).filter(Boolean);
+  let h = `<p class="hp-total">Total: ${total}</p><p class="help">${letters} letter${letters === 1 ? '' : 's'} in ${parts.length} word${parts.length === 1 ? '' : 's'}.</p><div class="hp-words">${parts.join('')}</div>`;
+  if (folded.size) h += `<p class="help">Counted as plain letters: ${[...folded].map(esc).join(' ')}.</p>`;
+  if (skipped.size) h += `<p class="help">Skipped, as they aren’t A to Z: ${[...skipped].map(esc).join(' ')}.</p>`;
+  $('lt-out').innerHTML = h;
+}
+
+/* ---------- coordinate offset ---------- */
+const MIN = (n) => N.Q(BigInt(n));
+function decQ(s) { // an exact rational from a plain decimal string
+  const m = /^(-?)(\d+)(?:\.(\d+))?$/.exec(s); if (!m) return null;
+  const fp = m[3] || ''; const q = N.Q(BigInt(m[2] + fp), N.pow10(fp.length)); return m[1] ? N.rneg(q) : q;
+}
+function parseCoord(text) { // {lat, lon} as exact signed minutes, or {err}
+  const t = text.toUpperCase().replace(/[′’']/g, ' ').replace(/[°º]/g, ' ').replace(/\s+/g, ' ').trim(); // marks first, so a final ′ or ° leaves no space
+  if (!t) return null;
+  let m = /^([NS]) ?(\d{1,3}) (\d{1,2}(?:\.\d+)?)[ ,;]*([EW]) ?(\d{1,3}) (\d{1,2}(?:\.\d+)?)$/.exec(t);
+  if (m) {
+    const ld = +m[2], lm = decQ(m[3]), od = +m[5], om = decQ(m[6]);
+    if (N.rcmp(lm, MIN(60)) >= 0) return { err: `The latitude’s minutes (${m[3]}) must be under 60.` };
+    if (N.rcmp(om, MIN(60)) >= 0) return { err: `The longitude’s minutes (${m[6]}) must be under 60.` };
+    if (ld > 90 || (ld === 90 && N.rsign(lm) > 0)) return { err: 'A latitude can’t be more than 90°.' };
+    if (od > 180 || (od === 180 && N.rsign(om) > 0)) return { err: 'A longitude can’t be more than 180°.' };
+    let lat = N.radd(MIN(ld * 60), lm), lon = N.radd(MIN(od * 60), om);
+    if (m[1] === 'S') lat = N.rneg(lat); if (m[4] === 'W') lon = N.rneg(lon);
+    return { lat, lon };
+  }
+  m = /^([NS])? ?(-?\d{1,3}(?:\.\d+)?)(?: ?([NS]))?[ ,;]+([EW])? ?(-?\d{1,3}(?:\.\d+)?)(?: ?([EW]))?$/.exec(t);
+  if (m && !(m[1] && m[3]) && !(m[4] && m[6])) {
+    let la = decQ(m[2]), lo = decQ(m[5]);
+    if ((m[1] || m[3]) && N.rsign(la) < 0) return { err: 'Use either a letter (N or S) or a minus sign for the latitude, not both.' };
+    if ((m[4] || m[6]) && N.rsign(lo) < 0) return { err: 'Use either a letter (E or W) or a minus sign for the longitude, not both.' };
+    if ((m[1] || m[3]) === 'S') la = N.rneg(la); if ((m[4] || m[6]) === 'W') lo = N.rneg(lo);
+    if (N.rcmp(N.rabs(la), MIN(90)) > 0) return { err: 'A latitude can’t be more than 90°.' };
+    if (N.rcmp(N.rabs(lo), MIN(180)) > 0) return { err: 'A longitude can’t be more than 180°.' };
+    return { lat: N.rmul(la, MIN(60)), lon: N.rmul(lo, MIN(60)) };
+  }
+  return { err: 'Write the coordinate as N 45° 12.345 W 093° 54.321, or as decimal degrees: 45.20575, -93.90535.' };
+}
+function roundThousandth(minutes) { // exact signed minutes -> whole thousandths of a minute, halves away from zero
+  const x = N.rmul(minutes, MIN(1000)), a = N.rabs(x);
+  const r = N.fdivB(2n * a.n + a.d, 2n * a.d);
+  return N.rsign(x) < 0 ? -r : r;
+}
+function fmtPart(th, isLat) { // thousandths of a minute -> "N 45° 12.345"
+  const neg = th < 0n, a = neg ? -th : th, deg = a / 60000n, rem = a - deg * 60000n;
+  const mm = (rem / 1000n).toString().padStart(2, '0') + '.' + (rem % 1000n).toString().padStart(3, '0');
+  const h = isLat ? (neg ? 'S' : 'N') : (neg ? 'W' : 'E');
+  return `${h} ${deg.toString().padStart(isLat ? 2 : 3, '0')}° ${mm}`;
+}
+function minText(q) { // exact minutes, for the working: up to 6 decimals
+  const s = N.fmtReal(q, 'exact'); if (!/\//.test(s) && s.replace(/^−?\d+\.?/, '').length <= 6) return s;
+  return N.fmtReal(q, 'dec', 12) + '…';
+}
+function decDeg(th) { // thousandths of a minute -> decimal degrees, 6 places
+  const q = N.Q(th, 60000n); return N.fmtReal(N.rdiv(N.Q(roundHalfAwayQ(N.rmul(q, MIN(1000000)))), MIN(1000000)), 'exact');
+}
+function roundHalfAwayQ(x) { const a = N.rabs(x); const r = N.fdivB(2n * a.n + a.d, 2n * a.d); return N.rsign(x) < 0 ? -r : r; }
+function updateOffset(info) {
+  const c = st.co, out = $('co-out');
+  const p = parseCoord(c.text);
+  if (!p) { out.innerHTML = ''; return; }
+  if (p.err) { out.innerHTML = `<p class="hp-err">${esc(p.err)}</p>`; return; }
+  const isLat = c.part === 'lat';
+  const startTh = [roundThousandth(p.lat), roundThousandth(p.lon)];
+  if (!c.amt.trim()) { out.innerHTML = `<p class="hp-wait">Read as ${esc(fmtPart(startTh[0], true))} ${esc(fmtPart(startTh[1], false))}. Now give an amount.</p>`; return; }
+  const a = work(c.amt, varLookup, info.isVar);
+  if (!a.value) { out.innerHTML = a.err ? `<p class="hp-err">Amount: ${esc(a.err)}</p>` : `<p class="hp-wait">The amount needs ${esc((a.unset || []).join(', ') || 'a choice')}.</p>`; return; }
+  if (!N.isRealC(a.value)) { out.innerHTML = '<p class="hp-err">The amount must be a real number.</p>'; return; }
+  let amt = a.value.re;
+  if (amt.k === 'f') { const s = N.fmtReal(amt, 'dec', 15).replace('−', '-'); amt = /×/.test(s) ? null : decQ(s); if (!amt) { out.innerHTML = '<p class="hp-err">That amount is too large or too small to use here.</p>'; return; } }
+  const deltaMin = c.unit === 'deg' ? N.rmul(amt, MIN(60)) : amt;
+  const signed = c.op === '-' ? N.rneg(deltaMin) : deltaMin;
+  const start = isLat ? p.lat : p.lon;
+  let end = N.radd(start, signed);
+  const steps = [];
+  const sth = isLat ? startTh[0] : startTh[1];
+  const hemi = (q) => (isLat ? (N.rsign(q) < 0 ? 'S' : 'N') : (N.rsign(q) < 0 ? 'W' : 'E'));
+  const dmsOf = (q) => { const a2 = N.rabs(q), d = N.fdivB(a2.n, a2.d * 60n); return [d, N.rsub(a2, MIN(d * 60n))]; };
+  const [d0, m0] = dmsOf(start);
+  const amtTxt = minText(N.rabs(deltaMin)) + '′' + (c.unit === 'deg' ? ` (${minText(N.rabs(amt))}° × 60)` : '');
+  steps.push(`Start: <code>${esc(fmtPart(sth, isLat))}</code>, which is ${esc(minText(N.rabs(start)))}′ ${hemi(start) === (isLat ? 'N' : 'E') ? (isLat ? 'north of the equator' : 'east of Greenwich') : (isLat ? 'south of the equator' : 'west of Greenwich')} (${d0} × 60 + ${esc(minText(m0))}).`);
+  steps.push(`${c.op === '-' ? 'Subtract' : 'Add'} ${esc(amtTxt)}, measured ${isLat ? 'northwards' : 'eastwards'}: ${esc(minText(start).replace('−', '−'))} ${N.rsign(signed) < 0 ? '−' : '+'} ${esc(minText(N.rabs(signed)))} = ${esc(minText(end))} minutes${N.rsign(end) < 0 ? ` (negative means ${isLat ? 'south' : 'west'})` : ''}.`);
+  if (isLat && N.rcmp(N.rabs(end), MIN(5400)) > 0) { out.innerHTML = `<ol class="hp-steps">${steps.map((s) => `<li>${s}</li>`).join('')}</ol><p class="hp-err">That goes past the pole: a latitude can’t be more than 90° (5400 minutes).</p>`; return; }
+  if (!isLat) {
+    let wrapped = false;
+    while (N.rcmp(end, MIN(10800)) > 0) { end = N.rsub(end, MIN(21600)); wrapped = true; }
+    while (N.rcmp(end, MIN(-10800)) <= 0) { end = N.radd(end, MIN(21600)); wrapped = true; }
+    if (wrapped) steps.push(`That crosses the 180° meridian, so take 360° (21600 minutes) ${N.rsign(end) < 0 ? 'off' : 'on'}: ${esc(minText(end))} minutes.`);
+  }
+  const th = roundThousandth(end);
+  const [d1, m1] = dmsOf(end);
+  steps.push(`Split into degrees and minutes: ${esc(minText(N.rabs(end)))} = ${d1} × 60 + ${esc(minText(m1))}, so ${d1}° ${esc(minText(m1))}′. The minutes stay under 60.`);
+  if (N.rcmp(N.Q(th, 1000n), end) !== 0) steps.push(`Round to the nearest thousandth of a minute (halves away from zero): ${esc(fmtPart(th, isLat))}.`);
+  const res = isLat ? [th, startTh[1]] : [startTh[0], th];
+  out.innerHTML = `<p class="hp-coord"><span class="cp">${esc(fmtPart(res[0], true))}</span> <span class="cp">${esc(fmtPart(res[1], false))}</span></p>
+    <p class="help">In decimal degrees: ${esc(decDeg(res[0]))}, ${esc(decDeg(res[1]))}</p>
+    <div class="btnrow"><button type="button" class="btn small" data-copy="${esc(fmtPart(res[0], true) + ' ' + fmtPart(res[1], false))}">Copy the coordinate</button></div>
+    <ol class="hp-steps">${steps.map((s) => `<li>${s}</li>`).join('')}</ol>`;
+}
+
+/* ---------- the whole page ---------- */
+let INFO = null;
+function recalc(full) {
+  N.setDigits(st.digits);
+  INFO = evalVars();
+  if (full) { renderVars(); renderLines(); }
+  updateVarOutputs(INFO);
+  updateLines(INFO);
+  if (full) renderTable(INFO); else { const before = TB.cols.join('\u0001'); tableInfo(INFO); if (before !== TB.cols.join('\u0001')) renderTable(INFO); else updateTable(INFO); }
+  updateRanges(INFO); updateLetters(); updateOffset(INFO);
+  save();
+}
+let recT = 0;
+const soon = () => { clearTimeout(recT); recT = setTimeout(() => recalc(false), 140); };
+
+function syncSettings() {
+  $('set-digits').value = st.digits;
+  document.querySelectorAll('[data-angle]').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.angle === st.angle)));
+  document.querySelectorAll('[data-mode]').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.mode === st.mode)));
+  $('set-dsneg').value = st.ds.neg; $('set-dsdec').value = st.ds.dec;
+  $('tb-formula').value = st.table.formula;
+  $('rg-lo').value = st.rg.lo; $('rg-hi').value = st.rg.hi; $('ls-in').value = st.rg.list; $('lt-in').value = st.lt;
+  $('co-in').value = st.co.text; $('co-part').value = st.co.part; $('co-op').value = st.co.op; $('co-amt').value = st.co.amt; $('co-unit').value = st.co.unit;
+}
+
+/* settings */
+$('set-digits').addEventListener('change', () => { st.digits = Math.min(200, Math.max(20, Math.round(+$('set-digits').value) || 30)); $('set-digits').value = st.digits; recalc(false); });
+document.querySelectorAll('[data-angle]').forEach((b) => b.addEventListener('click', () => { st.angle = b.dataset.angle; syncSettings(); recalc(false); }));
+document.querySelectorAll('[data-mode]').forEach((b) => b.addEventListener('click', () => { st.mode = b.dataset.mode; syncSettings(); recalc(false); }));
+$('set-dsneg').addEventListener('change', () => { st.ds.neg = $('set-dsneg').value; recalc(false); });
+$('set-dsdec').addEventListener('change', () => { st.ds.dec = $('set-dsdec').value; recalc(false); });
+
+/* inserting symbols into the last box used */
+document.addEventListener('focusin', (e) => { const t = e.target; if (t instanceof HTMLInputElement && (t.classList.contains('hp-expr') || t.closest('#tb-grid'))) lastField = t; });
+function insertText(text, wrapSel) {
+  let f = lastField && document.body.contains(lastField) ? lastField : document.querySelector('input.line');
+  if (!f) return;
+  const a = f.selectionStart ?? f.value.length, b = f.selectionEnd ?? f.value.length;
+  const sel = f.value.slice(a, b);
+  const ins = wrapSel && sel ? text + sel + ')' : text;
+  f.value = f.value.slice(0, a) + ins + f.value.slice(b);
+  const caret = a + ins.length;
+  f.focus(); try { f.setSelectionRange(caret, caret); } catch (e) { /* some inputs can't */ }
+  f.dispatchEvent(new Event('input', { bubbles: true }));
+}
+document.querySelectorAll('[data-ins]').forEach((b) => {
+  b.addEventListener('mousedown', (e) => e.preventDefault()); // keep the caret where it is
+  b.addEventListener('click', () => insertText(b.dataset.ins, !!b.dataset.wrap));
+});
+
+/* ---------- Symbols and functions: from how a thing is printed to how to type it ----------
+   Each entry: g group, l how it looks in print (HTML made here, never from input), n its name, c what to
+   type, t what a tap inserts (@ is where a selection goes, ‸ where the caret ends; without ‸ it ends after
+   the selection; with nothing selected, an @ after the start of t is an empty slot and gets the caret),
+   a other spellings it also accepts, o a one-line note, k extra words to search by, go a panel to point to
+   instead. Only π, e and i are constants here. */
+const DIR_GROUPS = [['num', 'Numbers and constants'], ['ar', 'Arithmetic and powers'], ['rt', 'Roots'], ['lg', 'Logs and exponentials'], ['tr', 'Trigonometry'], ['it', 'Inverse trigonometry'], ['hy', 'Hyperbolic functions'],
+  ['rd', 'Rounding and parts'], ['nt', 'Number theory and counting'], ['dg', 'Digits and letters'], ['ls', 'Lists and statistics'], ['cx', 'Complex numbers'], ['an', 'Angles']];
+const fx = (look, name, f, a = [], o = '', k = '') => ({ l: look, n: name, c: f + '(x)', t: f + '(@)', a, o, k });
+const inv = (f, name, extra = [], k = '') => ({ l: `${f}<sup>−1</sup> x`, n: name, c: `a${f}(x)`, t: `a${f}(@)`, a: [`arc${f}(x)`, ...extra, `${f}^-1(x)`, `${f}⁻¹ x`], o: '', k: `${f}-1 ${f}^-1 arc${f} inverse ${k}` });
+const ainv = (f, name, extra = []) => ({ l: `${f}<sup>−1</sup> x`, n: name, c: `a${f}(x)`, t: `a${f}(@)`, a: [`ar${f}(x)`, `arc${f}(x)`, ...extra, `${f}^-1(x)`, `${f}⁻¹ x`], o: '', k: `${f}-1 ${f}^-1 ar${f} arc${f} area inverse hyperbolic` });
+const DIR = [
+  { g: 'num', l: 'π', n: 'Pi', c: 'π', t: 'π', a: ['pi'], o: '', k: 'pi 3.14159 circle' },
+  { g: 'num', l: 'e', n: 'e, the base of natural logarithms', c: 'e', t: 'e', a: [], o: '2e is 2 × e, but 2e3 is 2000.', k: 'euler number 2.71828' },
+  { g: 'num', l: 'i', n: 'The imaginary unit', c: 'i', t: 'i', a: [], o: 'i² is −1.', k: 'imaginary unit sqrt(-1) j' },
+  { g: 'num', l: '3.14', n: 'Decimal point', c: '3.14', t: '.', a: [], o: 'A point, not a comma: commas separate a function’s values.', k: 'decimal point comma' },
+  { g: 'num', l: '1.5 × 10<sup>3</sup>', n: 'Powers of ten', c: '1.5e3', t: '@e‸', a: ['1.5E3', '1.5 × 10^3'], o: 'The e goes straight after the number.', k: 'scientific notation exponent standard form x10 e notation' },
+  { g: 'num', l: '1.618…', n: 'A value known only to its digits', c: '1.618…', t: '@…‸', a: ['1.618...'], o: 'Results show only the digits it can vouch for.', k: 'approximate ellipsis dots truncated rounded' },
+  { g: 'num', l: '0.<span class="dx-over">3</span>, 0.(3)', n: 'Repeating decimal', c: '0.(3)', t: '@.(‸)', a: ['0.1(6)'], o: 'The digits in brackets repeat, as results show them: 0.(3) is 1/3, and 0.1(6) is 1/6. To multiply a decimal by a bracket, write the ×: 2.5 × (3).', k: 'repeating recurring decimal period bar dot' },
+  { g: 'num', l: '<span class="dx-frac"><span>1</span><span>2</span></span>', n: 'Fraction', c: '1/2', t: '@/‸', a: ['1 ÷ 2'], o: 'Fractions stay exact: 1/3 + 1/6 is 1/2.', k: 'fraction half over ½ 1/2' },
+  { g: 'ar', l: 'a + b', n: 'Add', c: 'a + b', t: ' + ', a: [], o: '', k: 'plus add sum' },
+  { g: 'ar', l: 'a − b', n: 'Subtract', c: 'a - b', t: ' - ', a: ['a − b'], o: '', k: 'minus subtract difference negative' },
+  { g: 'ar', l: 'a × b, ab', n: 'Multiply', c: 'a * b', t: ' * ', a: ['a × b', 'a·b', 'a b', '2x', '3(4 + 5)'], o: 'Left out, it counts the same as ×: 1/2π is (1/2) × π. xy is one name, so write x y.', k: 'times multiply product dot cross' },
+  { g: 'ar', l: 'a ÷ b', n: 'Divide', c: 'a / b', t: ' / ', a: ['a ÷ b'], o: '', k: 'divide division over quotient' },
+  { g: 'ar', l: 'x<sup>n</sup>', n: 'Power', c: 'x^n', t: '@^‸', a: ['x**n', 'x²', 'x³'], o: 'Works from the right: 2^3^2 is 2^9, and −2^2 is −4.', k: 'power exponent squared cubed index raised to' },
+  { g: 'ar', l: 'x<sup>−1</sup>', n: 'Reciprocal', c: 'x^-1', t: '@^-1‸', a: ['1/x', 'x⁻¹'], o: '', k: 'reciprocal inverse one over' },
+  { g: 'ar', l: '( )  [ ]  { }', n: 'Brackets', c: '( )', t: '(@)', a: ['[ ]', '{ }'], o: 'All three kinds work the same.', k: 'parentheses brackets braces' },
+  { g: 'ar', l: 'n!', n: 'Factorial', c: 'n!', t: '@!‸', a: ['factorial(n)'], o: '', k: 'factorial exclamation' },
+  { g: 'ar', l: 'n!!', n: 'Double factorial', c: 'n!!', t: '@!!‸', a: ['doublefactorial(n)'], o: 'n × (n − 2) × (n − 4) × …; for (n!)!, keep the brackets.', k: 'double factorial semifactorial' },
+  { g: 'ar', l: 'Γ(x)', n: 'Gamma function', c: 'gamma(x)', t: 'gamma(@)', a: [], o: 'Γ on its own is a variable’s name here.', k: 'gamma Γ' },
+  { g: 'rt', l: '√x', n: 'Square root', c: 'sqrt(x)', t: 'sqrt(@)', a: ['√x', 'sqrt x', 'x^(1/2)'], o: '√ takes the next number, name or bracket, with its power: √2² is √4.', k: 'square root radical surd' },
+  { g: 'rt', l: '∛x', n: 'Cube root', c: 'cbrt(x)', t: 'cbrt(@)', a: ['∛x', 'root(x, 3)'], o: 'The real cube root: ∛(−8) is −2.', k: 'cube root third' },
+  { g: 'rt', l: '∜x', n: 'Fourth root', c: 'root(x, 4)', t: 'root(@, 4)', a: ['∜x'], o: '', k: 'fourth root' },
+  { g: 'rt', l: '<sup>n</sup>√x', n: 'n-th root', c: 'root(x, n)', t: 'root(@, ‸)', a: ['³√x', 'x^(1/n)'], o: 'For a negative x and odd n, root gives the real root; x^(1/n) the principal complex one.', k: 'nth root radical index' },
+  { g: 'rt', l: '√(a² + b²)', n: 'Hypotenuse', c: 'hypot(a, b)', t: 'hypot(@, ‸)', a: ['sqrt(a^2 + b^2)'], o: 'Takes two or more values.', k: 'hypotenuse pythagoras distance length norm' },
+  { g: 'lg', l: 'e<sup>x</sup>', n: 'Exponential', c: 'exp(x)', t: 'exp(@)', a: ['e^x', 'e^(x + 1)'], o: 'Put a longer power in brackets: e^(iπ).', k: 'exponential exp e to the power' },
+  { g: 'lg', l: 'ln x', n: 'Natural logarithm', c: 'ln(x)', t: 'ln(@)', a: ['ln x', 'log(x, e)'], o: '', k: 'natural log logarithm base e' },
+  { g: 'lg', l: 'log x', n: 'Logarithm to base 10', c: 'log(x)', t: 'log(@)', a: ['log x', 'log10(x)', 'log₁₀ x'], o: '', k: 'common logarithm base 10' },
+  { g: 'lg', l: 'log<sub>2</sub> x', n: 'Logarithm to base 2', c: 'log2(x)', t: 'log2(@)', a: ['log₂ x', 'log_2(x)', 'log_2 x'], o: '', k: 'binary logarithm base 2 lb ld' },
+  { g: 'lg', l: 'log<sub>b</sub> x', n: 'Logarithm to base b', c: 'log(x, b)', t: 'log(@, ‸)', a: ['log_b(x)', 'log₅ x', 'log_5 x'], o: 'A base written on log, as in log_5 x, is read as log(x, 5).', k: 'base logarithm subscript log_' },
+  { g: 'lg', l: 'lg x', n: 'lg', c: 'log(x)', t: 'log(@)', a: [], o: 'lg is base 10 in some books and base 2 in others: type log(x) or log2(x).', k: 'lg' },
+  { g: 'tr', ...fx('sin x', 'Sine', 'sin', ['sin x', 'sin 30°'], 'In the angle unit chosen above; ° makes it degrees.', 'sine') },
+  { g: 'tr', ...fx('cos x', 'Cosine', 'cos', ['cos x'], '', 'cosine') },
+  { g: 'tr', ...fx('tan x', 'Tangent', 'tan', ['tan x'], '', 'tangent') },
+  { g: 'tr', ...fx('sec x', 'Secant', 'sec', ['sec x'], '', 'secant') },
+  { g: 'tr', ...fx('csc x, cosec x', 'Cosecant', 'csc', ['cosec(x)', 'csc x'], '', 'cosecant') },
+  { g: 'tr', ...fx('cot x', 'Cotangent', 'cot', ['cot x'], '', 'cotangent') },
+  { g: 'tr', l: 'sin<sup>2</sup> x', n: 'Power of a function', c: 'sin(x)^2', t: 'sin(@)^2', a: ['sin^2(x)', 'sin²x'], o: 'Also for cos, tan and the rest, the hyperbolic functions, ln and log.', k: 'squared power sin^2 sin2' },
+  { g: 'tr', l: 'sin 2x', n: 'A function without brackets', c: 'sin(2x)', t: 'sin(@)', a: ['sin 2x'], o: 'Without brackets, a function takes the next number, name or bracket, so sin 2x is sin(2x). Before a power or a /, brackets are needed: sin(x/2) or sin(x)/2.', k: 'no brackets bare argument coefficient' },
+  { g: 'it', ...inv('sin', 'Inverse sine', [], 'arcsine'), o: 'sin⁻¹ is the inverse function, not 1/sin.' },
+  { g: 'it', ...inv('cos', 'Inverse cosine', [], 'arccosine') },
+  { g: 'it', ...inv('tan', 'Inverse tangent', [], 'arctangent') },
+  { g: 'it', ...inv('sec', 'Inverse secant', [], 'arcsecant') },
+  { g: 'it', ...inv('csc', 'Inverse cosecant', ['arccosec(x)'], 'arccosecant cosec') },
+  { g: 'it', ...inv('cot', 'Inverse cotangent', [], 'arccotangent') },
+  { g: 'it', l: 'atan2(y, x)', n: 'Angle of the point (x, y)', c: 'atan2(y, x)', t: 'atan2(@, ‸)', a: [], o: 'From −180° to 180° (−π to π).', k: 'arctan2 angle bearing polar direction' },
+  { g: 'hy', ...fx('sinh x', 'Hyperbolic sine', 'sinh', ['sinh x'], '', 'hyperbolic') },
+  { g: 'hy', ...fx('cosh x', 'Hyperbolic cosine', 'cosh', ['cosh x'], '', 'hyperbolic') },
+  { g: 'hy', ...fx('tanh x', 'Hyperbolic tangent', 'tanh', ['tanh x'], '', 'hyperbolic') },
+  { g: 'hy', ...fx('sech x', 'Hyperbolic secant', 'sech', ['sech x'], '', 'hyperbolic') },
+  { g: 'hy', ...fx('csch x, cosech x', 'Hyperbolic cosecant', 'csch', ['cosech(x)', 'csch x'], '', 'hyperbolic') },
+  { g: 'hy', ...fx('coth x', 'Hyperbolic cotangent', 'coth', ['coth x'], '', 'hyperbolic') },
+  { g: 'hy', ...ainv('sinh', 'Inverse hyperbolic sine') },
+  { g: 'hy', ...ainv('cosh', 'Inverse hyperbolic cosine') },
+  { g: 'hy', ...ainv('tanh', 'Inverse hyperbolic tangent') },
+  { g: 'hy', ...ainv('sech', 'Inverse hyperbolic secant') },
+  { g: 'hy', ...ainv('csch', 'Inverse hyperbolic cosecant') },
+  { g: 'hy', ...ainv('coth', 'Inverse hyperbolic cotangent') },
+  { g: 'rd', l: '|x|', n: 'Absolute value', c: 'abs(x)', t: 'abs(@)', a: ['|x|'], o: 'For a complex number, its distance from 0.', k: 'absolute value modulus magnitude size bars' },
+  { g: 'rd', l: '⌊x⌋', n: 'Floor', c: 'floor(x)', t: 'floor(@)', a: ['⌊x⌋'], o: 'Rounds down: ⌊−3.5⌋ is −4.', k: 'round down floor greatest integer' },
+  { g: 'rd', l: '⌈x⌉', n: 'Ceiling', c: 'ceil(x)', t: 'ceil(@)', a: ['⌈x⌉'], o: 'Rounds up.', k: 'round up ceiling least integer' },
+  { g: 'rd', l: 'round x', n: 'Round', c: 'round(x)', t: 'round(@)', a: ['round(x, places)'], o: 'Halves round away from zero: round(2.5) is 3.', k: 'round nearest places decimal' },
+  { g: 'rd', l: 'trunc x', n: 'Whole-number part', c: 'trunc(x)', t: 'trunc(@)', a: [], o: 'Drops the fraction: trunc(−3.7) is −3.', k: 'truncate integer part int' },
+  { g: 'rd', l: 'frac x, {x}', n: 'Fractional part', c: 'frac(x)', t: 'frac(@)', a: [], o: 'Keeps the sign: frac(−3.7) is −0.7. Here { } are brackets, so type frac(x), not {x}.', k: 'fractional part decimal part' },
+  { g: 'rd', l: 'sgn x', n: 'Sign', c: 'sign(x)', t: 'sign(@)', a: ['sgn(x)'], o: '−1, 0 or 1.', k: 'sign signum' },
+  { g: 'nt', l: 'x mod n', n: 'Remainder', c: 'x mod n', t: '@ mod ‸', a: ['x % n', 'mod(x, n)'], o: 'Takes the sign of n: −7 mod 3 is 2.', k: 'modulo remainder modulus %' },
+  { g: 'nt', l: 'a ≡ b (mod n)', n: 'Congruence', c: 'mod(a - b, n)', t: 'mod(@ - ‸, )', a: [], o: 'Not worked out directly: it holds when this is 0.', k: 'congruent congruence modulo ≡' },
+  { g: 'nt', l: 'gcd(a, b)', n: 'Greatest common divisor', c: 'gcd(a, b)', t: 'gcd(@, ‸)', a: ['gcd(a, b, c, …)'], o: '', k: 'gcd hcf highest greatest common factor divisor' },
+  { g: 'nt', l: 'lcm(a, b)', n: 'Least common multiple', c: 'lcm(a, b)', t: 'lcm(@, ‸)', a: ['lcm(a, b, c, …)'], o: '', k: 'lcm lowest least common multiple' },
+  { g: 'nt', l: '<sub class="dx-pre">n</sub>C<sub>r</sub>, <sup class="dx-pre">n</sup>C<sub>r</sub>, <span class="dx-binom" aria-hidden="true"><span>n</span><span>k</span></span><span class="sr">(n over k)</span>', n: 'Combinations', c: 'nCr(n, k)', t: 'nCr(@, ‸)', a: ['5C2', 'C(n, k)', 'choose(n, k)', 'binomial(n, k)', '⁵C₂'], o: '', k: 'combinations choose binomial coefficient ncr ⁿcᵣ (n k)' },
+  { g: 'nt', l: '<sub class="dx-pre">n</sub>P<sub>r</sub>, <sup class="dx-pre">n</sup>P<sub>r</sub>', n: 'Permutations', c: 'nPr(n, k)', t: 'nPr(@, ‸)', a: ['5P2', 'P(n, k)', '⁵P₂'], o: '', k: 'permutations arrangements npr ⁿpᵣ' },
+  { g: 'nt', l: 'isprime n', n: 'Is it prime?', c: 'isprime(n)', t: 'isprime(@)', a: [], o: '1 if it is, 0 if not.', k: 'prime test primality' },
+  { g: 'nt', l: 'factor n', n: 'Prime factors', c: 'factor(n)', t: 'factor(@)', a: [], o: '', k: 'factorise factorize factorisation decomposition primes' },
+  { g: 'nt', l: 'nextprime n', n: 'Next prime', c: 'nextprime(n)', t: 'nextprime(@)', a: [], o: '', k: 'next prime after' },
+  { g: 'nt', l: 'prevprime n', n: 'Previous prime', c: 'prevprime(n)', t: 'prevprime(@)', a: [], o: '', k: 'previous prime before' },
+  { g: 'nt', l: 'T<sub>n</sub>', n: 'Triangle number', c: 'triangle(n)', t: 'triangle(@)', a: [], o: 'triangle(4) is 10.', k: 'triangle triangular number' },
+  { g: 'nt', l: 'F<sub>n</sub>', n: 'Fibonacci number', c: 'fib(n)', t: 'fib(@)', a: [], o: 'fib(0) is 0 and fib(1) is 1.', k: 'fibonacci' },
+  { g: 'dg', l: 'digit sum', n: 'Digit sum', c: 'digitsum(n)', t: 'digitsum(@)', a: [], o: 'It asks first what to do with a negative number or a decimal.', k: 'digit sum cross sum' },
+  { g: 'dg', l: 'digital root', n: 'Digital root', c: 'digitalroot(n)', t: 'digitalroot(@)', a: [], o: '', k: 'digital root repeated digit sum' },
+  { g: 'dg', l: 'reverse', n: 'Digits backwards', c: 'reverse(n)', t: 'reverse(@)', a: [], o: 'reverse(1230) is 321.', k: 'reverse backwards mirror' },
+  { g: 'dg', l: 'concat', n: 'Numbers joined end to end', c: 'concat(a, b)', t: 'concat(@, ‸)', a: [], o: 'concat(12, 345) is 12345.', k: 'concatenate join append' },
+  { g: 'dg', l: 'digits', n: 'Number of digits', c: 'digits(n)', t: 'digits(@)', a: [], o: '', k: 'how many digits length count' },
+  { g: 'dg', l: 'A = 1 … Z = 26', n: 'Letter values', go: ['letters', 'Letter values'], k: 'letter values alphabet a1z26 word value' },
+  { g: 'ls', l: 'Σ', n: 'Sum', c: 'sum(a, b, c)', t: 'sum(@)', a: [], o: 'Σ on its own is a variable’s name here.', k: 'sigma sum total add up' },
+  { g: 'ls', l: 'Π', n: 'Product', c: 'prod(a, b, c)', t: 'prod(@)', a: ['product(a, b, c)'], o: 'Π on its own is a variable’s name here.', k: 'pi product multiply all' },
+  { g: 'ls', l: '<span class="dx-over">x</span>', n: 'Mean', c: 'mean(a, b, c)', t: 'mean(@)', a: [], o: '', k: 'mean average x bar x̄' },
+  { g: 'ls', l: 'median', n: 'Median', c: 'median(a, b, c)', t: 'median(@)', a: [], o: '', k: 'median middle' },
+  { g: 'ls', l: 'max', n: 'Largest', c: 'max(a, b, c)', t: 'max(@)', a: [], o: '', k: 'maximum largest biggest' },
+  { g: 'ls', l: 'min', n: 'Smallest', c: 'min(a, b, c)', t: 'min(@)', a: [], o: '', k: 'minimum smallest least' },
+  { g: 'ls', l: 'a … b', n: 'A range’s midpoint, or a long list', go: ['ranges', 'Ranges and lists'], k: 'midpoint range middle width list paste count' },
+  { g: 'cx', l: 'a + bi', n: 'A complex number', c: '3 + 4i', t: 'i', a: [], o: 'i straight after a number multiplies it.', k: 'complex imaginary' },
+  { g: 'cx', l: 'Re z', n: 'Real part', c: 're(z)', t: 're(@)', a: ['Re(z)'], o: '', k: 'real part re ℜ' },
+  { g: 'cx', l: 'Im z', n: 'Imaginary part', c: 'im(z)', t: 'im(@)', a: ['Im(z)'], o: '', k: 'imaginary part im ℑ' },
+  { g: 'cx', l: '|z|', n: 'Modulus', c: 'abs(z)', t: 'abs(@)', a: ['|z|'], o: '', k: 'modulus absolute value magnitude' },
+  { g: 'cx', l: 'arg z', n: 'Argument (angle)', c: 'arg(z)', t: 'arg(@)', a: [], o: 'In the angle unit chosen above.', k: 'argument angle phase' },
+  { g: 'cx', l: '<span class="dx-over">z</span>', n: 'Conjugate', c: 'conj(z)', t: 'conj(@)', a: [], o: '', k: 'conjugate z bar z̄ z*' },
+  { g: 'cx', l: 'cis x', n: 'cos x + i sin x', c: 'cis(x)', t: 'cis(@)', a: ['e^(i x)'], o: 'In the angle unit chosen above, while e^(i x) is always in radians; r cis x is r × cis(x).', k: 'cis polar form euler' },
+  { g: 'an', l: '30°', n: 'Degrees', c: '30°', t: '@°‸', a: [], o: 'Marks degrees, whichever angle setting is on.', k: 'degree sign deg' },
+  { g: 'an', l: 'rad', n: 'Degrees to radians', c: 'rad(x)', t: 'rad(@)', a: [], o: '', k: 'radians convert' },
+  { g: 'an', l: 'deg', n: 'Radians to degrees', c: 'deg(x)', t: 'deg(@)', a: [], o: '', k: 'degrees convert' },
+  { g: 'an', l: 'N 45° 12.345′', n: 'A coordinate, moved by an offset', go: ['offset', 'Coordinate offset'], k: 'coordinate minutes offset latitude longitude' },
+];
+const dxNormC = (s) => String(s).normalize('NFKC').replace(/∑/g, 'Σ').replace(/∏/g, 'Π').replace(/\u0305/g, '\u0304').replace(/[−–—]/g, '-').replace(/[×⋅∙]/g, '*').replace(/÷/g, '/').replace(/\^/g, '').replace(/\s+/g, ' ').trim();
+const dxNorm = (s) => dxNormC(s).toLowerCase();
+const dxText = (h) => h.replace(/<[^>]*>/g, ' ');
+const dxBare = (f) => f.replace(/^(\p{L}[\p{L}\p{Nd}_]*)\(.*\)$/u, '$1'); // sqrt(x) -> sqrt
+// each field is searched on its own, with and without its spaces, so a search never matches across two fields
+DIR.forEach((d) => {
+  const main = [dxText(d.l), d.n, d.c || '', ...(d.a || []), d.go ? d.go[1] : ''];
+  d.main = main.map(dxNorm).filter(Boolean);
+  d.mainC = main.map(dxNormC).flatMap((f) => [f, f.replace(/ /g, ''), dxBare(f)]);
+  d.hay = [...d.main.map((f) => f + ' ' + f.replace(/ /g, '')), dxNorm(d.k || '')].join('\n'); // the search words (k) are separate words
+});
+function dxRank(d, q, qC) { // −1: the look or a typed form is the search, capitals and all; 0: the same in any case; 1: one starts with it; 2: a word starts with it; 3: anything else
+  if (d.mainC.includes(qC) || d.mainC.includes(qC.replace(/ /g, ''))) return -1;
+  const fs = d.main.flatMap((f) => [f, f.replace(/ /g, ''), dxBare(f)]);
+  if (fs.includes(q)) return 0;
+  if (fs.some((f) => f.startsWith(q))) return 1;
+  if (d.hay.split(/[\n ]/).some((w) => w.startsWith(q))) return 2;
+  return 3;
+}
+const dxCode = (s) => `<code>${esc(s)}</code>`;
+const dxTap = (d) => d.t.replace('‸', '').replace('@', '').trim(); // what a tap inserts with nothing selected
+const dxInsLabel = (d) => (dxTap(d) === d.c ? `Insert ${d.c}` : `Insert ${dxTap(d)}, as in ${d.c}`);
+function renderDir() {
+  $('dx-list').innerHTML = DIR_GROUPS.map(([g, title]) => `<section class="dx-group" data-g="${g}" aria-labelledby="dxg-${g}"><h3 id="dxg-${g}">${esc(title)}</h3><ul>` +
+    DIR.map((d, i) => (d.g !== g ? '' : `<li class="dx" data-i="${i}"><span class="dx-look">${d.l}</span><div class="dx-body"><p class="dx-name">${esc(d.n)}</p>` +
+      (d.go ? `<p class="dx-type"><button type="button" class="btn small dx-go" data-go="${esc(d.go[0])}">Go to ${esc(d.go[1])}</button></p>`
+        : `<p class="dx-type"><button type="button" class="dx-ins" data-dx="${i}" aria-label="${esc(dxInsLabel(d))}">${dxCode(d.c)}</button><button type="button" class="btn quiet small dx-copy" data-dxc="${i}" aria-label="Copy ${esc(d.c)}">Copy</button></p>`) +
+      (d.a && d.a.length ? `<p class="dx-also">Also ${d.a.map(dxCode).join(', ')}</p>` : '') +
+      (d.o ? `<p class="dx-note">${esc(d.o)}</p>` : '') + '</div></li>')).join('') + '</ul></section>').join('');
+}
+function filterDir() {
+  const q = $('dx-q').value, words = dxNorm(q).split(' ').filter(Boolean);
+  let shown = 0;
+  const full = words.join(' '), qC = dxNormC(q), rank = new Map();
+  document.querySelectorAll('#dx-list li.dx').forEach((li) => { const d = DIR[+li.dataset.i], ok = words.every((w) => d.hay.includes(w)); li.hidden = !ok; if (ok) { shown++; rank.set(li, words.length ? Math.min(dxRank(d, full, qC), dxRank(d, full.replace(/ /g, ''), qC)) : 0); } });
+  // the best matches first, within each group and among the groups (in the directory's own order when there is no search)
+  const byRank = (a, b) => (rank.get(a) ?? 9) - (rank.get(b) ?? 9) || +a.dataset.i - +b.dataset.i;
+  const groups = [...document.querySelectorAll('#dx-list .dx-group')];
+  for (const sec of groups) { const ul = sec.querySelector('ul'); [...ul.children].sort(byRank).forEach((li) => ul.appendChild(li)); sec.hidden = !sec.querySelector('li.dx:not([hidden])'); }
+  const best = (sec) => Math.min(9, ...[...sec.querySelectorAll('li.dx:not([hidden])')].map((li) => rank.get(li)));
+  groups.map((sec) => [sec, best(sec), DIR_GROUPS.findIndex((g) => g[0] === sec.dataset.g)]).sort((a, b) => a[1] - b[1] || a[2] - b[2]).forEach(([sec]) => $('dx-list').appendChild(sec));
+  $('dx-count').textContent = !words.length ? '' : shown ? `${shown} match${shown === 1 ? '' : 'es'}.` : `Nothing matches “${q.trim()}”. Try a name, such as square root, or a symbol, such as √.`;
+}
+const fieldName = (f) => { const l = f.getAttribute('aria-label') || (f.labels && f.labels[0] ? f.labels[0].textContent.trim() : '') || 'the box'; return l.charAt(0).toLowerCase() + l.slice(1); };
+let dxField = null;
+function putFromDir(d) { // into the box last typed in, without moving the page; the caret stays there for next time
+  let f = lastField && document.body.contains(lastField) ? lastField : document.querySelector('input.line');
+  if (!f) return;
+  const a = f.selectionStart ?? f.value.length, b = f.selectionEnd ?? f.value.length, sel = f.value.slice(a, b);
+  const t = d.t, raw = t.replace('‸', ''), si = raw.indexOf('@'), ci = t.indexOf('‸'); // a plain symbol (no @) replaces a selection
+  const ins = si < 0 ? raw : raw.slice(0, si) + sel + raw.slice(si + 1);
+  // with nothing selected, an empty slot inside the insert (hypot(@, ‸)) gets the caret; one at the start (@^‸) acts on what is before it
+  const caret = a + (si > 0 && !sel ? si : ci >= 0 ? ci + (si >= 0 && t.indexOf('@') < ci ? sel.length - 1 : 0) : si >= 0 ? si + sel.length : ins.length);
+  f.value = f.value.slice(0, a) + ins + f.value.slice(b);
+  try { f.setSelectionRange(caret, caret); } catch (e) { /* some inputs can't */ }
+  f.dispatchEvent(new Event('input', { bubbles: true }));
+  lastField = f; dxField = f;
+  const shownVal = f.value.length > 60 ? f.value.slice(0, 57) + '…' : f.value;
+  const put = ins.trim() || ins;
+  $('dx-put').innerHTML = `<p>Put ${dxCode(put.length > 60 ? put.slice(0, 57) + '…' : put)} into ${esc(fieldName(f))}, which now reads ${dxCode(shownVal)}.</p><div class="btnrow"><button type="button" class="btn small" id="dx-goto">Go to ${esc(fieldName(f))}</button></div>`;
+}
+renderDir(); filterDir();
+$('dx-q').addEventListener('input', filterDir);
+$('dx-q').addEventListener('keydown', (e) => {
+  if (e.key === 'Escape' && $('dx-q').value) { e.preventDefault(); $('dx-q').value = ''; filterDir(); }
+  else if (e.key === 'ArrowDown') { const first = document.querySelector('#dx-list li.dx:not([hidden]) :is(.dx-ins, .dx-go)'); if (first) { e.preventDefault(); first.focus(); } }
+});
+$('dx-list').addEventListener('mousedown', (e) => { if (e.target.closest('.dx-ins')) e.preventDefault(); }); // keep the caret where it is
+$('dx-list').addEventListener('click', (e) => {
+  const b = e.target.closest('button'); if (!b) return;
+  if (b.dataset.dx !== undefined) putFromDir(DIR[+b.dataset.dx]);
+  else if (b.dataset.dxc !== undefined) copyText(DIR[+b.dataset.dxc].c);
+  else if (b.dataset.go) { const el = $(b.dataset.go), f = el && el.querySelector('input, textarea'); if (el) el.scrollIntoView({ block: 'start', behavior: reduced() ? 'auto' : 'smooth' }); if (f) f.focus({ preventScroll: true }); }
+});
+$('dx-list').addEventListener('keydown', (e) => { // up and down between entries
+  if (e.key !== 'ArrowDown' && e.key !== 'ArrowUp') return;
+  const btns = [...document.querySelectorAll('#dx-list li.dx:not([hidden]) :is(.dx-ins, .dx-go)')];
+  const cur = e.target.closest('li.dx'); if (!cur) return;
+  const i = btns.findIndex((x) => cur.contains(x)); if (i < 0) return;
+  e.preventDefault();
+  if (e.key === 'ArrowDown') { if (btns[i + 1]) btns[i + 1].focus(); }
+  else if (i > 0) btns[i - 1].focus(); else $('dx-q').focus();
+});
+$('dx-put').addEventListener('click', (e) => {
+  if (!e.target.closest('#dx-goto') || !dxField || !document.body.contains(dxField)) return;
+  const c = dxField.selectionStart; dxField.focus(); dxField.scrollIntoView({ block: 'center', behavior: reduced() ? 'auto' : 'smooth' }); try { dxField.setSelectionRange(c, c); } catch (e2) { /* fine */ }
+});
+
+/* lines */
+$('lines').addEventListener('input', (e) => { const t = e.target; if (t.classList.contains('line')) { st.lines[+t.dataset.i] = t.value; soon(); } });
+$('lines').addEventListener('keydown', (e) => {
+  const t = e.target; if (!t.classList.contains('line') || e.key !== 'Enter') return;
+  e.preventDefault(); const i = +t.dataset.i;
+  if (i === st.lines.length - 1) { st.lines.push(''); recalc(true); }
+  const nx = document.querySelector(`input.line[data-i="${i + 1}"]`); if (nx) nx.focus();
+});
+$('add-line').addEventListener('click', () => { st.lines.push(''); recalc(true); const ins = document.querySelectorAll('input.line'); ins[ins.length - 1].focus(); });
+$('clear-lines').addEventListener('click', () => { st.lines = ['']; lastVals.length = 0; recalc(true); document.querySelector('input.line').focus(); });
+document.addEventListener('click', (e) => {
+  const t = e.target.closest('button'); if (!t) return;
+  if (t.dataset.ldel !== undefined) { const i = +t.dataset.ldel; st.lines.splice(i, 1); lastVals.splice(i, 1); recalc(true); const ins = document.querySelectorAll('input.line'); ins[Math.min(i, ins.length - 1)].focus(); }
+  else if (t.dataset.copy !== undefined) copyText(t.dataset.copy);
+  else if (t.dataset.ask) { st.ds[t.dataset.ask] = t.dataset.v; syncSettings(); recalc(false); toast('Noted. You can change it under the calculator’s digit-sum settings.'); }
+  else if (t.dataset.setvar !== undefined) {
+    const nm = t.dataset.setvar;
+    let i = st.vars.findIndex((v) => v.name.trim() === nm);
+    if (i < 0) { i = st.vars.findIndex((v) => !v.name.trim() && !v.src.trim()); if (i < 0) { st.vars.push({ name: nm, src: '' }); i = st.vars.length - 1; } else st.vars[i].name = nm; }
+    recalc(true);
+    const inp = document.querySelector(`input.vval[data-i="${i}"]`); if (inp) { inp.focus(); inp.scrollIntoView({ block: 'center', behavior: reduced() ? 'auto' : 'smooth' }); }
+  }
+  else if (t.dataset.del !== undefined) { const i = +t.dataset.del; st.vars.splice(i, 1); if (!st.vars.length) st.vars.push({ name: '', src: '' }); recalc(true); const ins = document.querySelectorAll('input.vname'); ins[Math.min(i, ins.length - 1)].focus(); }
+  else if (t.dataset.rdel !== undefined) { const i = +t.dataset.rdel; st.table.rows.splice(i, 1); if (!st.table.rows.length) st.table.rows.push({}); renderTable(INFO); save(); const bs = document.querySelectorAll('[data-rdel]'); if (bs.length) bs[Math.min(i, bs.length - 1)].focus(); }
+});
+
+/* variables */
+$('var-list').addEventListener('input', (e) => {
+  const t = e.target, i = +t.dataset.i; if (Number.isNaN(i)) return;
+  if (t.classList.contains('vname')) { st.vars[i].name = t.value; const v = t.parentElement.querySelector('.vval'); if (v) v.setAttribute('aria-label', 'Value of ' + (t.value || 'variable ' + (i + 1))); }
+  else if (t.classList.contains('vval')) st.vars[i].src = t.value;
+  soon();
+});
+$('var-list').addEventListener('keydown', (e) => {
+  const t = e.target; if (e.key !== 'Enter' || !(t instanceof HTMLInputElement)) return;
+  e.preventDefault(); const i = +t.dataset.i;
+  if (t.classList.contains('vname')) { const v = document.querySelector(`input.vval[data-i="${i}"]`); if (v) v.focus(); return; }
+  if (i === st.vars.length - 1) { st.vars.push({ name: '', src: '' }); recalc(true); }
+  const nx = document.querySelector(`input.vname[data-i="${i + 1}"]`); if (nx) nx.focus();
+});
+$('add-var').addEventListener('click', () => { st.vars.push({ name: '', src: '' }); recalc(true); const ins = document.querySelectorAll('input.vname'); ins[ins.length - 1].focus(); });
+
+/* table */
+$('tb-formula').addEventListener('input', () => { st.table.formula = $('tb-formula').value; soon(); });
+$('tb-cols').addEventListener('change', (e) => { const c = e.target.dataset.col; if (c === undefined) return; st.table.cols[c] = e.target.checked; renderTable(INFO); save(); const el = document.querySelector(`#tb-cols [data-col="${CSS.escape(c)}"]`); if (el) el.focus(); });
+$('tb-grid').addEventListener('input', (e) => { const t = e.target; if (t.dataset.r === undefined) return; st.table.rows[+t.dataset.r][t.dataset.c] = t.value; clearTimeout(recT); recT = setTimeout(() => { updateTable(INFO); save(); }, 140); });
+$('tb-grid').addEventListener('paste', (e) => {
+  const t = e.target; if (t.dataset.r === undefined) return;
+  const text = (e.clipboardData || window.clipboardData).getData('text');
+  if (!/[\t\n,;]/.test(text.trim())) return; // a single value: let it paste normally
+  e.preventDefault();
+  const n = fillRows(text, +t.dataset.r, TB.cols.indexOf(t.dataset.c));
+  renderTable(INFO); save(); toast(`Filled ${n} row${n === 1 ? '' : 's'}`);
+});

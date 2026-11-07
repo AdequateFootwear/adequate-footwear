@@ -1,0 +1,174 @@
+<!-- Review copy: lines 3874-4046 of higher-powers/index.html, split so Copilot can review it. Not served. -->
+$('tb-grid').addEventListener('keydown', (e) => {
+  const t = e.target; if (e.key !== 'Enter' || t.dataset.r === undefined) return;
+  e.preventDefault(); const r = +t.dataset.r + 1;
+  if (r >= st.table.rows.length) { st.table.rows.push({}); renderTable(INFO); save(); }
+  const nx = document.querySelector(`#tb-grid input[data-r="${r}"][data-c="${CSS.escape(t.dataset.c)}"]`); if (nx) nx.focus();
+});
+$('tb-add').addEventListener('click', () => { st.table.rows.push({}); renderTable(INFO); save(); const ins = document.querySelectorAll(`#tb-grid input[data-r="${st.table.rows.length - 1}"]`); if (ins[0]) ins[0].focus(); });
+$('tb-clear').addEventListener('click', () => { st.table.rows = [{}, {}, {}]; renderTable(INFO); save(); });
+$('tb-copy').addEventListener('click', () => { if (!TB_RESULTS.some(Boolean)) { toast('No results to copy yet'); return; } copyText(TB_RESULTS.join('\n')); });
+$('tb-copyall').addEventListener('click', () => {
+  if (!TB.ast) { toast('Write a formula first'); return; }
+  const lines = [[...TB.cols, 'Result'].join('\t')].concat(st.table.rows.map((r, i) => [...TB.cols.map((c) => r[c] || ''), TB_RESULTS[i] || ''].join('\t')));
+  copyText(lines.join('\n'));
+});
+$('tb-fill').addEventListener('click', () => {
+  const msg = $('tb-paste-msg');
+  if (!TB.cols.length) { msg.textContent = 'Write a formula with at least one column first.'; return; }
+  const text = $('tb-paste').value; if (!text.trim()) { msg.textContent = 'Paste some rows into the box first.'; return; }
+  st.table.rows = []; const n = fillRows(text, 0, 0); if (!st.table.rows.length) st.table.rows.push({});
+  renderTable(INFO); save(); msg.textContent = `Filled ${n} row${n === 1 ? '' : 's'}, into the columns ${TB.cols.join(', ')}.`;
+});
+
+/* helpers */
+$('rg-lo').addEventListener('input', () => { st.rg.lo = $('rg-lo').value; soon(); });
+$('rg-hi').addEventListener('input', () => { st.rg.hi = $('rg-hi').value; soon(); });
+$('ls-in').addEventListener('input', () => { st.rg.list = $('ls-in').value; soon(); });
+$('lt-in').addEventListener('input', () => { st.lt = $('lt-in').value; updateLetters(); save(); });
+for (const [id, k] of [['co-in', 'text'], ['co-amt', 'amt']]) $(id).addEventListener('input', () => { st.co[k] = $(id).value; soon(); });
+for (const [id, k] of [['co-part', 'part'], ['co-op', 'op'], ['co-unit', 'unit']]) $(id).addEventListener('change', () => { st.co[k] = $(id).value; recalc(false); });
+
+/* values sent from Constant Companion: ../higher-powers/#set=<name>=<value>[&<name>=<value>...]
+   Only the page address carries them; nothing is fetched or sent. Each value is a plain decimal,
+   kept exactly as written (a variable's value is read as an exact decimal, with no binary rounding),
+   or a decimal ending in … when its digits go on: that is kept with its …, so it counts as correct
+   only to the digits sent. */
+const FROM = 'Constant Companion';
+let IMPORTS = []; // notes on the page: {id, items: [{name, value, state, prev, at}], bad: [...]}
+let impSeq = 0;
+function readSetHash(hash) { // [{name, value}] and [{name, value, why}], or null when the address isn't one of these
+  if (!/^#set=/.test(hash)) return null;
+  const good = [], bad = [];
+  const parts = hash.slice(5).split('&').filter((p) => p !== '');
+  parts.slice(0, 40).forEach((part) => {
+    let seg = part;
+    if ((seg.match(/=/g) || []).length > 1 && /^set=/.test(seg)) seg = seg.slice(4);
+    const eq = seg.indexOf('=');
+    let name = eq < 0 ? seg : seg.slice(0, eq), value = eq < 0 ? '' : seg.slice(eq + 1);
+    try { name = decodeURIComponent(name); value = decodeURIComponent(value); }
+    catch (e) { bad.push({ name: name.slice(0, 60), value: '', why: 'The link was garbled, so this value couldn’t be read.' }); return; }
+    name = name.trim(); value = value.trim();
+    if (name.length > 60) { bad.push({ name: name.slice(0, 60) + '…', value, why: 'That name is too long for a variable here.' }); return; }
+    const why = HPC.validName(name), okValue = value.length <= 20000 && !!HPC.parseDecimal(value.replace(/(?:…|\.\.\.)$/, ''));
+    value = value.replace(/\.\.\.$/, '…');
+    if (why) { bad.push({ name, value: value.replace(/^\+/, ''), why, noValue: !okValue }); return; }
+    if (!okValue) { bad.push({ name, value: value.slice(0, 40) + (value.length > 40 ? '…' : ''), why: 'Its value isn’t a plain decimal number this calculator can take.', noValue: true }); return; }
+    const k = good.findIndex((g) => g.name === name);
+    if (k >= 0) good.splice(k, 1);
+    good.push({ name, value: value.replace(/^\+/, '') });
+  });
+  if (parts.length > 40) bad.push({ name: '', value: '', why: `Only the first 40 values in the link were read.` , noValue: true });
+  return { good, bad };
+}
+function shortDec(value) { // a value as the note shows it: at most 10 significant digits, then …
+  const m = /^([+-]?)(\d*)(?:\.(\d*))?(?:[eE]([+-]?\d+))?(…?)$/.exec(value); if (!m) return value;
+  const all = (m[2] || '') + (m[3] || ''), lead = all.match(/^0*/)[0].length, digits = all.slice(lead).replace(/0+$/, '');
+  if (!digits) return '0';
+  const d = (m[2] || '').length - lead - 1 + (m[4] ? Number(m[4]) : 0);
+  const cut = digits.length > 10 || !!m[5], s = N.placeDigits(m[1] === '-', cut ? digits.slice(0, 10) : digits, d, false);
+  return cut ? (s.includes(' × 10^') ? s.replace(' × 10^', '… × 10^') : s + '…') : s;
+}
+const varRow = (name) => st.vars.findIndex((v) => v.name.trim() === name);
+function putVar(name, value) { // set one variable; returns what it was before
+  let i = varRow(name);
+  if (i >= 0) { const prev = st.vars[i].src; st.vars[i].src = value; return { prev, added: false }; }
+  i = st.vars.findIndex((v) => !v.name.trim() && !v.src.trim());
+  if (i >= 0) st.vars[i] = { name, src: value }; else st.vars.push({ name, src: value });
+  return { prev: null, added: true };
+}
+function takeSetHash() {
+  const got = readSetHash(location.hash);
+  if (!got) return;
+  try { history.replaceState(null, '', location.pathname + location.search); } catch (e) { try { location.hash = ''; } catch (e2) { /* the address stays */ } }
+  if (!got.good.length && !got.bad.length) return;
+  const note = { id: ++impSeq, items: [], bad: got.bad };
+  for (const { name, value } of got.good) {
+    const i = varRow(name), cur = i >= 0 ? st.vars[i].src.trim() : '';
+    if (i >= 0 && cur && cur !== value) note.items.push({ name, value, state: 'ask', cur });
+    else if (i >= 0 && cur === value) note.items.push({ name, value, state: 'same' });
+    else { const r = putVar(name, value); note.items.push({ name, value, state: 'set', ...r }); }
+  }
+  IMPORTS = [note, ...IMPORTS].slice(0, 3);
+  recalc(true); renderImports();
+}
+function renderImports() {
+  const box = $('hp-import');
+  box.innerHTML = IMPORTS.map((n) => {
+    const set = n.items.filter((it) => it.state === 'set'), same = n.items.filter((it) => it.state === 'same'), asks = n.items.filter((it) => it.state === 'ask');
+    const kept = n.items.filter((it) => it.state === 'kept'), undone = n.items.filter((it) => it.state === 'undone'), edited = n.items.filter((it) => it.state === 'edited');
+    const nm = (it) => `<b>${esc(it.name)}</b>`, val = (v) => `<code>${numHTML(shortDec(v))}</code>`;
+    let h = '';
+    if (set.length) h += `<p>Set ${set.map((it) => `${nm(it)}${it.added ? '' : ' (replacing your value)'}`).join(', ')} from ${FROM}: ${set.map((it) => (set.length > 1 ? `${nm(it)} = ` : '') + val(it.value)).join(', ')}</p><p>${set.length === 1 ? 'It is' : 'They are'} in Variables, where you can change ${set.length === 1 ? 'it' : 'them'}.</p>`;
+    if (same.length) h += `<p>${same.map(nm).join(', ')} already had ${same.length === 1 ? 'that value' : 'those values'}, so nothing changed.</p>`;
+    for (const it of asks) h += `<p>${nm(it)} already has a value here: <code>${esc(it.cur.length > 40 ? it.cur.slice(0, 40) + '…' : it.cur)}</code>. Replace it with ${val(it.value)} from ${FROM}?</p><div class="btnrow"><button type="button" class="btn small" data-imp="${n.id}" data-act="replace" data-name="${esc(it.name)}">Replace ${esc(it.name)}</button><button type="button" class="btn quiet small" data-imp="${n.id}" data-act="keep" data-name="${esc(it.name)}">Keep mine</button></div>`;
+    if (kept.length) h += `<p>Kept your ${kept.map(nm).join(', ')}.</p>`;
+    if (undone.length) h += `<p>Undone: ${undone.map(nm).join(', ')} ${undone.length === 1 ? 'is' : 'are'} back as ${undone.length === 1 ? 'it was' : 'they were'}.</p>`;
+    if (edited.length) h += `<p>${edited.map(nm).join(', ')} ${edited.length === 1 ? 'was' : 'were'} changed after ${edited.length === 1 ? 'it was' : 'they were'} set, so ${edited.length === 1 ? 'it was' : 'they were'} left as ${edited.length === 1 ? 'it is' : 'they are'}.</p>`;
+    for (const b of n.bad) h += `<p>${b.name ? `Couldn’t set <b>${esc(b.name)}</b> from ${FROM}: ` : ''}${esc(b.why)}</p>` +
+      (!b.noValue && b.value ? `<div class="btnrow"><button type="button" class="btn small" data-imp="${n.id}" data-act="rename" data-v="${esc(b.value)}">Add its value under a name of your own</button></div>` : '');
+    const btns = [];
+    if (set.length) btns.push(`<button type="button" class="btn small" data-imp="${n.id}" data-act="undo">Undo</button>`, `<button type="button" class="btn quiet small" data-imp="${n.id}" data-act="show">Show in Variables</button>`);
+    btns.push(`<button type="button" class="btn quiet small" data-imp="${n.id}" data-act="close" aria-label="Dismiss this note">Dismiss</button>`);
+    return `<div class="hp-imp${n.bad.length && !n.items.length ? ' bad' : ''}">${h}<div class="btnrow">${btns.join('')}</div></div>`;
+  }).join('');
+}
+$('hp-import').addEventListener('click', (e) => {
+  const b = e.target.closest('button[data-imp]'); if (!b) return;
+  const n = IMPORTS.find((x) => x.id === +b.dataset.imp); if (!n) return;
+  const act = b.dataset.act, focusNote = () => { const el = $('hp-import').querySelector(`[data-imp="${n.id}"]`); if (el) el.focus(); };
+  if (act === 'close') { IMPORTS = IMPORTS.filter((x) => x !== n); renderImports(); const f = $('hp-import').querySelector('button') || document.querySelector('input.line'); if (f) f.focus(); return; }
+  if (act === 'replace' || act === 'keep') {
+    const it = n.items.find((x) => x.state === 'ask' && x.name === b.dataset.name); if (!it) return;
+    if (act === 'keep') it.state = 'kept'; else { Object.assign(it, putVar(it.name, it.value)); it.state = 'set'; recalc(true); }
+    renderImports(); focusNote(); return;
+  }
+  if (act === 'undo') {
+    for (const it of n.items.filter((x) => x.state === 'set')) {
+      const i = varRow(it.name);
+      if (i >= 0 && st.vars[i].src === it.value) {
+        if (it.added) { st.vars.splice(i, 1); if (!st.vars.length) st.vars.push({ name: '', src: '' }); } else st.vars[i].src = it.prev;
+        it.state = 'undone';
+      } else it.state = 'edited';
+    }
+    recalc(true); renderImports(); focusNote(); return;
+  }
+  if (act === 'show') {
+    const it = n.items.find((x) => x.state === 'set'), i = it ? varRow(it.name) : -1;
+    const inp = i >= 0 ? document.querySelector(`input.vval[data-i="${i}"]`) : null;
+    if (inp) { inp.focus(); inp.scrollIntoView({ block: 'center', behavior: reduced() ? 'auto' : 'smooth' }); }
+    return;
+  }
+  if (act === 'rename') {
+    let i = st.vars.findIndex((v) => !v.name.trim() && !v.src.trim());
+    if (i < 0) { st.vars.push({ name: '', src: '' }); i = st.vars.length - 1; }
+    st.vars[i].src = b.dataset.v; recalc(true);
+    const inp = document.querySelector(`input.vname[data-i="${i}"]`);
+    if (inp) { inp.focus(); inp.scrollIntoView({ block: 'center', behavior: reduced() ? 'auto' : 'smooth' }); }
+  }
+});
+window.addEventListener('hashchange', takeSetHash);
+
+/* the built-in example: fictional */
+const btnEx = $('btn-example');
+if (btnEx) btnEx.addEventListener('click', () => {
+  st.vars = [{ name: 'lamps', src: '9' }, { name: 'steps', src: '140' }, { name: 'ω', src: 'steps / 4' }];
+  st.lines = ['steps × lamps + 16', 'sqrt(steps^2 + 51^2)', 'ω² − lamps!', 'digitsum(2^lamps)', 'e^(iπ) + 1', '1/7 + 1/3'];
+  st.table = { formula: 'sqrt(a^2 + b^2)', cols: {}, rows: [{ a: '3', b: '4' }, { a: '5', b: '12' }, { a: '8', b: '15' }, { a: '1', b: '1' }] };
+  st.rg = { lo: '120', hi: '135', list: '12, 7, 30, 18, 9' };
+  st.lt = 'Higher Powers';
+  st.co = { text: 'N 45° 59.880 W 093° 00.250', part: 'lat', op: '+', amt: '0.25', unit: 'min' };
+  lastVals.length = 0; syncSettings(); recalc(true);
+  toast('Loaded a made-up example');
+  const first = document.querySelector('input.line'); if (first) first.focus();
+});
+
+syncSettings();
+recalc(true);
+takeSetHash();
+setTimeout(() => { loaded = true; }, 1500);
+})();
+</script>
+</body>
+</html>
+

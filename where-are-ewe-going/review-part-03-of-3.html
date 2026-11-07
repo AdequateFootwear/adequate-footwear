@@ -1,0 +1,137 @@
+<!-- Review copy: lines 1497-1632 of where-are-ewe-going/index.html, split so Copilot can review it. Not served. -->
+  const under = ro.kind === 'lat' ? `lat ${ro.i + 1}` : ro.kind === 'lon' ? `lon ${ro.i + 1}` : '';
+  return `<span class="${cls}">${top}<b>${d}</b>${under ? `<i>${under}</i>` : ''}</span>`;
+}
+function encRowLabel(e, i) { // a plain summary for screen readers
+  const ps = [1, 2, 3, 4, 5, 6].map((j) => i * 6 + j);
+  return `Code ${i + 1}: ${ps.map((p) => e.digits[p - 1]).join(' ')}. ` + ps.map((p, j) => {
+    const ro = e.role[p - 1];
+    return `position ${j + 1} ${ro.kind === 'lat' ? 'latitude digit ' + (ro.i + 1) : ro.kind === 'lon' ? 'longitude digit ' + (ro.i + 1) : ro.kind === 'quad' ? 'the quadrant' : 'a check digit'}`;
+  }).join(', ');
+}
+function coordStrip(label, hemi, digs, intLen, key) {
+  const text = digs.slice(0, intLen).join('') + '.' + digs.slice(intLen).join('');
+  return `<div class="howline" role="group" aria-label="${label}: ${hemi} ${text} degrees, digits ${digs.join(' ')}"><span class="hl-lbl" aria-hidden="true">${label} <span class="hemi">${hemi}</span></span><span class="chiprow" aria-hidden="true">` +
+    digs.map((d, i) => (i === intLen ? '<span class="dot">.</span>' : '') + `<span class="cell ${key === 'lat' ? 'la' : 'lo'}"><span class="mk"></span><b>${d}</b><i>${key} ${i + 1}</i></span>`).join('') + '</span></div>';
+}
+function metresMoved(r) { // the rounding, as a distance on the ground (a sphere of radius 6371 km is plenty here)
+  const ex = (h) => Number(h.exact.n * 1000000000n / h.exact.d) / 1e9;
+  const dLat = (r.lat.U / 1e5 - ex(r.lat)), dLon = (r.lon.U / 1e5 - ex(r.lon));
+  const k = 6371000 * Math.PI / 180;
+  return Math.hypot(dLat * k, dLon * k * Math.cos(r.lat.U / 1e5 * Math.PI / 180));
+}
+let lastEnc = null;
+function renderEncode() {
+  const r = RW.readCoords(state.enc), msg = $('enc-msg');
+  $('enc-in').setAttribute('aria-invalid', r.err ? 'true' : 'false');
+  lastEnc = null;
+  if (r.empty || r.err) {
+    msgList(msg, r.empty ? [['info', 'Type coordinates to get started, or try the example at the top of the page.']] : [['bad', esc(r.err)]]);
+    $('enc-read').innerHTML = ''; $('enc-wait').hidden = false; $('enc-body').hidden = true; $('enc-status').textContent = '';
+    $('enc-how-live').innerHTML = '<p class="wait-msg">Once the coordinates read cleanly, the working for them appears here.</p>';
+    return;
+  }
+  const items = [['ok', `Read as ${FORM[r.lat.form]}${r.lat.form === r.lon.form ? '' : ' and ' + FORM[r.lon.form]}: latitude <b class="nb">${esc(typedText(r.lat))}</b>, longitude <b class="nb">${esc(typedText(r.lon))}</b>.`]];
+  if (r.swapped) items.push(['info', 'The longitude came first; its letter says so, and it’s used as the longitude.']);
+  [r.lat, r.lon].forEach((h) => {
+    const nm = h.kind === 'lat' ? 'latitude' : 'longitude', dir = { N: 'north', S: 'south', E: 'east', W: 'west' };
+    const was = dir[typedHemi(h)];
+    if (h.from === 'minus' && !h.zeroed) items.push(['info', `The minus sign makes the ${nm} ${was}.`]);
+    if (h.from === 'none' && h.U !== 0) items.push(['info', `With no letter or sign, the ${nm} is taken as ${dir[h.hemi]}.`]);
+    if (h.U === 0) items.push(['info', `The ${nm} rounds to 0°, ${h.kind === 'lat' ? 'the equator, where north and south meet' : 'where east and west meet'}, so it counts as ${dir[h.hemi]}${h.zeroed ? `, though it was typed as ${was}` : ''}.`]);
+  });
+  msgList(msg, items);
+  const moved = metresMoved(r), same = [r.lat, r.lon].every((h) => h.exact.n * 100000n % h.exact.d === 0n);
+  $('enc-read').innerHTML = `<div class="readbox">` + [['Latitude', r.lat, 2], ['Longitude', r.lon, 3]].map(([lab, h, w]) => `
+    <div class="readhalf"><span class="hl-lbl">${lab}</span><dl>
+      <dt>Typed</dt><dd class="mono">${esc(typedText(h))}</dd>
+      <dt>Exactly</dt><dd class="mono">${esc(typedHemi(h) + ' ' + RW.ratDecimal(h.exact, 7))}°</dd>
+      <dt>To 5 places</dt><dd class="mono strong">${esc(h.hemi + ' ' + uText(h.U, w))}°</dd></dl></div>`).join('') + `</div>
+    <p class="help round-note">The codes carry each coordinate in decimal degrees to exactly five places, so it’s rounded to the nearest 0.00001°, with an exact half rounding up. ${same ? 'These needed no rounding.' : `Here the rounding moves the point about ${moved < 0.05 ? 'less than 0.05' : moved.toFixed(2)} m.`}</p>`;
+  const e = RW.encode(r.lat.U, r.lon.U, r.quad); lastEnc = e;
+  const back = RW.decode(e.digits), f = RW.formats(back);
+  $('enc-wait').hidden = true; $('enc-body').hidden = false;
+  $('enc-coord').innerHTML = `<p class="help">The rounded coordinates, digit by digit:</p>` + coordStrip('Latitude', r.lat.hemi, e.la, 2, 'lat') + coordStrip('Longitude', r.lon.hemi, e.lo, 3, 'lon');
+  const rows = [0, 1, 2].map((i) => `<div class="code-row" role="group" aria-label="${esc(encRowLabel(e, i))}"><span class="code-lbl" aria-hidden="true">Code ${i + 1}</span><span class="cells" aria-hidden="true">${[1, 2, 3, 4, 5, 6].map((j) => encCell(e, i * 6 + j)).join('')}</span><span class="code-num mono" aria-hidden="true">${e.codes[i]}</span></div>`).join('');
+  const text = e.codes.join(' ');
+  $('enc-view').innerHTML = `<div class="code-rows">${rows}</div><p class="btnrow"><span class="mono code-all">${text}</span> ${copyBtn(text, 'the three codes')} <button type="button" class="btn quiet sm" id="enc-to-dec">Decode these codes</button></p>`;
+  const q = RW.QUADS[r.quad], good = back.latU === r.lat.U && back.lonU === r.lon.U && back.quadDigit === r.quad && back.checks.every((k) => k.ok);
+  msgList($('enc-checks'), [
+    ['ok', `Quadrant: ${posText(4)} is <b>${r.quad}</b>, for <b>${q.words}</b>.`],
+    ['info', `Digit order: the latitude’s 6th digit and the longitude’s 7th digit add up to ${e.parity.a} + ${e.parity.b} = ${e.parity.sum}, which is ${e.even ? 'even' : 'odd'}, so the ${e.even ? 'even' : 'odd'} digit order is used.`],
+    ['ok', `Check digits: ${posText(9)} is <b>${e.digits[8]}</b> and ${posText(15)} is <b>${e.digits[14]}</b>. The working is under “How coordinates become codes”.`],
+    good ? ['ok', `Decoding these codes gives back <b class="nb">${esc(f.parts.gc[0])}</b> <b class="nb">${esc(f.parts.gc[1])}</b> (<span class="nb">${esc(f.dec)}</span>), the rounded coordinates, and both check digits pass.`]
+      : ['bad', 'Decoding these codes doesn’t give back the coordinates. That shouldn’t happen; please don’t rely on these codes.'],
+  ]);
+  clearTimeout(renderEncode.t);
+  renderEncode.t = setTimeout(() => { $('enc-status').textContent = `The three codes are ${e.codes.map((c) => c.split('').join(' ')).join(', then ')}.`; }, 700);
+  renderEncHow(r, e);
+}
+function renderEncHow(r, e) {
+  const grid = [0, 1, 2].map((i) => `<div class="code-row"><span class="code-lbl">Code ${i + 1}</span><span class="cells">${[1, 2, 3, 4, 5, 6].map((j) => encCell(e, i * 6 + j, true)).join('')}</span></div>`).join('');
+  const o = e.order;
+  const checkLi = e.checks.map((k, i) => {
+    const sum = k.covers.map((p, j) => `${RW.WEIGHTS[j]}×${e.digits[p - 1]}`).join(' + ');
+    return `<li><b>Check digit ${i + 1}</b> (digit ${k.at}, ${posText(k.at)}) is worked out from digits ${k.covers.join(', ')}.
+      <span class="math">${sum} = ${k.sum}</span>
+      ${k.sum} ÷ 11 leaves ${k.rem}, and 11 − ${k.rem} = ${k.raw}${k.raw === 10 ? ', which counts as 0' : k.raw === 11 ? ', which counts as 5' : ''}. So digit ${k.at} is <b>${k.digit}</b>.</li>`;
+  }).join('');
+  $('enc-how-live').innerHTML = `<ol>
+      <li><b>Round.</b> The latitude is ${r.lat.hemi} ${uText(r.lat.U, 2)}° and the longitude ${r.lon.hemi} ${uText(r.lon.U, 3)}°, so the latitude digits are <span class="mono nb">${e.la.join(' ')}</span> and the longitude digits are <span class="mono nb">${e.lo.join(' ')}</span>.</li>
+      <li><b>Quadrant.</b> ${RW.QUADS[r.quad].words[0].toUpperCase() + RW.QUADS[r.quad].words.slice(1)} is <b>${r.quad}</b>, so digit 4 is ${r.quad}.</li>
+      <li><b>Digit order.</b> The latitude’s 6th digit plus the longitude’s 7th digit is ${e.parity.a} + ${e.parity.b} = ${e.parity.sum}, which is ${e.even ? 'even' : 'odd'}. So the latitude goes into digits <span class="mono nb">${o.lat.slice(0, 2).join(' ')} . ${o.lat.slice(2).join(' ')}</span> and the longitude into digits <span class="mono nb">${o.lon.slice(0, 3).join(' ')} . ${o.lon.slice(3).join(' ')}</span>.</li>
+      ${checkLi}
+    </ol>
+    <p>The finished digits, numbered 1 to 18:</p><div class="code-rows how-grid">${grid}</div>`;
+}
+$('enc-in').addEventListener('input', () => { state.enc = $('enc-in').value.slice(0, 200); renderEncode(); save(); });
+document.addEventListener('click', (ev) => {
+  if (!ev.target.closest('#enc-to-dec') || !lastEnc) return;
+  state.typed = lastEnc.codes.slice(); [0, 1, 2].forEach((i) => { $(`code-${i + 1}`).value = state.typed[i]; });
+  setDir('decode'); setMode('typed');
+  $('codes').scrollIntoView({ behavior: reduced() ? 'auto' : 'smooth', block: 'start' });
+  $('code-1').focus({ preventScroll: true });
+});
+
+/* ---------- which way: decode or encode ---------- */
+function setDir(d) {
+  state.dir = d;
+  $('dir-decode').checked = d === 'decode'; $('dir-encode').checked = d === 'encode';
+  $('dec-area').hidden = d !== 'decode'; $('enc-area').hidden = d !== 'encode';
+  if (d === 'encode') renderEncode();
+  save();
+}
+document.querySelectorAll('input[name="dir"]').forEach((r) => r.addEventListener('change', () => setDir(r.value)));
+
+/* ---------- the examples (made up) ---------- */
+const EXAMPLE = { pattern: 'WWW3OO LLLLEE BBBAAW', values: { W: '1697', O: '23', L: '4800 − 39', E: '4', B: '7 × 119', A: '52 ÷ 2' } };
+const ENC_EXAMPLE = '38°27′51.6″S 163°08′44.2″E';
+$('btn-example').addEventListener('click', () => {
+  if (state.dir === 'encode') {
+    state.enc = ENC_EXAMPLE; $('enc-in').value = ENC_EXAMPLE; renderEncode(); save();
+    say('A made-up spot out in the Tasman Sea, typed in degrees, minutes and seconds. See how it’s rounded to five decimal places of a degree.');
+    hop();
+    $('enc').scrollIntoView({ behavior: reduced() ? 'auto' : 'smooth', block: 'start' });
+    return;
+  }
+  state.pattern = EXAMPLE.pattern; state.values = Object.assign({}, EXAMPLE.values); state.pad = true;
+  $('pat-in').value = state.pattern; $('opt-pad').checked = true;
+  varSig = ''; renderPattern(); setMode('pattern');
+  say('A made-up example: six variables, one fixed digit, a variable in two places and a few sums. It leads to a pasture in rural Vermont.');
+  hop();
+  $('pattern').scrollIntoView({ behavior: reduced() ? 'auto' : 'smooth', block: 'start' });
+});
+
+/* ---------- start ---------- */
+load();
+$('pat-in').value = state.pattern; $('opt-pad').checked = state.pad;
+[0, 1, 2].forEach((i) => { $(`code-${i + 1}`).value = state.typed[i]; });
+$('enc-in').value = state.enc;
+renderPattern();
+setMode(state.mode);
+setDir(state.dir);
+})();
+</script>
+</body>
+</html>
+

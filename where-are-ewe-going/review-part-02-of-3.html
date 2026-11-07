@@ -1,0 +1,814 @@
+<!-- Review copy: lines 684-1496 of where-are-ewe-going/index.html, split so Copilot can review it. Not served. -->
+            <path class="ew-curl" d="M78 92 a5 5 0 1 1 8 4 M98 82 a5 5 0 1 1 8 4 M120 80 a5 5 0 1 1 8 4 M140 88 a5 5 0 1 1 8 4 M92 104 a5 5 0 1 1 8 4 M114 100 a5 5 0 1 1 8 4 M134 108 a5 5 0 1 1 8 4 M76 110 a5 5 0 1 1 8 4"/>
+            <path class="ew-leg" d="M98 122 v22 h8 v-22 Z M150 118 v26 h8 v-26 Z"/>
+            <path class="ew-hoof" d="M98 141 h8 v5 h-8 Z M150 141 h8 v5 h-8 Z"/>
+            <g id="ewe-head" class="ew-head-g">
+              <ellipse class="ew-ear far" cx="196" cy="74" rx="10" ry="4.5" transform="rotate(20 196 74)"/>
+              <path class="ew-face" d="M168 74 C170 62 190 60 194 72 C198 84 196 98 190 106 C185 112 176 112 172 106 C166 98 166 84 168 74 Z"/>
+              <path class="ew-wool top" d="M193 66 A5 5 0 0 1 188 73 A5.4 5.4 0 0 1 178 74 A5 5 0 0 1 170 69 A5.4 5.4 0 0 1 172 59 A5.6 5.6 0 0 1 182 55 A5.4 5.4 0 0 1 191 58 A4.8 4.8 0 0 1 193 66 Z"/>
+              <g class="ew-ear-near"><ellipse class="ew-ear" cx="163" cy="78" rx="11" ry="5" transform="rotate(-18 163 78)"/>
+                <ellipse class="ew-ear-in" cx="162" cy="78" rx="7" ry="2.4" transform="rotate(-18 162 78)"/></g>
+              <circle class="ew-eye-w" cx="176" cy="84" r="4"/><circle class="ew-eye-w" cx="189" cy="84" r="3.6"/>
+              <circle class="ew-eye" cx="177" cy="84.5" r="2.4"/><circle class="ew-eye" cx="189.6" cy="84.5" r="2.2"/>
+              <circle class="ew-glint" cx="177.8" cy="83.6" r=".8"/><circle class="ew-glint" cx="190.3" cy="83.6" r=".7"/>
+              <g class="ew-lids"><ellipse class="ew-lid" cx="176" cy="84" rx="4.4" ry="4.4"/><ellipse class="ew-lid" cx="189" cy="84" rx="4" ry="4"/></g>
+              <ellipse class="ew-cheek" cx="173" cy="95" rx="4" ry="2.4"/><ellipse class="ew-cheek" cx="191" cy="95" rx="3.4" ry="2.2"/>
+              <path class="ew-nose" d="M180 98 q3 2 6 0 q-3 4 -6 0 Z"/>
+              <path class="ew-smile" d="M178 103 q5 4 10 0"/>
+            </g>
+          </g>
+        </svg>
+      </button>
+      <div class="ewe-side">
+        <p class="ewe-says" id="ewe-says" aria-live="polite">Where are ewe going? Tap me for a palindrome.</p>
+        <p class="ewe-back" id="ewe-back"></p>
+        <p class="help" id="ewe-alt">The ewe is a drawing of a fluffy sheep in a field beside a signpost. Tap her, or press her with the keyboard, and she says a palindrome: a sentence whose letters read the same backwards.</p>
+      </div>
+    </div>
+  </section>
+
+  <div id="dec-area">
+  <section class="panel" id="pattern" aria-labelledby="h-pattern">
+    <div class="panel-head"><span class="step">Step 1</span><h2 id="h-pattern">The pattern</h2></div>
+    <div id="pat-on">
+      <p class="help">Type how the three six-digit codes are built: a letter for each digit that comes from a variable, and a digit for each one that’s fixed. A run of the same letter is one variable, and its length is how many digits that variable has. Letters can be capitals or not; they’re shown as capitals.</p>
+      <label class="lbl" for="pat-in">Pattern</label>
+      <input type="text" id="pat-in" class="coordin pat-in" placeholder="e.g. PPPPQQ RRRSSS TTUUVV" autocomplete="off" autocapitalize="characters" spellcheck="false" aria-describedby="pat-msg">
+      <p class="btnrow pat-skip"><button type="button" class="btn quiet sm" id="to-typed">I have the three codes already</button></p>
+      <ul class="checks" id="pat-msg" aria-live="polite"></ul>
+      <div id="vars-wrap" hidden>
+        <h3 class="sub">The variables</h3>
+        <p class="help" id="vars-sum"></p>
+        <label class="inline small"><input type="checkbox" id="opt-pad" checked> Pad short values with leading zeros (7 for a three-digit variable becomes 007)</label>
+        <div class="vars ewe-vars" id="vars"></div>
+        <p class="help">Each value is a whole number. You can also type a small sum, such as <span class="mono nb">12 × 37 + 5</span> or <span class="mono nb">(800 − 6) ÷ 2</span>, using + − × ÷ (or * and /) and brackets.</p>
+      </div>
+    </div>
+    <div id="pat-off" hidden>
+      <p class="help">You’re typing the codes yourself in step 2, so the pattern is skipped. Nothing you typed here is lost.</p>
+      <p class="btnrow"><button type="button" class="btn quiet sm" id="to-pattern">Use the pattern again</button></p>
+    </div>
+  </section>
+
+  <section class="panel" id="codes" aria-labelledby="h-codes">
+    <div class="panel-head"><span class="step">Step 2</span><h2 id="h-codes">The codes</h2></div>
+    <fieldset class="modes">
+      <legend class="sr">Where the codes come from</legend>
+      <label class="inline"><input type="radio" name="mode" value="pattern" id="mode-pattern" checked> Build them from the pattern</label>
+      <label class="inline"><input type="radio" name="mode" value="typed" id="mode-typed"> Type them myself</label>
+    </fieldset>
+    <div id="typed" hidden>
+      <div class="typed-row">
+        <label>Code 1 <input type="text" id="code-1" class="code-in" inputmode="numeric" autocomplete="off" spellcheck="false" placeholder="6 digits" aria-describedby="typed-msg"></label>
+        <label>Code 2 <input type="text" id="code-2" class="code-in" inputmode="numeric" autocomplete="off" spellcheck="false" placeholder="6 digits" aria-describedby="typed-msg"></label>
+        <label>Code 3 <input type="text" id="code-3" class="code-in" inputmode="numeric" autocomplete="off" spellcheck="false" placeholder="6 digits" aria-describedby="typed-msg"></label>
+      </div>
+      <p class="help">You can paste all three codes into the first box at once.</p>
+      <ul class="checks" id="typed-msg" aria-live="polite"></ul>
+    </div>
+    <div id="code-view"></div>
+    <p class="help legend-help" id="code-legend" hidden>Each digit shows where it came from underneath: a variable’s letter, or <span class="fx-key">fixed</span>. Small labels mark the <span class="mk-key">quadrant</span> digit and the two <span class="mk-key">check</span> digits.</p>
+  </section>
+
+  <section class="panel" id="decode" aria-labelledby="h-decode">
+    <div class="panel-head"><span class="step">Step 3</span><h2 id="h-decode">Where they point</h2></div>
+    <p class="wait-msg" id="dec-wait">The coordinates appear here once all 18 digits are known.</p>
+    <div id="dec-body" hidden>
+      <ul class="checks" id="dec-checks"></ul>
+      <div id="dec-out"></div>
+    </div>
+    <p class="sr" role="status" id="dec-status"></p>
+  </section>
+
+  <details class="howto" id="how">
+    <summary>How the codes become coordinates <span class="meta">step by step</span></summary>
+    <div class="howto-body">
+      <p>Number the 18 digits across the three codes: code 1 holds digits 1 to 6, code 2 digits 7 to 12, and code 3 digits 13 to 18. Three of them aren’t part of the coordinates at all: digit 4 gives the quadrant, and digits 9 and 15 are check digits.</p>
+      <div id="how-live"><p class="wait-msg">Once all 18 digits are known, the working for your codes appears here.</p></div>
+      <h3>The method</h3>
+      <ol>
+        <li><b>Quadrant.</b> Digit 4 says which hemispheres: 1 is north and east, 2 is south and east, 3 is north and west, 4 is south and west. Anything else isn’t a quadrant.</li>
+        <li><b>Parity test.</b> Add digit 14 and digit 17 (code 3, positions 2 and 5). The sum being even or odd picks the digit order.</li>
+        <li><b>Digit order.</b> When the sum is even, the latitude is digits <span class="mono nb">3 11 . 8 16 1 17 6</span> and the longitude is digits <span class="mono nb">2 13 18 . 10 7 5 14 12</span>. When it’s odd, the latitude is digits <span class="mono nb">7 6 . 3 13 16 17 1</span> and the longitude is digits <span class="mono nb">11 18 5 . 2 10 12 14 8</span>. Both are decimal degrees, to five places.</li>
+        <li><b>Check digits.</b> Digit 9 checks digits 1 to 8, and digit 15 checks digits 10 to 14 and 16 to 18. Multiply the eight digits, in that order, by 8, 6, 4, 2, 3, 5, 9 and 7, add them up, and take the remainder after dividing by 11. Eleven minus that remainder is the check digit, except that 10 counts as 0 and 11 counts as 5.</li>
+      </ol>
+      <p>The check digits only catch mistakes; they don’t change where the codes point. They catch almost every single wrong digit, but because two different remainders both lead to 5, now and then a typo slips past, so a passing check isn’t a guarantee.</p>
+      <h3>How the pattern fills the codes</h3>
+      <p>Each variable’s digits go into its letters from left to right. A variable whose letter appears in more than one place, such as <span class="mono">P</span> in <span class="mono">PPPQQQ RRRRRR SRRUUP</span>, has as many digits as it has letters in all, and they fill its places in order of appearance: the first digits go into its first place, the next into its second place, and so on. Digits typed in the pattern stay as they are.</p>
+    </div>
+  </details>
+  </div>
+
+  <div id="enc-area" hidden>
+  <section class="panel" id="enc" aria-labelledby="h-enc">
+    <div class="panel-head"><span class="step">Step 1</span><h2 id="h-enc">The coordinates</h2></div>
+    <p class="help">Type a latitude and a longitude in any common format. Hemisphere letters can go before or after the numbers, or leave them out and use a minus sign for south and west.</p>
+    <label class="lbl" for="enc-in">Coordinates</label>
+    <input type="text" id="enc-in" class="coordin enc-in" placeholder="e.g. N 12° 34.567 W 123° 45.678" autocomplete="off" autocapitalize="characters" spellcheck="false" aria-describedby="enc-msg enc-forms">
+    <ul class="forms help" id="enc-forms">
+      <li><span class="ft">Degrees and minutes</span> <span class="mono nb">N 12° 34.567 W 123° 45.678</span></li>
+      <li><span class="ft">Decimal degrees</span> <span class="mono nb">12.57612, -123.76130</span></li>
+      <li><span class="ft">Degrees, minutes, seconds</span> <span class="mono nb">12°34′34.0″N 123°45′40.7″W</span></li>
+    </ul>
+    <ul class="checks" id="enc-msg" aria-live="polite"></ul>
+    <div id="enc-read"></div>
+  </section>
+
+  <section class="panel" id="enc-codes" aria-labelledby="h-enc-codes">
+    <div class="panel-head"><span class="step">Step 2</span><h2 id="h-enc-codes">The codes</h2></div>
+    <p class="wait-msg" id="enc-wait">The three codes appear here once the coordinates read cleanly.</p>
+    <div id="enc-body" hidden>
+      <div id="enc-coord"></div>
+      <div id="enc-view"></div>
+      <p class="help legend-help">Each code digit shows underneath which coordinate digit it carries: <span class="lk lat">lat 3</span> is the latitude’s 3rd digit and <span class="lk lon">lon 5</span> the longitude’s 5th, counting from the left as written above. Small labels mark the <span class="mk-key">quadrant</span> digit and the two <span class="mk-key">check</span> digits, which aren’t coordinate digits.</p>
+      <ul class="checks" id="enc-checks"></ul>
+      <div id="enc-back"></div>
+    </div>
+    <p class="sr" role="status" id="enc-status"></p>
+  </section>
+
+  <details class="howto" id="enc-how">
+    <summary>How coordinates become codes <span class="meta">step by step</span></summary>
+    <div class="howto-body">
+      <p>Encoding runs the decoding method backwards. The digits are numbered 1 to 18 across the three codes: code 1 holds digits 1 to 6, code 2 digits 7 to 12, and code 3 digits 13 to 18.</p>
+      <div id="enc-how-live"><p class="wait-msg">Once the coordinates read cleanly, the working for them appears here.</p></div>
+      <h3>The method</h3>
+      <ol>
+        <li><b>Round.</b> The codes carry each coordinate in decimal degrees to exactly five places, so the latitude is written as 7 digits (<span class="mono nb">dd.ddddd</span>) and the longitude as 8 (<span class="mono nb">ddd.ddddd</span>). Anything finer is rounded to the nearest 0.00001°, with an exact half rounding up. On the ground that’s a step of about a metre or less.</li>
+        <li><b>Quadrant.</b> Digit 4 is 1 for north and east, 2 for south and east, 3 for north and west, and 4 for south and west. A latitude or longitude that rounds to 0 has no hemisphere, and counts as north or east.</li>
+        <li><b>Digit order.</b> Both digit orders put the latitude’s 6th digit in digit 17 and the longitude’s 7th digit in digit 14, and the decoder adds digits 14 and 17 to choose its order. So if those two coordinate digits add up to an even number, the even order is used: the latitude goes into digits <span class="mono nb">3 11 . 8 16 1 17 6</span> and the longitude into digits <span class="mono nb">2 13 18 . 10 7 5 14 12</span>. If they add up to an odd number, the latitude goes into digits <span class="mono nb">7 6 . 3 13 16 17 1</span> and the longitude into digits <span class="mono nb">11 18 5 . 2 10 12 14 8</span>. Exactly one order fits every coordinate.</li>
+        <li><b>Check digits.</b> Digit 9 is worked out from digits 1 to 8, and digit 15 from digits 10 to 14 and 16 to 18: multiply the eight digits, in that order, by 8, 6, 4, 2, 3, 5, 9 and 7, add them up, and take the remainder after dividing by 11. Eleven minus that remainder is the check digit, except that 10 counts as 0 and 11 counts as 5.</li>
+      </ol>
+    </div>
+  </details>
+  </div>
+
+  <footer>
+    <span>Where Are Ewe Going? · <a href="../">all AdequateFootwear tools</a></span>
+    <span class="mono">Never odd or even</span>
+  </footer>
+</main>
+
+<script>
+(() => {
+'use strict';
+const $ = (id) => document.getElementById(id);
+const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+const reduced = () => !!(window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches);
+
+/* ---------- Where Are Ewe Going?: the pure parts (no page access), tested on their own ---------- */
+/* Digits are numbered 1 to 18 across the three codes: code 1 holds digits 1-6, code 2 digits 7-12, code 3 digits 13-18. */
+const RW = (() => {
+  const WEIGHTS = [8, 6, 4, 2, 3, 5, 9, 7];
+  const CHECKS = [ // each check digit, and the eight digits it covers in weight order
+    { at: 9, covers: [1, 2, 3, 4, 5, 6, 7, 8] },
+    { at: 15, covers: [10, 11, 12, 13, 14, 16, 17, 18] },
+  ];
+  const QUAD_AT = 4, PARITY_AT = [14, 17];
+  const ORDERS = { // which digit goes where: latitude dd.ddddd, longitude ddd.ddddd
+    even: { lat: [3, 11, 8, 16, 1, 17, 6], lon: [2, 13, 18, 10, 7, 5, 14, 12] },
+    odd: { lat: [7, 6, 3, 13, 16, 17, 1], lon: [11, 18, 5, 2, 10, 12, 14, 8] },
+  };
+  const QUADS = {
+    1: { lat: 1, lon: 1, ns: 'N', ew: 'E', words: 'north and east' },
+    2: { lat: -1, lon: 1, ns: 'S', ew: 'E', words: 'south and east' },
+    3: { lat: 1, lon: -1, ns: 'N', ew: 'W', words: 'north and west' },
+    4: { lat: -1, lon: -1, ns: 'S', ew: 'W', words: 'south and west' },
+  };
+  const where = (p) => ({ code: Math.floor((p - 1) / 6) + 1, place: ((p - 1) % 6) + 1 });
+
+  function checkDigit(ds) { // ds: the eight covered digits, in weight order
+    const terms = ds.map((d, i) => WEIGHTS[i] * d);
+    const sum = terms.reduce((a, b) => a + b, 0), rem = sum % 11, raw = 11 - rem;
+    return { terms, sum, rem, raw, digit: raw === 10 ? 0 : raw === 11 ? 5 : raw };
+  }
+
+  /* d: an array of 18 whole numbers 0-9 */
+  function decode(d) {
+    const at = (p) => d[p - 1];
+    const qd = at(QUAD_AT), quad = QUADS[qd] || null;
+    const n = at(PARITY_AT[0]), q = at(PARITY_AT[1]), even = (n + q) % 2 === 0;
+    const order = even ? ORDERS.even : ORDERS.odd;
+    const latDigits = order.lat.map(at), lonDigits = order.lon.map(at);
+    const latU = latDigits.reduce((a, x) => a * 10 + x, 0); // in units of 0.00001 degree
+    const lonU = lonDigits.reduce((a, x) => a * 10 + x, 0);
+    const checks = CHECKS.map((c) => {
+      const r = checkDigit(c.covers.map(at));
+      return Object.assign({ at: c.at, covers: c.covers, have: at(c.at), ok: at(c.at) === r.digit }, r, where(c.at));
+    });
+    return {
+      digits: d.slice(), quadDigit: qd, quad, parity: { n, q, sum: n + q, even }, order, even,
+      latDigits, lonDigits, latU, lonU, latText: latDigits.slice(0, 2).join('') + '.' + latDigits.slice(2).join(''),
+      lonText: lonDigits.slice(0, 3).join('') + '.' + lonDigits.slice(3).join(''),
+      latOk: latU <= 9000000, lonOk: lonU <= 18000000, checks,
+    };
+  }
+
+  /* ---------- coordinate formats, worked in whole units of 0.00001 degree so nothing drifts ---------- */
+  const pad = (x, w) => String(x).padStart(w, '0');
+  function decimal(u, sign) { // 4398261 -> "43.98261"; a zero is never shown with a minus
+    const t = Math.floor(u / 100000) + '.' + pad(u % 100000, 5);
+    return (sign < 0 && u !== 0 ? '-' : '') + t;
+  }
+  function gcPart(u, degW) { // degrees and minutes to 0.001: thousandths of a minute = frac x 0.6, never a tie
+    const deg = Math.floor(u / 100000), m = Math.round((u % 100000) * 3 / 5);
+    return `${pad(deg, degW)}° ${pad(Math.floor(m / 1000), 2)}.${pad(m % 1000, 3)}`;
+  }
+  function dmsPart(u) { // hundredths of a second = frac x 3.6, never a tie
+    const deg = Math.floor(u / 100000), s = Math.round((u % 100000) * 18 / 5);
+    return `${deg}° ${pad(Math.floor(s / 6000), 2)}′ ${pad(Math.floor((s % 6000) / 100), 2)}.${pad(s % 100, 2)}″`;
+  }
+  function formats(r) {
+    if (!r.quad) return null;
+    const parts = {
+      dec: [decimal(r.latU, r.quad.lat) + ',', decimal(r.lonU, r.quad.lon)],
+      gc: [`${r.quad.ns} ${gcPart(r.latU, 2)}`, `${r.quad.ew} ${gcPart(r.lonU, 3)}`],
+      dms: [`${r.quad.ns} ${dmsPart(r.latU)}`, `${r.quad.ew} ${dmsPart(r.lonU)}`],
+    };
+    return { dec: parts.dec.join(' '), gc: parts.gc.join(' '), dms: parts.dms.join(' '), parts };
+  }
+
+  /* ---------- the pattern: 18 letters (variables) and digits (fixed), in three groups of six ---------- */
+  function parsePattern(text) {
+    const src = String(text);
+    if (!src.trim()) return { empty: true };
+    const bad = src.replace(/[A-Za-z0-9\s\-\/,|]/g, '');
+    if (bad) return { err: `“${[...bad][0]}” can’t be part of a pattern. Use a letter for each variable digit and a digit for each fixed one; spaces, hyphens, slashes and commas just separate the codes.` };
+    const groups = src.split(/[\s\-\/,|]+/).filter(Boolean);
+    const all = groups.join('').toUpperCase();
+    if (groups.length === 3 && groups.some((g) => g.length !== 6)) {
+      const i = groups.findIndex((g) => g.length !== 6);
+      return { err: `Code ${i + 1} in the pattern has ${groups[i].length} ${groups[i].length === 1 ? 'character' : 'characters'}; each code has exactly 6.` };
+    }
+    if (all.length !== 18) return { err: `The pattern has ${all.length} ${all.length === 1 ? 'letter or digit' : 'letters and digits'}; three six-digit codes need 18.` };
+    const cells = [], vars = [], byName = {};
+    [...all].forEach((ch, i) => {
+      const p = i + 1;
+      if (/[0-9]/.test(ch)) { cells.push({ kind: 'fixed', digit: +ch, p }); return; }
+      let v = byName[ch];
+      if (!v) { v = byName[ch] = { name: ch, index: vars.length, positions: [] }; vars.push(v); }
+      cells.push({ kind: 'var', name: ch, k: v.positions.length, p });
+      v.positions.push(p);
+    });
+    vars.forEach((v) => { // the places it appears: runs of neighbouring positions within one code
+      v.count = v.positions.length; v.places = [];
+      v.positions.forEach((p, k) => {
+        const last = v.places[v.places.length - 1];
+        if (last && last.to === p - 1 && where(p).code === where(last.from).code) { last.to = p; last.kTo = k; }
+        else v.places.push({ from: p, to: p, kFrom: k, kTo: k });
+      });
+    });
+    return { cells, vars, fixed: cells.filter((c) => c.kind === 'fixed').length };
+  }
+
+  /* ---------- a small arithmetic reader: whole and decimal numbers, + − × ÷ and brackets, exact ---------- */
+  const gcd = (a, b) => { a = a < 0n ? -a : a; b = b < 0n ? -b : b; while (b) [a, b] = [b, a % b]; return a; };
+  const rat = (n, d = 1n) => { if (d < 0n) { n = -n; d = -d; } const g = gcd(n, d) || 1n; return { n: n / g, d: d / g }; };
+  function tokenize(s) {
+    const out = []; let i = 0;
+    while (i < s.length) {
+      const c = s[i];
+      if (/\s/.test(c)) { i++; continue; }
+      const m = /^(\d+(\.\d+)?|\.\d+)/.exec(s.slice(i));
+      if (m) {
+        const [w, f = ''] = m[1].split('.');
+        out.push({ t: 'num', v: rat(BigInt((w || '0') + f), 10n ** BigInt(f.length)), text: m[1] });
+        i += m[1].length; continue;
+      }
+      if (/[+]/.test(c)) out.push({ t: '+' });
+      else if (/[-−‒–—]/.test(c)) out.push({ t: '-' });
+      else if (/[*x×X·⋅]/.test(c)) out.push({ t: '*' });
+      else if (/[\/÷:]/.test(c)) out.push({ t: '/' });
+      else if (/[(\[]/.test(c)) out.push({ t: '(' });
+      else if (/[)\]]/.test(c)) out.push({ t: ')' });
+      else if (c === ',') throw new Error('Leave out commas: write 1234 rather than 1,234, and use a point for decimals.');
+      else if (c === '^') throw new Error('Powers (^) aren’t supported here: use only + − × ÷ and brackets.');
+      else throw new Error(`“${c}” isn’t a number or one of + − × ÷ and brackets.`);
+      i++;
+    }
+    return out;
+  }
+  function evaluate(text) {
+    const toks = tokenize(String(text));
+    if (!toks.length) return { empty: true };
+    for (let i = 1; i < toks.length; i++) { // 2(3) and (1)(2) multiply; two bare numbers in a row are a mistake
+      const a = toks[i - 1].t, b = toks[i].t;
+      if (a === 'num' && b === 'num') throw new Error('Two numbers have nothing between them: put + − × or ÷ between them.');
+      if ((a === 'num' || a === ')') && b === '(' || a === ')' && b === 'num') toks.splice(i, 0, { t: '*' });
+    }
+    let i = 0;
+    const peek = () => toks[i] && toks[i].t;
+    function expr() {
+      let v = term();
+      while (peek() === '+' || peek() === '-') { const op = toks[i++].t, w = term(); v = op === '+' ? rat(v.n * w.d + w.n * v.d, v.d * w.d) : rat(v.n * w.d - w.n * v.d, v.d * w.d); }
+      return v;
+    }
+    function term() {
+      let v = unary();
+      while (peek() === '*' || peek() === '/') {
+        const op = toks[i++].t, w = unary();
+        if (op === '*') v = rat(v.n * w.n, v.d * w.d);
+        else { if (w.n === 0n) throw new Error('That divides by zero.'); v = rat(v.n * w.d, v.d * w.n); }
+      }
+      return v;
+    }
+    function unary() {
+      if (peek() === '-') { i++; const v = unary(); return rat(-v.n, v.d); }
+      if (peek() === '+') { i++; return unary(); }
+      return primary();
+    }
+    function primary() {
+      const t = toks[i];
+      if (!t) throw new Error('It ends with an operator that has nothing after it.');
+      if (t.t === 'num') { i++; return t.v; }
+      if (t.t === '(') {
+        i++; const v = expr();
+        if (peek() !== ')') throw new Error('A bracket is opened and never closed.');
+        i++; return v;
+      }
+      if (t.t === ')') throw new Error('There’s a closing bracket with nothing before it to close.');
+      throw new Error('Two operators are next to each other, or one has nothing before it.');
+    }
+    const v = expr();
+    if (i < toks.length) throw new Error(toks[i].t === ')' ? 'There’s a closing bracket with no opening one.' : 'Part of it couldn’t be read.');
+    const plain = toks.length === 1 && toks[0].t === 'num';
+    return { n: v.n, d: v.d, plain, text: plain ? toks[0].text : null };
+  }
+  function ratText(v) { // "25/2 (12.5)" style, for a value that isn't whole
+    const neg = v.n < 0n, a = neg ? -v.n : v.n, whole = a / v.d; let rest = a % v.d, dec = '';
+    for (let k = 0; k < 6 && rest; k++) { rest *= 10n; dec += rest / v.d; rest %= v.d; }
+    return `${neg ? '−' : ''}${a}/${v.d} (${rest ? 'about ' : ''}${neg ? '−' : ''}${whole}.${dec})`;
+  }
+
+  /* A variable's value as exactly `count` digits, or why it can't be */
+  function valueDigits(text, count, padZeros) {
+    let v;
+    try { v = evaluate(text); } catch (e) { return { err: e.message }; }
+    if (v.empty) return { empty: true };
+    if (v.d !== 1n) return { err: `That comes to ${ratText(v)}, which isn’t a whole number.`, shown: ratText(v) };
+    if (v.n < 0n) return { err: `That comes to −${-v.n}. A value can’t be negative: each digit is 0 to 9.`, shown: '−' + (-v.n) };
+    let s = v.n.toString();
+    const shown = v.plain ? null : s;
+    if (v.plain && /^\d+$/.test(v.text) && v.text.length === count) s = v.text; // typed with its own leading zeros
+    if (s.length > count) return { err: `${shown ? 'That comes to ' + s + ', which has' : 'That has'} ${s.length} digits; this variable takes ${count}.`, shown };
+    if (s.length < count) {
+      if (!padZeros) return { err: `${shown ? 'That comes to ' + s + ', which has' : 'That has'} ${s.length} ${s.length === 1 ? 'digit' : 'digits'}; this variable takes ${count}. Turn on padding with zeros, or check the value.`, shown };
+      return { digits: s.padStart(count, '0'), padded: true, shown };
+    }
+    return { digits: s, shown };
+  }
+
+  /* ---------- encoding: a coordinate, in whole units of 0.00001 degree, to the three codes ---------- */
+  function encode(latU, lonU, quadDigit) { // latU 0 to 9000000, lonU 0 to 18000000, quadDigit 1 to 4
+    const la = [...pad(latU, 7)].map(Number), lo = [...pad(lonU, 8)].map(Number);
+    // In both orders digit 17 carries latitude digit 6 and digit 14 carries longitude digit 7,
+    // so those two coordinate digits decide the order, and exactly one order always fits.
+    const even = (la[5] + lo[6]) % 2 === 0, order = even ? ORDERS.even : ORDERS.odd;
+    const d = new Array(18).fill(null), role = new Array(18).fill(null);
+    order.lat.forEach((p, i) => { d[p - 1] = la[i]; role[p - 1] = { kind: 'lat', i }; });
+    order.lon.forEach((p, i) => { d[p - 1] = lo[i]; role[p - 1] = { kind: 'lon', i }; });
+    d[QUAD_AT - 1] = quadDigit; role[QUAD_AT - 1] = { kind: 'quad' };
+    const checks = CHECKS.map((c, k) => { // neither check covers the other's place, so the order doesn't matter
+      const r = checkDigit(c.covers.map((p) => d[p - 1]));
+      d[c.at - 1] = r.digit; role[c.at - 1] = { kind: 'check', k };
+      return Object.assign({ at: c.at, covers: c.covers }, r);
+    });
+    const codes = [0, 1, 2].map((i) => d.slice(i * 6, i * 6 + 6).join(''));
+    return { digits: d, role, even, order, la, lo, checks, codes, parity: { a: la[5], b: lo[6], sum: la[5] + lo[6] } };
+  }
+
+  /* exact rationals of BigInts, for reading typed coordinates without any drift */
+  const decRat = (t) => { const [w, f = ''] = t.split('.'); return rat(BigInt((w || '0') + f), 10n ** BigInt(f.length)); };
+  const addRat = (a, b) => rat(a.n * b.d + b.n * a.d, a.d * b.d);
+  function roundU(v) { // a value in degrees (n/d, not negative) to whole units of 0.00001 degree, halves rounding up
+    return Number((2n * v.n * 100000n + v.d) / (2n * v.d));
+  }
+  function ratDecimal(v, places = 9) { // 4398261/100000 -> "43.98261"; a non-ending one gets "…"
+    const whole = v.n / v.d; let rest = v.n % v.d, dec = '';
+    for (let k = 0; k < places && rest; k++) { rest *= 10n; dec += rest / v.d; rest %= v.d; }
+    return whole + (dec ? '.' + dec : '') + (rest ? '…' : '');
+  }
+
+  /* ---------- reading a typed coordinate: N dd° mm.mmm W ddd° mm.mmm, decimal degrees, or d° m′ s″ ---------- */
+  const UNIT = ['degrees', 'minutes', 'seconds'];
+  const HEMI = { N: ['lat', 1], S: ['lat', -1], E: ['lon', 1], W: ['lon', -1] };
+  function coordTokens(src) {
+    const s = src.replace(/''|′′|’’|‘‘|´´/g, '"'); // two single marks are a seconds mark
+    const out = []; let i = 0;
+    while (i < s.length) {
+      const c = s[i];
+      if (/\s/.test(c)) { i++; continue; }
+      const m = /^(\d+(\.\d*)?|\.\d+)/.exec(s.slice(i));
+      if (m) { out.push({ t: 'num', text: m[1] }); i += m[1].length; continue; }
+      if (/[°º˚ᵒ]/.test(c)) out.push({ t: 'unit', u: 0, c });
+      else if (/['′‘’´`ʹ]/.test(c)) out.push({ t: 'unit', u: 1, c });
+      else if (/["″“”˝ʺ]/.test(c)) out.push({ t: 'unit', u: 2, c });
+      else if (/[NSEW]/i.test(c)) out.push({ t: 'hemi', c: c.toUpperCase() });
+      else if (/[-−–—‒]/.test(c)) out.push({ t: 'sign', neg: true, c });
+      else if (c === '+') out.push({ t: 'sign', neg: false, c });
+      else if (/[,;\/|]/.test(c)) out.push({ t: 'sep' });
+      else throw new Error(`“${c}” can’t be part of a coordinate. Use numbers, the letters N, S, E and W, a minus sign, the marks ° ′ ″ (or ' and "), and a space or comma between the latitude and the longitude.`);
+      i++;
+    }
+    return out;
+  }
+  function readCoords(text) {
+    const src = String(text), m = /\d+,\d+/.exec(src);
+    // a comma between two digits might be a decimal mark or a separator, so it isn't guessed
+    if (m && src.trim()) return { err: `“${m[0]}” has a comma between two digits. Use a point for decimals, as in 12.345, and put a space after a comma that separates the latitude from the longitude.` };
+    return readCoordsRaw(src);
+  }
+  function readCoordsRaw(src) {
+    if (!src.trim()) return { empty: true };
+    let toks;
+    try { toks = coordTokens(src); } catch (e) { return { err: e.message }; }
+    const items = []; // numbers (with their sign and mark), letters and separators
+    for (let k = 0; k < toks.length; k++) {
+      const t = toks[k];
+      if (t.t === 'sign') {
+        const nx = toks[k + 1];
+        if (!nx || nx.t !== 'num') return { err: `The ${t.neg ? 'minus' : 'plus'} sign “${t.c}” needs a number straight after it.` };
+        nx.neg = t.neg; nx.signed = true; continue;
+      }
+      if (t.t === 'unit') {
+        const pv = items[items.length - 1];
+        if (!pv || pv.t !== 'num') return { err: `The ${UNIT[t.u]} mark “${t.c}” needs a number straight before it.` };
+        if (pv.unit !== undefined) return { err: `“${pv.text}” has two marks after it.` };
+        pv.unit = t.u; pv.mark = t.c; continue;
+      }
+      items.push(t);
+    }
+    const nums = items.filter((x) => x.t === 'num'), hemis = items.filter((x) => x.t === 'hemi');
+    if (!nums.length) return { err: 'There are no numbers in it yet.' };
+    let groups;
+    if (hemis.length > 2) return { err: `It has ${hemis.length} hemisphere letters (${hemis.map((h) => h.c).join(', ')}). A coordinate has two: N or S for the latitude, and E or W for the longitude.` };
+    if (hemis.length === 1) return { err: `It has only one hemisphere letter, ${hemis[0].c}. Give both (N or S, and E or W), or neither and use a minus sign for south and west.` };
+    if (hemis.length === 2) {
+      if (nums.some((x) => x.signed)) return { err: 'Use hemisphere letters or plus and minus signs, not both.' };
+      const core = items.filter((x) => x.t !== 'sep'); // with letters marking the halves, separators don't matter
+      const a = core.indexOf(hemis[0]), b = core.indexOf(hemis[1]);
+      let g1, g2;
+      if (a === 0 && b < core.length - 1) { g1 = core.slice(1, b); g2 = core.slice(b + 1); }
+      else if (b === core.length - 1 && a > 0) { g1 = core.slice(0, a); g2 = core.slice(a + 1, b); }
+      else return { err: 'Put both hemisphere letters before their numbers, as in N 12 34.567 W 123 45.678, or both after them, as in 12 34.567 N 123 45.678 W.' };
+      if (!g1.length || !g2.length) return { err: `There are no numbers ${!g1.length ? 'for ' + hemis[0].c : 'for ' + hemis[1].c}.` };
+      const k1 = HEMI[hemis[0].c][0], k2 = HEMI[hemis[1].c][0];
+      if (k1 === k2) return { err: `Both letters, ${hemis[0].c} and ${hemis[1].c}, are for the ${k1 === 'lat' ? 'latitude (N or S)' : 'longitude (E or W)'}. One should be N or S and the other E or W.` };
+      groups = [{ nums: g1, hemi: hemis[0].c }, { nums: g2, hemi: hemis[1].c }];
+    } else {
+      const parts = []; let cur = [];
+      items.forEach((x) => { if (x.t === 'sep') { if (cur.length) parts.push(cur); cur = []; } else cur.push(x); });
+      if (cur.length) parts.push(cur);
+      let gs;
+      const degAt = nums.map((x, k) => (x.unit === 0 ? k : -1)).filter((k) => k >= 0);
+      if (parts.length > 2) return { err: `It has ${parts.length - 1} commas or semicolons, so it’s not clear where the latitude ends. Use just one, between the latitude and the longitude.` };
+      if (parts.length === 2) gs = parts; // split at the comma
+      else if (degAt.length === 2 && degAt[0] === 0) gs = [nums.slice(0, degAt[1]), nums.slice(degAt[1])]; // at the second degree mark
+      else if (nums.length === 1) return { err: 'That’s only one number. Give a latitude and a longitude.' };
+      else if (nums.length % 2 === 0 && nums.length <= 6) gs = [nums.slice(0, nums.length / 2), nums.slice(nums.length / 2)]; // half each
+      else return { err: `It’s not clear where the latitude ends and the longitude starts in those ${nums.length} numbers. Put a comma between them, or use the letters N, S, E and W.` };
+      groups = gs.map((g) => ({ nums: g, hemi: null }));
+    }
+    const halves = {};
+    for (let gi = 0; gi < 2; gi++) {
+      const g = groups[gi], kind = g.hemi ? HEMI[g.hemi][0] : gi === 0 ? 'lat' : 'lon';
+      const name = kind === 'lat' ? 'latitude' : 'longitude', ns = g.nums;
+      if (ns.length > 3) return { err: `The ${name} has ${ns.length} numbers. It can have at most three: degrees, minutes and seconds.` };
+      for (let k = 0; k < ns.length; k++) {
+        const x = ns[k];
+        if (x.unit !== undefined && x.unit !== k) return { err: `In the ${name}, ${x.text}${x.mark} is marked as ${UNIT[x.unit]}, but it stands where the ${UNIT[k]} go.` };
+        if (k > 0 && x.signed) return { err: `In the ${name}, only the degrees can have a sign, not the ${UNIT[k]}.` };
+        if (k < ns.length - 1 && /\.\d/.test(x.text)) return { err: `In the ${name}, only the last number can have decimals; ${x.text} is followed by ${UNIT[k + 1]}.` };
+      }
+      const vals = ns.map((x) => decRat(x.text.replace(/\.$/, '')));
+      for (let k = 1; k < vals.length; k++) if (vals[k].n >= 60n * vals[k].d) return { err: `In the ${name}, the ${UNIT[k]} are ${ns[k].text}, but they must be less than 60.` };
+      let v = vals[0];
+      if (vals[1]) v = addRat(v, rat(vals[1].n, vals[1].d * 60n));
+      if (vals[2]) v = addRat(v, rat(vals[2].n, vals[2].d * 3600n));
+      const max = kind === 'lat' ? 90n : 180n;
+      if (v.n > max * v.d) return { err: `The ${name} comes to ${ratDecimal(v, 6)}°, but a ${name} can’t be more than ${max}°.` };
+      const sign = g.hemi ? HEMI[g.hemi][1] : ns[0].neg ? -1 : 1;
+      const U = roundU(v);
+      halves[kind] = {
+        kind, form: ['dd', 'dm', 'dms'][ns.length - 1], parts: ns.map((x) => x.text.replace(/\.$/, '')), exact: v, U,
+        sign, from: g.hemi ? 'letter' : ns[0].neg ? 'minus' : ns[0].signed ? 'plus' : 'none',
+        // the method has no sign for zero: one that rounds to 0 counts as north or east
+        hemi: U === 0 ? (kind === 'lat' ? 'N' : 'E') : kind === 'lat' ? (sign < 0 ? 'S' : 'N') : (sign < 0 ? 'W' : 'E'),
+        zeroed: U === 0 && sign < 0,
+      };
+    }
+    const latS = halves.lat.hemi === 'S', lonW = halves.lon.hemi === 'W';
+    const quad = latS ? (lonW ? 4 : 2) : (lonW ? 3 : 1);
+    return { lat: halves.lat, lon: halves.lon, quad, swapped: !!(groups[0].hemi && HEMI[groups[0].hemi][0] === 'lon') };
+  }
+
+  return { WEIGHTS, CHECKS, ORDERS, QUADS, QUAD_AT, PARITY_AT, where, checkDigit, decode, formats, parsePattern, evaluate, valueDigits, encode, readCoords, roundU, ratDecimal };
+})();
+
+const NCOL = 8; // variable colours, cycled; the letter under each digit tells them apart too
+const where = RW.where;
+const posText = (p) => { const w = where(p); return `code ${w.code}, position ${w.place}`; };
+const ord = (k) => { const s = ['th', 'st', 'nd', 'rd'], v = k % 100; return k + (s[(v - 20) % 10] || s[v] || s[0]); };
+const listText = (a) => a.length < 2 ? a.join('') : a.slice(0, -1).join(', ') + ' and ' + a[a.length - 1];
+function coversText(ps) { // "code 1, all six positions, and code 2, positions 1 and 2"
+  const by = {}; ps.forEach((p) => { const w = where(p); (by[w.code] = by[w.code] || []).push(w.place); });
+  return Object.keys(by).map((c) => `code ${c}, ${by[c].length === 6 ? 'all six positions' : by[c].length === 1 ? 'position ' + by[c][0] : 'positions ' + listText(by[c])}`).join('; and ');
+}
+
+/* ---------- the ewe ---------- */
+// Every one is checked below: its letters alone, ignoring case, must read the same both ways.
+const PALS = [
+  'Ewe: desserts? Stressed ewe.',
+  'Wolf! Ewe, flow!',
+  'Sew, ewes!',
+  'Ewe, a sward draws a ewe.',
+  'Ewe: room? Moor, ewe!',
+  'Kayak? A yak!',
+  'Ewe, race car, ewe!',
+  'Smart trams.',
+  'Rail at a liar.',
+  'Raft? Far!',
+  'Ewe, sir, is ewe.',
+  'Bus? Sub!',
+  'Pots, tops, spot, stop.',
+  'Navy van.',
+  'Ewe, kayak, ewe!',
+  'Tent net.',
+  'Peek, ewe? Keep!',
+  'Pull up, Pip, pull up.',
+  'Reed deer.',
+  'Never odd or even.',
+];
+const letters = (s) => s.toLowerCase().replace(/[^a-z]/g, '');
+const SAYINGS = PALS.filter((s) => { const t = letters(s); return t.length > 2 && t === [...t].reverse().join(''); });
+let palI = -1;
+function hop() {
+  const svg = $('ewe-svg');
+  if (reduced()) return;
+  svg.classList.remove('hop'); void svg.getBoundingClientRect(); svg.classList.add('hop');
+}
+$('ewe-svg').addEventListener('animationend', (e) => { if (e.animationName === 'ew-hop') $('ewe-svg').classList.remove('hop'); });
+function say(text, back) { $('ewe-says').textContent = text; $('ewe-back').textContent = back || ''; }
+$('ewe-btn').addEventListener('click', () => {
+  palI = (palI + 1) % SAYINGS.length;
+  const s = SAYINGS[palI], t = letters(s).toUpperCase();
+  say(`“${s}”`, `Letters only: ${t}, the same both ways.`);
+  hop();
+});
+if (!reduced()) setInterval(() => { // an unhurried blink
+  if (document.hidden) return;
+  const svg = $('ewe-svg'); svg.classList.add('blink'); setTimeout(() => svg.classList.remove('blink'), 180);
+}, 4700);
+
+/* ---------- state, kept on this device only ---------- */
+const KEY = 'where-are-ewe-going';
+const state = { dir: 'decode', pattern: '', values: {}, pad: true, mode: 'pattern', typed: ['', '', ''], enc: '' };
+function save() { try { localStorage.setItem(KEY, JSON.stringify(state)); } catch (e) { /* storage unavailable */ } }
+function load() {
+  try {
+    const o = JSON.parse(localStorage.getItem(KEY) || '{}');
+    if (typeof o.pattern === 'string') state.pattern = o.pattern.slice(0, 200);
+    if (o.values && typeof o.values === 'object') Object.keys(o.values).forEach((k) => { if (/^[A-Z]$/.test(k) && typeof o.values[k] === 'string') state.values[k] = o.values[k].slice(0, 200); });
+    if (typeof o.pad === 'boolean') state.pad = o.pad;
+    if (o.mode === 'typed' || o.mode === 'pattern') state.mode = o.mode;
+    if (o.dir === 'decode' || o.dir === 'encode') state.dir = o.dir;
+    if (typeof o.enc === 'string') state.enc = o.enc.slice(0, 200);
+    if (Array.isArray(o.typed)) state.typed = [0, 1, 2].map((i) => typeof o.typed[i] === 'string' ? o.typed[i].slice(0, 60) : '');
+  } catch (e) { /* storage unavailable */ }
+}
+
+/* ---------- step 1: the pattern and its variables ---------- */
+let pat = { empty: true }, varSig = '';
+function msgList(el, items) { // items: [cls, html]
+  el.innerHTML = items.map(([cls, html]) => `<li class="${cls}"><span class="ic" aria-hidden="true">${{ ok: '✓', bad: '!', warn: '!', info: 'i' }[cls]}</span><span>${html}</span></li>`).join('');
+}
+function placesText(v) {
+  if (v.places.length === 1) { const a = where(v.places[0].from), b = where(v.places[0].to); return `Code ${a.code}, ${a.place === b.place ? 'position ' + a.place : 'positions ' + a.place + '–' + b.place}.`; }
+  return `In ${v.places.length} places, filled in order: ` + v.places.map((pl) => {
+    const a = where(pl.from), b = where(pl.to);
+    const digs = pl.kFrom === pl.kTo ? `its ${ord(pl.kFrom + 1)} digit goes` : `its digits ${pl.kFrom + 1}–${pl.kTo + 1} go`;
+    return `${digs} to code ${a.code}, ${a.place === b.place ? 'position ' + a.place : 'positions ' + a.place + '–' + b.place}`;
+  }).join('; ') + '.';
+}
+function renderPattern() {
+  pat = RW.parsePattern(state.pattern);
+  const msg = $('pat-msg');
+  if (pat.empty) { msgList(msg, [['info', 'Type a pattern to get started, or try the example at the top of the page.']]); }
+  else if (pat.err) msgList(msg, [['bad', esc(pat.err)]]);
+  else {
+    const multi = pat.vars.filter((v) => v.places.length > 1);
+    const items = [['ok', `Read as ${pat.vars.length} ${pat.vars.length === 1 ? 'variable' : 'variables'} (${pat.vars.map((v) => `<b class="mono">${v.name}</b> ${v.count} ${v.count === 1 ? 'digit' : 'digits'}`).join(', ')})${pat.fixed ? ` and ${pat.fixed} fixed ${pat.fixed === 1 ? 'digit' : 'digits'}` : ''}.`]];
+    multi.forEach((v) => items.push(['info', `<b class="mono">${v.name}</b> appears in ${v.places.length} places, so it has ${v.count} digits in all, and they fill its places in order of appearance: the first ${v.places[0].kTo + 1 === 1 ? 'digit goes' : (v.places[0].kTo + 1) + ' digits go'} into its first place, and so on.`]));
+    msgList(msg, items);
+  }
+  const ok = !pat.empty && !pat.err;
+  $('vars-wrap').hidden = !ok;
+  if (!ok) { varSig = ''; $('vars').innerHTML = ''; return; }
+  const sig = pat.vars.map((v) => v.name + v.count + ':' + v.positions.join('.')).join('|');
+  $('vars-sum').textContent = pat.vars.length === 1 ? 'One box for the one variable.' : `One box for each variable, in the order they first appear.`;
+  if (sig === varSig) return; // same variables: keep the boxes (and the cursor) as they are
+  varSig = sig;
+  $('vars').innerHTML = pat.vars.map((v) => `
+    <div class="var c${v.index % NCOL}">
+      <div class="vh"><label class="vname mono" for="v-${v.name}">${v.name}</label><span class="vcount">${v.count} ${v.count === 1 ? 'digit' : 'digits'}</span></div>
+      <input type="text" id="v-${v.name}" data-name="${v.name}" autocomplete="off" spellcheck="false" inputmode="text" aria-describedby="v-${v.name}-where v-${v.name}-msg" value="${esc(state.values[v.name] || '')}">
+      <p class="vwhere" id="v-${v.name}-where">${esc(placesText(v))}</p>
+      <p class="vmsg" id="v-${v.name}-msg" aria-live="polite"></p>
+    </div>`).join('');
+}
+$('vars').addEventListener('input', (e) => {
+  const n = e.target.dataset && e.target.dataset.name; if (!n) return;
+  state.values[n] = e.target.value.slice(0, 200); update();
+});
+$('pat-in').addEventListener('input', () => { state.pattern = $('pat-in').value.slice(0, 200); renderPattern(); update(); });
+$('opt-pad').addEventListener('change', () => { state.pad = $('opt-pad').checked; update(); });
+
+/* the 18 digits from the pattern: each {d (or null), name, k, fixed} */
+function patternCells() {
+  if (pat.empty || pat.err) return null;
+  const vals = {};
+  pat.vars.forEach((v) => {
+    const r = RW.valueDigits(state.values[v.name] || '', v.count, state.pad);
+    vals[v.name] = r;
+    const m = $(`v-${v.name}-msg`), box = $(`v-${v.name}`);
+    if (m) {
+      if (r.err) { m.className = 'vmsg why'; m.textContent = r.err; }
+      else if (r.empty) { m.className = 'vmsg'; m.textContent = ''; }
+      else { m.className = 'vmsg ok'; m.textContent = r.shown && r.padded ? `= ${r.shown}, padded to ${r.digits}` : r.shown ? `= ${r.digits}` : r.padded ? `Padded to ${r.digits}` : ''; }
+    }
+    if (box) box.setAttribute('aria-invalid', r.err ? 'true' : 'false');
+  });
+  return pat.cells.map((c) => c.kind === 'fixed' ? { d: c.digit, fixed: true, p: c.p }
+    : { d: vals[c.name].digits ? +vals[c.name].digits[c.k] : null, name: c.name, k: c.k, col: pat.vars.find((v) => v.name === c.name).index % NCOL, p: c.p });
+}
+
+/* ---------- step 2: typed codes ---------- */
+function typedCells() {
+  const items = [], cells = [];
+  let all = true;
+  state.typed.forEach((raw, i) => {
+    const t = raw.replace(/[\s\-.]/g, '');
+    if (!t) { all = false; return; }
+    const bad = t.replace(/[0-9]/g, '');
+    if (bad) { items.push(['bad', `Code ${i + 1} has “${esc([...bad][0])}” in it: a code is digits 0 to 9 only.`]); all = false; return; }
+    if (t.length !== 6) { items.push(['bad', `Code ${i + 1} has ${t.length} ${t.length === 1 ? 'digit' : 'digits'}; each code has exactly 6.${t.length === 5 ? ' If it starts with 0, type that 0 as well.' : ''}`]); all = false; return; }
+  });
+  msgList($('typed-msg'), items);
+  [0, 1, 2].forEach((i) => $(`code-${i + 1}`).setAttribute('aria-invalid', items.some((x) => x[1].startsWith(`Code ${i + 1} `)) ? 'true' : 'false'));
+  state.typed.forEach((raw, i) => {
+    const t = raw.replace(/[\s\-.]/g, '');
+    for (let j = 0; j < 6; j++) cells.push({ d: /^\d{6}$/.test(t) ? +t[j] : null, typed: true, p: i * 6 + j + 1 });
+  });
+  return { cells, all };
+}
+[1, 2, 3].forEach((n) => $(`code-${n}`).addEventListener('input', () => {
+  const v = $(`code-${n}`).value;
+  const digits = v.replace(/[^0-9]/g, '');
+  if (n === 1 && digits.length === 18 && !$('code-2').value && !$('code-3').value) { // all three pasted into the first box
+    [0, 1, 2].forEach((i) => { state.typed[i] = digits.slice(i * 6, i * 6 + 6); $(`code-${i + 1}`).value = state.typed[i]; });
+  } else state.typed[n - 1] = v.slice(0, 60);
+  update();
+}));
+
+/* ---------- mode: from the pattern, or typed ---------- */
+let lastPatternDigits = null;
+function setMode(m, focus) {
+  if (m === 'typed' && state.typed.every((t) => !t.trim()) && lastPatternDigits) { // start from the codes the pattern built
+    state.typed = [0, 1, 2].map((i) => lastPatternDigits.slice(i * 6, i * 6 + 6));
+    [0, 1, 2].forEach((i) => { $(`code-${i + 1}`).value = state.typed[i]; });
+  }
+  state.mode = m;
+  $('mode-pattern').checked = m === 'pattern'; $('mode-typed').checked = m === 'typed';
+  $('typed').hidden = m !== 'typed';
+  $('pat-on').hidden = m === 'typed'; $('pat-off').hidden = m !== 'typed';
+  update();
+  if (focus) $(focus).focus();
+}
+document.querySelectorAll('input[name="mode"]').forEach((r) => r.addEventListener('change', () => setMode(r.value)));
+$('to-typed').addEventListener('click', () => setMode('typed', 'code-1'));
+$('to-pattern').addEventListener('click', () => setMode('pattern', 'pat-in'));
+
+/* ---------- rendering the codes ---------- */
+const MARK = { 4: 'quad', 9: 'check', 15: 'check' };
+function cellHtml(c, withNum) {
+  const cls = ['cell', c.fixed ? 'fixed' : c.name ? 'c' + c.col : 'typed', c.d === null ? 'unknown' : ''].filter(Boolean).join(' ');
+  const under = c.fixed ? 'fixed' : c.name ? c.name : '';
+  return `<span class="${cls}">${withNum ? `<span class="pn">${c.p}</span>` : `<span class="mk">${MARK[c.p] || ''}</span>`}<b>${c.d === null ? '?' : c.d}</b>${under ? `<i>${under}</i>` : ''}</span>`;
+}
+function rowLabel(code, cs) { // a plain summary for screen readers
+  const parts = []; let run = null;
+  cs.forEach((c, j) => {
+    const src = c.fixed ? 'fixed' : c.name ? 'from ' + c.name : '';
+    if (run && run.src === src) run.to = j + 1; else { run = { src, from: j + 1, to: j + 1 }; parts.push(run); }
+  });
+  const digits = cs.map((c) => c.d === null ? 'unknown' : c.d).join(' ');
+  const srcs = cs.some((c) => c.name || c.fixed) ? '. ' + parts.map((r) => `${r.from === r.to ? 'position ' + r.from : 'positions ' + r.from + ' to ' + r.to} ${r.src}`).join(', ') : '';
+  return `Code ${code}: ${digits}${srcs}`;
+}
+function renderCodes(cells) {
+  const view = $('code-view');
+  if (!cells) { view.innerHTML = state.mode === 'pattern' ? '<p class="wait-msg">The codes appear here once the pattern reads cleanly.</p>' : ''; $('code-legend').hidden = true; return; }
+  const rows = [0, 1, 2].map((i) => {
+    const cs = cells.slice(i * 6, i * 6 + 6);
+    return `<div class="code-row" role="group" aria-label="${esc(rowLabel(i + 1, cs))}"><span class="code-lbl" aria-hidden="true">Code ${i + 1}</span><span class="cells" aria-hidden="true">${cs.map((c) => cellHtml(c)).join('')}</span><span class="code-num mono" aria-hidden="true">${cs.map((c) => c.d === null ? '·' : c.d).join('')}</span></div>`;
+  }).join('');
+  const known = cells.every((c) => c.d !== null);
+  const text = [0, 1, 2].map((i) => cells.slice(i * 6, i * 6 + 6).map((c) => c.d).join('')).join(' ');
+  view.innerHTML = `<div class="code-rows">${rows}</div>` + (known ? `<p class="btnrow"><span class="mono code-all">${esc(text)}</span> ${copyBtn(text, 'the three codes')}</p>` : `<p class="wait-msg">${cells.filter((c) => c.d === null).length} of the 18 digits are still unknown.</p>`);
+  $('code-legend').hidden = false;
+}
+function copyBtn(text, label) { return `<button type="button" class="btn quiet sm" data-copy="${esc(text)}" aria-label="Copy ${esc(label)}">Copy</button>`; }
+document.addEventListener('click', (e) => {
+  const b = e.target.closest('[data-copy]'); if (!b) return;
+  const done = () => { b.textContent = 'Copied'; clearTimeout(b._t); b._t = setTimeout(() => { b.textContent = 'Copy'; }, 1400); };
+  const fail = () => { b.textContent = 'Select it instead'; clearTimeout(b._t); b._t = setTimeout(() => { b.textContent = 'Copy'; }, 2400); };
+  if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(b.dataset.copy).then(done, fail); else fail();
+});
+
+/* ---------- step 3: decoding ---------- */
+function fromText(cells, p) { // "(from L, its 3rd digit)" or "(fixed in the pattern)"
+  const c = cells[p - 1];
+  if (c.fixed) return ' (a fixed digit in the pattern)';
+  if (c.name) { const v = pat.vars.find((x) => x.name === c.name); return v.count === 1 ? ` (that’s <b class="mono">${c.name}</b>)` : ` (from <b class="mono">${c.name}</b>, its ${ord(c.k + 1)} digit)`; }
+  return '';
+}
+function renderDecode(cells) {
+  const known = cells && cells.every((c) => c.d !== null);
+  $('dec-wait').hidden = !!known; $('dec-body').hidden = !known;
+  if (!known) { $('dec-status').textContent = ''; renderHow(null); return; }
+  const r = RW.decode(cells.map((c) => c.d)), f = RW.formats(r);
+  const items = [];
+  items.push(r.quad ? ['ok', `Quadrant: ${posText(4)} is <b>${r.quadDigit}</b>, which means <b>${r.quad.words}</b>${fromText(cells, 4)}.`]
+    : ['bad', `Quadrant: ${posText(4)} is <b>${r.quadDigit}</b>${fromText(cells, 4)}, but it must be 1 to 4 (1 north and east, 2 south and east, 3 north and west, 4 south and west), so the hemispheres are unknown.`]);
+  r.checks.forEach((k, i) => {
+    items.push(k.ok ? ['ok', `Check digit ${i + 1}: ${posText(k.at)} is <b>${k.have}</b>, as the check calls for${fromText(cells, k.at)}.`]
+      : ['bad', `Check digit ${i + 1} fails: ${posText(k.at)} is <b>${k.have}</b>${fromText(cells, k.at)}, but the check calls for <b>${k.digit}</b>. Either that digit is wrong, or one of the eight it checks is: ${coversText(k.covers)}.`]);
+  });
+  items.push(['info', `Parity test: code 3, positions 2 and 5 add up to ${r.parity.n} + ${r.parity.q} = ${r.parity.sum}, which is ${r.even ? 'even' : 'odd'}, so the ${r.even ? 'even' : 'odd'} digit order is used.`]);
+  if (!r.latOk) items.push(['warn', `The latitude, ${r.latText}°, is beyond 90°, so these codes can’t be a real place. Check the digits.`]);
+  if (!r.lonOk) items.push(['warn', `The longitude, ${r.lonText}°, is beyond 180°, so these codes can’t be a real place. Check the digits.`]);
+  msgList($('dec-checks'), items);
+  const doubt = !r.checks.every((k) => k.ok) || !r.latOk || !r.lonOk;
+  let out = '';
+  if (f) {
+    if (doubt) out += `<p class="caution">Shown anyway, but with ${!r.latOk || !r.lonOk ? 'a value out of range' : 'a failing check digit'} these probably aren’t the right coordinates.</p>`;
+    out += [['Degrees and minutes', 'gc', 'the coordinates in degrees and minutes'], ['Decimal degrees', 'dec', 'the coordinates in decimal degrees'], ['Degrees, minutes and seconds', 'dms', 'the coordinates in degrees, minutes and seconds']]
+      .map(([h, k, l], i) => `<div class="val${i === 0 ? ' big' : ''}${doubt ? ' doubt' : ''}"><div class="vh"><span class="vt">${h}</span></div><output>${f.parts[k].map((x) => `<span class="nb">${esc(x)}</span>`).join(' ')}</output><div class="vfoot">${copyBtn(f[k], l)}</div></div>`).join('');
+  } else out = `<p class="caution">Without a quadrant the hemispheres are unknown. The digits read latitude <span class="mono">${r.latText}°</span> and longitude <span class="mono">${r.lonText}°</span>.</p>`;
+  $('dec-out').innerHTML = out;
+  clearTimeout(renderDecode.t);
+  renderDecode.t = setTimeout(() => { $('dec-status').textContent = f ? `Points to ${f.gc}. ${r.checks.every((k) => k.ok) ? 'Both check digits pass.' : 'A check digit fails.'}` : 'The quadrant digit is not 1 to 4.'; }, 700);
+  renderHow(r, cells);
+}
+
+/* ---------- the working, for the collapsible section ---------- */
+function chips(ps, cells, intLen) {
+  return '<span class="chiprow">' + ps.map((p, i) => (i === intLen ? '<span class="dot">.</span>' : '') + cellHtml(cells[p - 1], true)).join('') + '</span>';
+}
+function renderHow(r, cells) {
+  const el = $('how-live');
+  if (!r) { el.innerHTML = '<p class="wait-msg">Once all 18 digits are known, the working for your codes appears here.</p>'; return; }
+  const grid = [0, 1, 2].map((i) => `<div class="code-row"><span class="code-lbl">Code ${i + 1}</span><span class="cells">${cells.slice(i * 6, i * 6 + 6).map((c) => cellHtml(c, true)).join('')}</span></div>`).join('');
+  const o = r.order;
+  const checkLi = r.checks.map((k, i) => {
+    const sum = k.covers.map((p, j) => `${RW.WEIGHTS[j]}×${cells[p - 1].d}`).join(' + ');
+    return `<li><b>Check digit ${i + 1}</b> (digit ${k.at}, ${posText(k.at)}) covers digits ${k.covers.join(', ')}.
+      <span class="math">${sum} = ${k.sum}</span>
+      ${k.sum} ÷ 11 leaves ${k.rem}, and 11 − ${k.rem} = ${k.raw}${k.raw === 10 ? ', which counts as 0' : k.raw === 11 ? ', which counts as 5' : ''}. So digit ${k.at} should be <b>${k.digit}</b>; it is <b>${k.have}</b> ${k.ok ? '<span class="pass">✓ passes</span>' : '<span class="failw">✗ fails</span>'}.</li>`;
+  }).join('');
+  el.innerHTML = `<p>Your digits, numbered 1 to 18:</p><div class="code-rows how-grid">${grid}</div>
+    <ol>
+      <li><b>Quadrant.</b> Digit 4 is ${r.quadDigit}: ${r.quad ? r.quad.words + ', so the latitude is ' + (r.quad.ns === 'N' ? 'north' : 'south') + ' and the longitude is ' + (r.quad.ew === 'E' ? 'east' : 'west') : 'not 1 to 4, so it isn’t a quadrant'}.</li>
+      <li><b>Parity test.</b> Digit 14 + digit 17 = ${r.parity.n} + ${r.parity.q} = ${r.parity.sum}, which is ${r.even ? 'even' : 'odd'}.</li>
+      <li><b>Digit order.</b> For an ${r.even ? 'even' : 'odd'} sum, the latitude is digits <span class="mono nb">${o.lat.slice(0, 2).join(' ')} . ${o.lat.slice(2).join(' ')}</span> and the longitude is digits <span class="mono nb">${o.lon.slice(0, 3).join(' ')} . ${o.lon.slice(3).join(' ')}</span>:
+        <span class="howline"><span class="hl-lbl">Latitude</span>${chips(o.lat, cells, 2)}<span class="mono">= ${r.latText}°</span></span>
+        <span class="howline"><span class="hl-lbl">Longitude</span>${chips(o.lon, cells, 3)}<span class="mono">= ${r.lonText}°</span></span></li>
+      ${checkLi}
+    </ol>`;
+}
+
+/* ---------- putting it together ---------- */
+function update() {
+  let cells = null;
+  if (state.mode === 'pattern') {
+    cells = patternCells();
+    lastPatternDigits = cells && cells.every((c) => c.d !== null) ? cells.map((c) => c.d).join('') : null;
+  } else {
+    patternCells(); // keeps the variable messages current for when the pattern comes back
+    const t = typedCells(); cells = t.cells.some((c) => c.d !== null) ? t.cells : null;
+  }
+  renderCodes(cells);
+  renderDecode(cells);
+  save();
+}
+
+/* ---------- encoding: coordinates to the three codes ---------- */
+const UNITS = ['°', '′', '″'];
+const FORM = { dd: 'decimal degrees', dm: 'degrees and minutes', dms: 'degrees, minutes and seconds' };
+const typedHemi = (h) => h.sign < 0 ? (h.kind === 'lat' ? 'S' : 'W') : (h.kind === 'lat' ? 'N' : 'E');
+const typedText = (h) => typedHemi(h) + ' ' + h.parts.map((x, k) => x + UNITS[k]).join(' '); // the half as it was read: "N 43° 58.957′"
+const uText = (u, intW) => { const s = String(u).padStart(intW + 5, '0'); return s.slice(0, intW) + '.' + s.slice(intW); };
+function encCell(e, p, withNum) {
+  const ro = e.role[p - 1], d = e.digits[p - 1];
+  const cls = ro.kind === 'lat' ? 'cell la' : ro.kind === 'lon' ? 'cell lo' : 'cell meta';
+  const top = withNum ? `<span class="pn">${p}</span>` : `<span class="mk">${ro.kind === 'quad' ? 'quad' : ro.kind === 'check' ? 'check' : ''}</span>`;

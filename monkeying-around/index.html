@@ -596,6 +596,7 @@ table.mb-grid td.ws{color:var(--muted)}
 .mb-add{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin:14px 0 0}
 .mb-add label{font-weight:600;font-size:15px}
 .mb-add select{flex:1 1 220px;min-width:0;max-width:100%}
+.mb-all{display:block;width:100%;box-sizing:border-box;margin-top:8px;resize:vertical}
 </style>
 </head>
 <body>
@@ -1895,9 +1896,17 @@ function mbCopy(btn, text, i) {
     const ta = document.createElement('textarea'), back = document.activeElement; ta.value = text; ta.setAttribute('readonly', ''); ta.style.position = 'fixed'; ta.style.opacity = '0';
     document.body.appendChild(ta); ta.select(); let ok = false; try { ok = document.execCommand('copy'); } catch (e) { ok = false; } ta.remove(); if (back && back.focus) back.focus();
     if (ok) return done('Copied');
-    // last resort: select the step's own box so it can be copied by hand
-    const box = $('mb-r' + chain[i].id).querySelector('.mb-out, .mb-shifts'); if (!box) return done('Can’t copy here');
-    const r = document.createRange(); r.selectNodeContents(box); const sel = getSelection(); sel.removeAllRanges(); sel.addRange(r); done('Selected: copy it');
+    // last resort: select all of it for copying by hand. The step's own box may show only part, so when it doesn't
+    // hold exactly the text, a box with the whole text is shown under it (until the step redraws) and selected
+    const card = $('mb-r' + chain[i].id), box = card && card.querySelector('.mb-out, .mb-shifts'); if (!box) return done('Can’t copy here');
+    if (box.classList.contains('mb-out') && box.textContent === text) {
+      const r = document.createRange(); r.selectNodeContents(box); const sel = getSelection(); sel.removeAllRanges(); sel.addRange(r);
+    } else {
+      let all = card.querySelector('textarea.mb-all');
+      if (!all) { all = document.createElement('textarea'); all.className = 'mb-out mb-all'; all.readOnly = true; all.rows = 6; all.setAttribute('aria-label', 'The whole result, selected for copying'); box.after(all); }
+      all.value = text; all.focus(); all.select();
+    }
+    done('Selected: copy it');
   };
   if (navigator.clipboard && navigator.clipboard.writeText) { try { navigator.clipboard.writeText(text).then(() => done('Copied'), fallback); } catch (e) { fallback(); } } else fallback();
 }

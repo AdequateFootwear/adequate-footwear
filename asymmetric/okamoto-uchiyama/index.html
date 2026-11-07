@@ -459,17 +459,22 @@ function ntModule(){
     return R;
   }
 
+  /* The factoring routines below are generators that pause (yield) every millisecond or so of work: factor() runs one
+     straight through, and factorSteps() hands it to a page that has no worker, to run in short slices so the page stays usable. */
+  function runAll(it){ for (;;) { const r = it.next(); if (r.done) return r.value; } }
+
   /* ---------- Pollard rho (Brent) ---------- */
-  function rho(n, maxIter, c = 1n){
+  function* rho(n, maxIter, c = 1n){
     let y = 2n, r = 1, q = 1n, g = 1n, x = 0n, ys = 0n, it = 0;
     const m = 128;
     while (g === 1n) {
-      x = y; for (let i = 0; i < r; i++) y = (y * y + c) % n;
+      x = y; for (let i = 0; i < r; i++) { y = (y * y + c) % n; if ((i & 127) === 127) yield; }
       let k = 0;
       while (k < r && g === 1n) {
         ys = y; const lim = Math.min(m, r - k);
         for (let i = 0; i < lim; i++) { y = (y * y + c) % n; q = q * abs(x - y) % n; }
         g = gcd(q, n); k += m;
+        yield;
       }
       it += r; r *= 2;
       if (it > maxIter && g === 1n) return null;
@@ -477,9 +482,9 @@ function ntModule(){
     if (g === n) { do { ys = (ys * ys + c) % n; g = gcd(abs(x - ys), n); } while (g === 1n); }
     return (g === n || g === 1n) ? null : g;
   }
-  function fermat(n, steps){
+  function* fermat(n, steps){
     let a = isqrt(n); if (a * a < n) a++;
-    for (let i = 0; i < steps; i++, a++) { const b2 = a * a - n, b = isqrt(b2); if (b * b === b2) return a - b; }
+    for (let i = 0; i < steps; i++, a++) { const b2 = a * a - n, b = isqrt(b2); if (b * b === b2) return a - b; if ((i & 31) === 31) yield; }
     return null;
   }
 
@@ -514,7 +519,7 @@ function ntModule(){
     return { F: 4500, M: 131072 };
   }
 
-  function siqs(N, onProgress, attempt = 0){ // a retry (attempt 1, 2, …) picks different polynomials, so it collects different relations
+  function* siqs(N, onProgress, attempt = 0){ // a retry (attempt 1, 2, …) picks different polynomials, so it collects different relations
     const k = chooseMultiplier(N), kN = k * N;
     const digits = kN.toString().length;
     const { F: Fwant, M } = siqsParams(digits);
@@ -651,6 +656,7 @@ function ntModule(){
           }
         }
         polys++;
+        yield;
         const now = Date.now();
         if (onProgress && now - lastReport > 250) { lastReport = now; onProgress({ phase: 'sieve', found: fulls.length, needed, polys, ms: now - startT, F }); }
         if (fulls.length >= needed) break;
@@ -675,6 +681,7 @@ function ntModule(){
       used[piv] = 1;
       const pr = rows[piv];
       for (let r = 0; r < R; r++) if (r !== piv && (rows[r][w] & b)) { const rr = rows[r]; for (let t = 0; t < W + H; t++) rr[t] ^= pr[t]; }
+      yield;
     }
     for (let r = 0; r < R; r++) {
       if (used[r]) continue;
@@ -692,6 +699,7 @@ function ntModule(){
       for (const [idx, e] of tot) { if (idx === 0) continue; Yv = Yv * modPow(BigInt(fbP[idx - 1]), BigInt(e / 2), N) % N; }
       const g = gcd(X - Yv, N);
       if (g > 1n && g < N) return g;
+      yield;
     }
     return null; // extremely unlikely; caller retries
   }
@@ -880,7 +888,8 @@ function ntModule(){
 
   /* ---------- full factorisation ---------- */
   const SIQS_MAX_DIGITS = 100; // beyond this the sieve would run for weeks (and past ~620 digits its setup overflows)
-  function factor(n, onProgress){
+  function factor(n, onProgress){ return runAll(factorSteps(n, onProgress)); }
+  function* factorSteps(n, onProgress){
     const t0 = Date.now(), out = [], notes = [];
     if (n < 2n) return { factors: [], notes, ms: 0 };
     let m = n;
@@ -895,20 +904,20 @@ function ntModule(){
       if (isProbablePrime(c)) { out.push(c); continue; }
       let d = null;
       for (let k = 2; k <= 8 && !d; k++) { const r = iroot(c, k); if (r ** BigInt(k) === c) { d = r; notes.push('perfect power'); } }
-      if (!d) { d = fermat(c, 2000); if (d) notes.push('Fermat (the two factors are close together)'); }
-      if (!d) { d = rho(c, 6e4); if (d) notes.push('Pollard rho'); }
-      if (!d && c < 10n ** 20n) { d = rho(c, 2e7, 3n); if (d) notes.push('Pollard rho'); }
+      if (!d) { d = yield* fermat(c, 2000); if (d) notes.push('Fermat (the two factors are close together)'); }
+      if (!d) { d = yield* rho(c, 6e4); if (d) notes.push('Pollard rho'); }
+      if (!d && c < 10n ** 20n) { d = yield* rho(c, 2e7, 3n); if (d) notes.push('Pollard rho'); }
       const digits = c.toString().length;
       // The sieve slows down steeply with size, while rho's time depends mostly on the size of the factor it finds,
       // so give rho a longer run first on anything big: it finds factors of up to about 12 digits (10 digits once c has
       // 600 or more), and gives up within about 10 seconds at any size.
-      if (!d && digits > 50) { d = rho(c, digits > 70 ? Math.round(Math.min(4e6, 1e11 / (digits * digits))) : 2e6, 3n); if (d) notes.push('Pollard rho'); }
+      if (!d && digits > 50) { d = yield* rho(c, digits > 70 ? Math.round(Math.min(4e6, 1e11 / (digits * digits))) : 2e6, 3n); if (d) notes.push('Pollard rho'); }
       if (!d && digits > SIQS_MAX_DIGITS) throw new Error(`a part with ${digits} digits is left that has no small factors, and the quadratic sieve on this page can’t split a number that size in any reasonable time (from about 70 digits it takes hours). If the puzzle also gives you one of the secret values, enter it and this step isn’t needed.`);
       if (!d) {
-        for (let attempt = 0; attempt < 3 && !d; attempt++) d = siqs(c, onProgress, attempt);
+        for (let attempt = 0; attempt < 3 && !d; attempt++) d = yield* siqs(c, onProgress, attempt);
         if (d) notes.push('quadratic sieve');
       }
-      if (!d) { for (let cc = 2n; cc < 20n && !d; cc++) d = rho(c, 5e7, cc); if (d) notes.push('Pollard rho'); }
+      if (!d) { for (let cc = 2n; cc < 20n && !d; cc++) d = yield* rho(c, 5e7, cc); if (d) notes.push('Pollard rho'); }
       if (!d) throw new Error('could not factor ' + c);
       stack.push(d, c / d);
     }
@@ -916,7 +925,7 @@ function ntModule(){
     return { factors: out, notes, ms: Date.now() - t0 };
   }
 
-  return { abs, mod, gcd, modPow, egcdSteps, modInv, bitLength, iroot, isqrt, isProbablePrime, smallestFactorBelow, factor, SMALL_PRIMES: SMALL,
+  return { abs, mod, gcd, modPow, egcdSteps, modInv, bitLength, iroot, isqrt, isProbablePrime, smallestFactorBelow, factor, factorSteps, SMALL_PRIMES: SMALL,
     legendre, jacobi, sqrtModP, crt, countFactors, orderOf, rand, bsgs, rhoPlan, rhoWalker, rhoSolve, rhoSync, solvePrimeSync, dlog, hasFastWalk: () => !!getWasm() };
 }
 </script>
@@ -1002,7 +1011,13 @@ onmessage=function(ev){const m=ev.data;try{
     let w = null, cancelled = false, rejectFn;
     const promise = new Promise((resolve, reject) => {
       rejectFn = reject;
-      const inline = () => setTimeout(() => { if (cancelled) return; try { const r = NT.factor(n); resolve(r); } catch (e) { reject(e); } }, 30);
+      // no worker: the same search on the page itself, in short slices so Stop and the rest of the page keep working
+      const inline = () => { const it = NT.factorSteps(n, onProgress); setTimeout(function slice(){
+        if (cancelled) return;
+        try { const t0 = Date.now(); let r; do r = it.next(); while (!r.done && Date.now() - t0 < 40); if (r.done) return resolve(r.value); }
+        catch (e) { return reject(e); }
+        setTimeout(slice, 0);
+      }, 30); };
       try {
         w = newWorker();
         w.onmessage = (ev) => {
@@ -1116,6 +1131,8 @@ onmessage=function(ev){const m=ev.data;try{
         return cur;
       },
       clear(){ clearTimeout(timer); const j = cur.job; cur = { key: null, status: 'idle' }; if (j) j.cancel(); },
+      // a search the page doesn't need right now: end it, but keep a finished, stopped or failed one for the same key, so it doesn't restart by itself later
+      park(key){ if (!(cur.key === key && (cur.status === 'done' || cur.status === 'stopped' || cur.status === 'error'))) { clearTimeout(timer); const j = cur.job; cur = { key: null, status: 'idle' }; if (j) j.cancel(); } },
       stop(){
         if (cur.job) cur.job.cancel();
         else if (cur.status === 'pending') { clearTimeout(timer); cur = { key: cur.key, status: 'stopped', message: 'cancelled' }; onChange(); } // still waiting to start
@@ -1174,7 +1191,7 @@ onmessage=function(ev){const m=ev.data;try{
       if (t.id === 'retry-pm1') { fs.retry(); rerender(); refocus('[data-stop="prog-pm1"]', '#s3'); }
       if (t.id === 'retry-dl') { ds.retry(); rerender(); refocus('[data-stop="prog-dl"]', '#s4'); }
       if (t.id === 'force-dl') { forced = t.getAttribute('data-key'); rerender(); refocus('[data-stop="prog-dl"]', '#s4'); }
-      if (t.id === 'run-pm1') { forcedF = t.getAttribute('data-key'); rerender(); refocus('[data-stop="prog-pm1"]', '#s3'); }
+      if (t.id === 'run-pm1') { forcedF = t.getAttribute('data-key'); fs.retry(); rerender(); refocus('[data-stop="prog-pm1"]', '#s3'); }
     });
     return function run(o){
       const { p, g, h, sym, hSym } = o; const G = o.gSym || 'g';
@@ -1185,7 +1202,7 @@ onmessage=function(ev){const m=ev.data;try{
       const pKey = o.pOk ? (p - 1n).toString() : '';
       if (!o.pOk) { fs.clear(); waiting('#s3', o.pWhy); $('#pm1-out').innerHTML = ''; }
       else if (o.known !== undefined && !o.needOrder && forcedF !== pKey && !(fs.state.key === pKey && fs.state.status === 'done')) {
-        ready('#s3'); fs.clear(); $('#pm1-out').innerHTML = ''; // nothing on the page needs the factors, so don't start (or keep) a long job
+        ready('#s3'); fs.park(pKey); $('#pm1-out').innerHTML = ''; // nothing on the page needs the factors, so don't start (or keep) a long job
         c3.push(['info', `Not needed for now: you’ve entered <var>${sym}</var>, and checking it takes one power, not the factors of <var>p − 1</var>.${o.pm1Use ? ' ' + o.pm1Use : ''} <button class="btn small" type="button" id="run-pm1" data-key="${pKey}">Factor p − 1 anyway</button>`]);
       } else {
         ready('#s3');
@@ -1215,7 +1232,7 @@ onmessage=function(ev){const m=ev.data;try{
         ds.clear(); $('#dl-out').innerHTML = ''; $('#ph-table').innerHTML = ''; $('#ph-more').hidden = true;
         waiting('#s4', !o.pOk ? o.pWhy : !o.gOk ? o.gWhy : o.hWhy);
       } else if (o.known !== undefined) { // checking a known exponent needs one power, not the factors of p − 1
-        ready('#s4'); ds.clear(); $('#ph-more').hidden = true; $('#ph-table').innerHTML = '';
+        ready('#s4'); ds.park([p, g, h].join(':')); $('#ph-more').hidden = true; $('#ph-table').innerHTML = '';
         $('#dl-out').innerHTML = valBox(sym, o.knownLabel, o.known);
         if (NT.modPow(g, o.known, p) === h) { c4.push(['ok', `Check: <var>${G}<sup>${sym}</sup> mod p</var> gives back <var>${hSym}</var>, so the <var>${sym}</var> you entered fits.`]); x = o.known; }
         else c4.push(['bad', `The <var>${sym}</var> you entered doesn’t fit: <var>${G}<sup>${sym}</sup> mod p</var> isn’t <var>${hSym}</var>. Check its digits, or clear it and let the page search.`]);
@@ -1348,6 +1365,7 @@ onmessage=function(ev){const m=ev.data;try{
       for (const k of new Set((o.known || []).filter((k) => k !== undefined && k > 1n && NT.isProbablePrime(k) && n % k === 0n).map(String))) {
         const K = BigInt(k); while (rest % K === 0n) { fl.push(K); rest /= K; }
       }
+      if (fl.length && rest > 1n && !NT.isProbablePrime(rest)) { const r = NT.isqrt(rest); if (r * r === rest && NT.isProbablePrime(r)) { fl.push(r, r); rest = 1n; } } // the other prime, squared
       if (fl.length && (rest === 1n || NT.isProbablePrime(rest))) { if (rest > 1n) fl.push(rest); factors = fl.sort(cmp); fromUser = true; }
       if (factors) fs.clear();
       else {
@@ -1410,31 +1428,36 @@ onmessage=function(ev){const m=ev.data;try{
     const q = (k) => root.querySelector(`[data-r="${k}"]`);
     q('mode').addEventListener('change', (e) => { st.cv.mode = e.target.value; onChange(); });
     q('align').addEventListener('change', (e) => { st.cv.align = e.target.value; onChange(); });
-    q('pad').addEventListener('change', (e) => { st.cv.pad = e.target.checked; onChange(); });
+    q('pad').addEventListener('change', (e) => { if (st.cv.mode === 'coords') st.cv.zc = e.target.checked; else st.cv.pad = e.target.checked; onChange(); }); // coordinates keep their own setting, off until the solver ticks it
     q('skip').addEventListener('input', (e) => { const v = parseInt(e.target.value, 10); st.cv.skip = Number.isFinite(v) && v > 0 ? Math.min(v, 999) : 0; onChange(); });
     q('copy').addEventListener('click', () => copy(q('text').textContent));
     return function render(m){
       const { mode, align, pad } = st.cv, skip = st.cv.skip || 0;
-      q('mode').value = mode; q('align').value = align; q('pad').checked = pad;
+      q('mode').value = mode; q('align').value = align; q('pad').checked = mode === 'coords' ? !!st.cv.zc : pad;
       if (document.activeElement !== q('skip')) q('skip').value = skip;
       const checks = [], chips = []; let text = '';
       const blocky = mode === 'ascii3' || mode === 'ascii4' || mode === 'az2';
-      q('pad').disabled = !blocky || skip > 0; q('align').disabled = !blocky || skip > 0; q('skip').disabled = !(blocky || mode === 'coords');
+      const skips = blocky || mode === 'coords'; // the readings that use the skip box
+      // the leading zero goes on the front of the number, so not after a skip, and not when blocks are lined up from the end (that leaves the short block on its own on purpose)
+      q('pad').disabled = !skips || skip > 0 || (blocky && align === 'right'); q('align').disabled = !blocky || skip > 0; q('skip').disabled = !skips;
       const all = m.toString();
-      const skipped = (blocky || mode === 'coords') && skip ? all.slice(0, skip) : '';
-      const body = (blocky || mode === 'coords') && skip ? all.slice(skip) : all;
+      const skipped = skips && skip ? all.slice(0, skip) : '';
+      const body = skips && skip ? all.slice(skip) : all;
       if (skipped) chips.push({ d: skipped.length > 12 ? skipped.slice(0, 6) + '…' + skipped.slice(-3) : skipped, t: 'skipped', odd: true });
-      if (skip && skip >= all.length) checks.push(['warn', `There are only ${plural(all.length, 'digit')}, so skipping ${skip} leaves nothing to read.`]);
+      if (skips && skip && skip >= all.length) checks.push(['warn', `There are only ${plural(all.length, 'digit')}, so skipping ${skip} leaves nothing to read.`]);
       if (mode === 'digits') {
         for (let i = 0; i < all.length; i += 3) chips.push({ d: all.slice(i, i + 3), t: '' }); text = all;
       } else if (mode === 'coords') {
-        const opts = coordsFrom(body);
-        if (!opts.length) checks.push(['warn', `Coordinates need at least 14 digits, and there ${body.length === 1 ? 'is' : 'are'} only ${body.length}.`]);
-        for (const o of opts) checks.push([o.ok ? 'ok' : 'info', `<b>${o.n}-digit layout:</b> <span class="num">${esc(o.text)}</span>. ${o.how}. ${o.ok ? 'The degrees and minutes are in range.' : 'Some part is out of range (minutes must be under 60, latitude at most 90° and longitude at most 180°), so this layout probably isn’t it.'}${o.rest ? ` The ${plural(o.rest.length, 'digit')} after it may be a message: try a block reading with “skip the first ${skip + o.n} digits”.` : ''}`]);
+        const zero = st.cv.zc && !skip ? 1 : 0, cbody = zero ? '0' + body : body; // a latitude under 10° (05°) loses its first zero once the message is a number
+        if (zero) checks.push(['info', 'A zero has been put back on the front, as if the latitude started with 0 (like 05°). Untick “put back a missing leading zero” to read the digits without it.']);
+        else if (!skip) checks.push(['info', 'A number can’t start with 0, so a latitude under 10° (like 05°) loses its first zero when the message becomes a number. If that may have happened, tick “put back a missing leading zero”.']);
+        const opts = coordsFrom(cbody);
+        if (!opts.length) checks.push(['warn', `Coordinates need at least 14 digits, and there ${body.length === 1 ? 'is' : 'are'} only ${body.length}${zero ? ` (${cbody.length} with the zero put back)` : ''}.`]);
+        for (const o of opts) checks.push([o.ok ? 'ok' : 'info', `<b>${o.n}-digit layout:</b> <span class="num">${esc(o.text)}</span>. ${o.how}. ${o.ok ? 'The degrees and minutes are in range.' : 'Some part is out of range (minutes must be under 60, latitude at most 90° and longitude at most 180°), so this layout probably isn’t it.'}${o.rest ? ` The ${plural(o.rest.length, 'digit')} after it may be a message: try a block reading with “skip the first ${skip + o.n - zero} digits”.` : ''}`]);
         if (opts.length) checks.push(['info', 'Add the hemispheres (N or S, E or W) from where the cache is. If no layout fits, the coordinates may start later in the number, or this may be the wrong reading.']);
         const best = opts.find((o) => o.ok) || opts[0];
-        text = best ? best.text : body;
-        for (let i = 0; i < body.length; i += 3) chips.push({ d: body.slice(i, i + 3), t: '' });
+        text = best ? best.text : cbody;
+        for (let i = 0; i < cbody.length; i += 3) chips.push({ d: cbody.slice(i, i + 3), t: '', pad: i === 0 && zero > 0 });
       } else if (mode === 'hex') {
         let h = m.toString(16); if (h.length % 2) h = '0' + h;
         const bytes = new Uint8Array(h.length / 2);
@@ -1460,7 +1483,7 @@ onmessage=function(ev){const m=ev.data;try{
         const blocks = [];
         if (align === 'right' && !skip && s.length % size) { blocks.push({ d: s.slice(0, s.length % size), lead: true }); s = s.slice(s.length % size); }
         for (let i = 0; i < s.length; i += size) blocks.push({ d: s.slice(i, i + size) });
-        if (blocks[0] && blocks[0].lead) checks.push(['info', `Blocks are lined up from the end, which leaves <b>${blocks[0].d}</b> on its own at the front.`]);
+        if (blocks[0] && blocks[0].lead) checks.push(['info', `Blocks are lined up from the end, which leaves <b>${blocks[0].d}</b> on its own at the front (so no zero is put back). To read it as a block with a zero put back, line the blocks up from the start.`]);
         let high = false, shortLast = null;
         blocks.forEach((b, i) => {
           const v = parseInt(b.d, 10); let t, odd = false;
@@ -1513,7 +1536,10 @@ onmessage=function(ev){const m=ev.data;try{
     const below = (v, P1, nm, items) => {
       if (v === undefined || n === undefined) return false;
       if (v >= n) { items.push(['bad', `<b>${nm} is not smaller than n.</b> Every number here is a remainder after dividing by <var>n</var>. Check for an extra digit, or two numbers in each other’s boxes.`]); return false; }
-      if (v < 2n) { items.push(['bad', `${nm} can’t be 0 or 1.`]); return false; }
+      if (v === 0n) { items.push(['bad', `${nm} can’t be 0.`]); return false; }
+      if (v === 1n && P1 === P.g) { items.push(['bad', '<var>g</var> can’t be 1: every power of 1 is 1, so it can’t carry a message.']); return false; }
+      if (v === 1n && P1 === P.c) items.push(['warn', '<var>c = 1</var> decrypts to 0 under any key. Is this the whole ciphertext?']);
+      if (v === 1n && P1 === P.h) items.push(['info', '<var>h = 1</var> is unusual, but a key can have it: it means <var>g<sup>n</sup> mod n</var> is 1. Then <var>h</var> adds nothing to the ciphertext. Decryption doesn’t use <var>h</var>.']);
       if (NT.gcd(v, n) !== 1n) { items.push(['warn', `${nm} shares a factor with <var>n</var>, which a working key never does. Check its digits.`]); return false; }
       return true;
     };

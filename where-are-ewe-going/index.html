@@ -1346,7 +1346,7 @@ function typedCells() {
 [1, 2, 3].forEach((n) => $(`code-${n}`).addEventListener('input', () => {
   const v = $(`code-${n}`).value;
   const digits = v.replace(/[^0-9]/g, '');
-  if (n === 1 && digits.length === 18 && !$('code-2').value && !$('code-3').value) { // all three pasted into the first box
+  if (n === 1 && digits.length === 18) { // all three pasted into the first box: they replace whatever the boxes held
     [0, 1, 2].forEach((i) => { state.typed[i] = digits.slice(i * 6, i * 6 + 6); $(`code-${i + 1}`).value = state.typed[i]; });
   } else state.typed[n - 1] = v.slice(0, 60);
   update();
@@ -1415,6 +1415,7 @@ function fromText(cells, p) { // "(from L, its 3rd digit)" or "(fixed in the pat
   return '';
 }
 function renderDecode(cells) {
+  clearTimeout(renderDecode.t); // a result that has gone stale is never announced
   const known = cells && cells.every((c) => c.d !== null);
   $('dec-wait').hidden = !!known; $('dec-body').hidden = !known;
   if (!known) { $('dec-status').textContent = ''; renderHow(null); return; }
@@ -1517,6 +1518,7 @@ function metresMoved(r) { // the rounding, as a distance on the ground (a sphere
 }
 let lastEnc = null;
 function renderEncode() {
+  clearTimeout(renderEncode.t);
   const r = RW.readCoords(state.enc), msg = $('enc-msg');
   $('enc-in').setAttribute('aria-invalid', r.err ? 'true' : 'false');
   lastEnc = null;

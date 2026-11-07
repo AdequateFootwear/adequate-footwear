@@ -707,8 +707,14 @@ function parseCoords(t) {
   let T = t.toUpperCase().replace(/[′’']/g, ' ').replace(/[″"]/g, ' ').replace(/°/g, ' ');
   const hs = T.match(/[NSEW]/g) || [];
   if (hs.length > 2 || /[A-DF-MO-RT-VX-Z]/.test(T.replace(/[NSEW]/g, ''))) return { err: 'Use numbers and N, S, E or W only.' };
-  // With no decimal points anywhere, a comma between digits is a decimal comma (45,2 or 12,345).
-  if (!/\d\.\d/.test(T)) T = T.replace(/(\d),(\d)/g, '$1.$2');
+  T = T.replace(/(^|[^\d.])\.(?=\d)/g, (m, a) => a + '0.'); // .5 is 0.5
+  // With no decimal points anywhere, a comma between digits is a decimal comma (45,2 or 12,345), unless the
+  // whole entry is two whole numbers joined by one comma (45,93 or 0,0), which can only be a pair.
+  if (!/\d\.\d/.test(T) && /\d,\d/.test(T)) {
+    const dec = T.replace(/(\d),(?=\d)/g, '$1.'), nums = dec.match(/\d+(?:\.\d+)*/g) || [];
+    if (nums.some((x) => x.split('.').length > 2)) return { err: 'I can’t tell which commas are decimal commas. Put a space after the comma between the latitude and longitude, or use decimal points.' };
+    if (!(nums.length === 1 && (T.match(/\d,\d/g) || []).length === 1)) T = dec;
+  }
   let parts;
   const hm = T.match(/^\s*([NS])([^EW]*)([EW])(.*)$/);
   const hs2 = T.match(/^(.*?)([NS])(.*?)([EW])\s*$/); // hemispheres written after the numbers
@@ -844,7 +850,7 @@ function project() {
   if (errs.length) { out.innerHTML = `<p class="why">${esc(errs[0])}</p>`; announce('pj-status', errs[0]); return; }
   if (from.err !== undefined || brg === null || dist === null) { out.innerHTML = ''; announce('pj-status', ''); return; }
   const m = dist * UNITS[unit];
-  if (m > 20000000) { out.innerHTML = '<p class="why">That is more than halfway round the Earth. Try a shorter distance.</p>'; return; }
+  if (m > 20000000) { const why = 'That is more than halfway round the Earth. Try a shorter distance.'; out.innerHTML = `<p class="why">${why}</p>`; announce('pj-status', why); return; }
   const r = geoDirect(from.lat, from.lon, brg, m);
   const c = fmtCoords(r.lat, r.lon), dec = `${r.lat.toFixed(6)}, ${r.lon.toFixed(6)}`;
   out.innerHTML = `<p class="rh-big">${esc(c)} ${copyBtn(c, 'projected coordinates')}</p>
@@ -957,16 +963,18 @@ function updateEyeState() {
   const k = +$('ey-k').value, rot = +$('ey-rot').value;
   $('ey-state').textContent = `Lens ${k > 0 ? 'bulges' : k < 0 ? 'pinches' : 'is flat'}, centred ${Math.round(lens.x * 100)}% across and ${Math.round(lens.y * 100)}% down. Turned ${rot}°${flipH ? ', flipped left–right' : ''}${flipV ? ', flipped upside down' : ''}.`;
 }
+let pickGen = 0; // counts picture choices, so only the latest one is shown
 $('ey-file').addEventListener('change', () => {
   const f = $('ey-file').files && $('ey-file').files[0]; $('ey-why').textContent = '';
   if (!f) return;
+  const gen = ++pickGen; // a newer choice wins, even if this picture finishes loading later
   if (!/^image\//.test(f.type)) { $('ey-why').textContent = 'That file isn’t a picture.'; return; }
   const url = URL.createObjectURL(f), img = new Image();
-  img.onload = () => { setSource(img, img.naturalWidth, img.naturalHeight); URL.revokeObjectURL(url); };
-  img.onerror = () => { $('ey-why').textContent = 'This browser can’t open that picture.'; URL.revokeObjectURL(url); };
+  img.onload = () => { URL.revokeObjectURL(url); if (gen === pickGen) setSource(img, img.naturalWidth, img.naturalHeight); };
+  img.onerror = () => { URL.revokeObjectURL(url); if (gen === pickGen) $('ey-why').textContent = 'This browser can’t open that picture.'; };
   img.src = url;
 });
-$('ey-sample').addEventListener('click', () => { const c = sampleCanvas(); setSource(c, c.width, c.height); });
+$('ey-sample').addEventListener('click', () => { pickGen++; const c = sampleCanvas(); setSource(c, c.width, c.height); });
 ecv.addEventListener('click', (e) => { const r = ecv.getBoundingClientRect(); lens = { x: (e.clientX - r.left) / r.width, y: (e.clientY - r.top) / r.height }; renderEye(); });
 ecv.addEventListener('keydown', (e) => {
   const m = { ArrowLeft: [-1, 0], ArrowRight: [1, 0], ArrowUp: [0, -1], ArrowDown: [0, 1] }[e.key];
@@ -979,7 +987,8 @@ $('ey-ly').addEventListener('input', () => { lens.y = +$('ey-ly').value / 100; r
 // Turn the picture so the way the herring points is at the top (like holding a map photo "heading up").
 $('ey-match').addEventListener('click', () => {
   if (spinning) return;
-  $('ey-rot').value = Math.round(norm180(-norm360(angle))); renderEye();
+  let h = flipH ? -angle : angle; if (flipV) h = 180 - h; // where the heading ends up once the picture is flipped
+  $('ey-rot').value = Math.round(norm180(-norm360(h))); renderEye();
 });
 $('ey-fliph').addEventListener('click', () => { flipH = !flipH; $('ey-fliph').setAttribute('aria-pressed', String(flipH)); renderEye(); });
 $('ey-flipv').addEventListener('click', () => { flipV = !flipV; $('ey-flipv').setAttribute('aria-pressed', String(flipV)); renderEye(); });

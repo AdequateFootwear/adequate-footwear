@@ -1,0 +1,2027 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light dark">
+<title>Monkeying Around · Tools of the Trade</title>
+<meta name="description" content="Vigenère and its relatives (Beaufort, Gronsfeld, autokey, Porta, Trithemius and the Quagmires), with a long key text, careful control over what counts as a letter, fancy lettering folded back to plain A to Z, and a chain of simple steps to do more to the result.">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%231D4D30'/%3E%3Cpath d='M16 4l4.5 12L16 28l-4.5-12z' fill='%23F4F2E8'/%3E%3Cpath d='M16 4l4.5 12h-9z' fill='%23E8BE66'/%3E%3C/svg%3E">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600;700&family=Barlow:ital,wght@0,400;0,500;0,600;1,400&family=IBM+Plex+Mono:wght@400;500;600&display=swap">
+<style>
+/* ---------- tokens (Tools of the Trade house palette: forest green + brass) ---------- */
+:root{
+  color-scheme:light dark;
+  --page:880px;
+  --ground:#F2F3EC; --surface:#FFFFFF; --surface-2:#EAEDE3; --surface-3:#DFE3D6;
+  --ink:#172019; --ink-2:#434C41; --muted:#646C60;
+  --line:#D0D6C8; --line-strong:#848E7D;
+  --accent:#1D6A3D; --accent-ink:#FFFFFF; --accent-soft:#E2F0E6;
+  --brass:#86590A;
+  --error:#B42318; --error-soft:#FCE9E7;
+  --warn:#8A5F0C; --warn-soft:#FBF0D3;
+  --good:#1D6A3D; --good-soft:#E2F0E6;
+  --focus:#1F5FBF;
+  --band:#1D4D30; --band-ink:#F4F2E8; --band-ink-2:#C9D8CA; --band-hl:#E8BE66; --band-line:rgba(232,190,102,.36);
+  --shadow:0 1px 2px rgba(23,32,25,.06), 0 6px 18px -8px rgba(23,32,25,.2);
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --ground:#111613; --surface:#192019; --surface-2:#212922; --surface-3:#2A332B;
+    --ink:#E7ECE3; --ink-2:#C0C8BB; --muted:#929C8C;
+    --line:#2C362E; --line-strong:#667361;
+    --accent:#6FC78E; --accent-ink:#0E1A12; --accent-soft:#1C3324;
+    --brass:#DDB05A;
+    --error:#FF8C82; --error-soft:#3D201D;
+    --warn:#E3B04B; --warn-soft:#3A3016;
+    --good:#6FC78E; --good-soft:#1C3324;
+    --focus:#7FB0FF;
+    --band:#16281D; --band-line:rgba(232,190,102,.26);
+    --shadow:0 1px 2px rgba(0,0,0,.4), 0 8px 24px -10px rgba(0,0,0,.6);
+  }
+}
+:root[data-theme="dark"]{
+  color-scheme:dark;
+  --ground:#111613; --surface:#192019; --surface-2:#212922; --surface-3:#2A332B;
+  --ink:#E7ECE3; --ink-2:#C0C8BB; --muted:#929C8C;
+  --line:#2C362E; --line-strong:#667361;
+  --accent:#6FC78E; --accent-ink:#0E1A12; --accent-soft:#1C3324;
+  --brass:#DDB05A;
+  --error:#FF8C82; --error-soft:#3D201D;
+  --warn:#E3B04B; --warn-soft:#3A3016;
+  --good:#6FC78E; --good-soft:#1C3324;
+  --focus:#7FB0FF;
+  --band:#16281D; --band-line:rgba(232,190,102,.26);
+  --shadow:0 1px 2px rgba(0,0,0,.4), 0 8px 24px -10px rgba(0,0,0,.6);
+}
+:root[data-theme="light"]{color-scheme:light}
+
+/* ---------- base ---------- */
+*,*::before,*::after{box-sizing:border-box}
+html,body{margin:0;padding:0}
+html{accent-color:var(--accent)}
+body{
+  background:var(--ground); color:var(--ink);
+  font-family:"Barlow",system-ui,-apple-system,"Segoe UI",Helvetica,Arial,sans-serif;
+  font-size:16px; line-height:1.5; -webkit-font-smoothing:antialiased;
+}
+button,input,textarea,select{font:inherit;color:inherit}
+::placeholder{color:var(--muted);opacity:1} /* browsers default to a pale grey that fails 4.5:1 */
+:focus-visible{outline:2px solid var(--focus);outline-offset:2px}
+::selection{background:var(--accent-soft)}
+.mono,.num{font-family:"IBM Plex Mono","SFMono-Regular",Menlo,Consolas,monospace}
+.wrap{max-width:var(--page);margin:0 auto;padding:24px 16px 64px}
+.sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
+a{color:var(--accent)}
+
+/* ---------- masthead (shared by every tool) ---------- */
+.band{position:relative;overflow:hidden;isolation:isolate;background:var(--band);color:var(--band-ink);--focus:var(--band-hl)}
+.band .topo{position:absolute;inset:0;width:100%;height:100%;z-index:-1;fill:none;stroke:var(--band-line);stroke-width:1}
+.band .topo .ix{stroke-width:2}
+.band-in{max-width:var(--page);margin:0 auto;padding:14px 16px 30px}
+.suite{
+  display:flex;align-items:center;justify-content:space-between;gap:6px 14px;flex-wrap:wrap;margin-bottom:26px;
+  font-family:"Barlow Condensed","Barlow",sans-serif;font-weight:600;font-size:14px;letter-spacing:.12em;text-transform:uppercase;
+}
+.suite .crumbs{display:inline-flex;align-items:center;gap:9px;flex-wrap:wrap}
+.suite a{color:inherit;text-decoration:none;display:inline-flex;align-items:center;gap:9px}
+.suite a:hover span{text-decoration:underline;text-underline-offset:3px}
+.suite .sep{color:var(--band-hl)}
+.suite .by{color:var(--band-ink-2)}
+.mark{width:22px;height:22px;flex:none}
+.top{display:flex;align-items:flex-end;justify-content:space-between;gap:16px;flex-wrap:wrap}
+.brand h1{
+  font-family:"Barlow Condensed","Barlow",sans-serif;font-weight:700;font-size:48px;line-height:.95;
+  letter-spacing:.01em;text-transform:uppercase;margin:0;text-wrap:balance;
+}
+.brand h1 .hl{color:var(--band-hl)}
+.brand p{margin:10px 0 0;color:var(--band-ink-2);max-width:60ch}
+.top-actions{display:flex;gap:8px;flex-wrap:wrap}
+.band .btn.quiet{color:var(--band-ink);border-color:rgba(244,242,232,.35)}
+.band .btn.quiet:hover{background:rgba(244,242,232,.12);color:var(--band-ink)}
+
+/* ---------- buttons ---------- */
+.btn{
+  display:inline-flex;align-items:center;gap:6px;
+  border:1px solid var(--line-strong);background:var(--surface);color:var(--ink);
+  border-radius:6px;padding:7px 12px;cursor:pointer;line-height:1.1;
+  font-family:"Barlow Condensed","Barlow",sans-serif;font-weight:600;font-size:15px;letter-spacing:.04em;text-transform:uppercase;
+}
+.btn:hover{background:var(--surface-2)}
+.btn.primary{background:var(--accent);border-color:var(--accent);color:var(--accent-ink)}
+.btn.primary:hover{filter:brightness(1.06)}
+.btn.quiet{border-color:transparent;background:transparent;color:var(--ink-2)}
+.btn.quiet:hover{background:var(--surface-2);color:var(--ink)}
+.btn.small{padding:4px 8px;font-size:13px}
+.btn:disabled{opacity:.45;cursor:not-allowed}
+
+/* ---------- panels & steps ---------- */
+.panel{
+  background:var(--surface);border:1px solid var(--line);border-radius:10px;
+  box-shadow:var(--shadow);padding:18px 18px 20px;margin-top:18px;
+}
+.panel h2 var{font-family:"IBM Plex Mono",monospace;font-style:normal;text-transform:none;font-size:.82em;font-weight:600;letter-spacing:0}
+.panel-head{display:flex;align-items:baseline;gap:12px;margin-bottom:6px;flex-wrap:wrap}
+.step{
+  font-family:"Barlow Condensed","Barlow",sans-serif;font-weight:700;font-size:13px;letter-spacing:.12em;
+  color:var(--brass);text-transform:uppercase;
+}
+.panel h2{
+  font-family:"Barlow Condensed","Barlow",sans-serif;font-weight:600;font-size:26px;line-height:1.05;margin:0;
+  text-transform:uppercase;letter-spacing:.02em;
+}
+.lead{color:var(--ink-2);margin:0 0 14px;max-width:68ch}
+.lead var,.explain var,.math var{font-family:"IBM Plex Mono",monospace;font-style:normal;font-weight:600;color:var(--ink)}
+.panel.waiting .wait{display:block}
+.wait{display:none;color:var(--muted);font-size:15px;border:1px dashed var(--line-strong);border-radius:8px;padding:10px 12px;margin:4px 0 0}
+.panel.waiting .body{display:none}
+
+/* ---------- input fields ---------- */
+.field{border-top:1px solid var(--line);padding:14px 0 4px}
+.field:first-of-type{border-top:0;padding-top:4px}
+.field-head{display:flex;align-items:baseline;gap:10px;flex-wrap:wrap;margin-bottom:6px}
+.sym{font-family:"IBM Plex Mono",monospace;font-weight:600;font-size:20px;color:var(--accent);min-width:1.4em}
+.field-head label,.field-head .name{font-weight:600}
+.tag{
+  font-family:"Barlow Condensed","Barlow",sans-serif;font-weight:600;font-size:12px;letter-spacing:.1em;text-transform:uppercase;
+  border:1px solid var(--line-strong);border-radius:999px;padding:1px 8px;color:var(--ink-2)
+}
+.tag.private{border-color:var(--brass);color:var(--brass)}
+.digits{margin-left:auto;color:var(--muted);font-size:13px;font-variant-numeric:tabular-nums}
+textarea.numin{
+  width:100%;border:1px solid var(--line-strong);border-radius:6px;background:var(--surface);padding:9px 11px;
+  font-family:"IBM Plex Mono",monospace;font-size:15px;line-height:1.45;resize:vertical;min-height:44px;
+  word-break:break-all;
+}
+textarea.numin:hover{border-color:var(--accent)}
+.help{color:var(--muted);font-size:14px;margin:6px 0 0;max-width:72ch}
+ul.checks{list-style:none;margin:8px 0 6px;padding:0;display:flex;flex-direction:column;gap:6px}
+ul.checks:empty{display:none}
+ul.checks li{display:grid;grid-template-columns:22px minmax(0,1fr);gap:8px;align-items:start;font-size:15px;padding:7px 10px;border-radius:7px;background:var(--surface-2)}
+ul.checks li .ic{
+  width:20px;height:20px;border-radius:50%;display:inline-flex;align-items:center;justify-content:center;
+  font-size:12px;font-weight:700;line-height:1;margin-top:1px;font-family:"Barlow",sans-serif;
+}
+ul.checks li.ok .ic{background:var(--good);color:var(--accent-ink)}
+ul.checks li.info .ic{background:var(--surface-3);color:var(--ink-2)}
+ul.checks li.warn{background:var(--warn-soft)}
+ul.checks li.warn .ic{background:var(--warn);color:var(--surface)}
+ul.checks li.bad{background:var(--error-soft)}
+ul.checks li.bad .ic{background:var(--error);color:var(--surface)}
+ul.checks li b{font-weight:600}
+details.more{margin-top:10px}
+details.more > summary{cursor:pointer;color:var(--accent);font-weight:500;font-size:15px}
+details.more[open] > summary{margin-bottom:8px}
+
+/* ---------- computed values ---------- */
+.val{border:1px solid var(--line);border-left:4px solid var(--accent);border-radius:8px;background:var(--surface-2);padding:10px 12px;margin:10px 0}
+.val .vh{display:flex;align-items:baseline;gap:10px;flex-wrap:wrap;margin-bottom:4px}
+.val .vh .formula{color:var(--ink-2);font-size:15px}
+.val .vh .digits{margin-left:auto}
+.val output{display:block;font-family:"IBM Plex Mono",monospace;font-size:16px;word-break:break-all;line-height:1.45}
+.val .vfoot{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-top:6px}
+.val.big output{font-size:20px}
+.math{font-family:"IBM Plex Mono",monospace;font-size:14px;background:var(--surface-2);border-radius:6px;padding:8px 10px;overflow-x:auto;white-space:pre;margin:8px 0}
+.explain{color:var(--ink-2);font-size:15px;max-width:70ch}
+.explain p{margin:8px 0}
+.prog[hidden]{display:none}
+.prog{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin:10px 0}
+.prog progress{flex:1;min-width:160px;height:10px}
+.prog .status{font-size:14px;color:var(--ink-2);font-variant-numeric:tabular-nums}
+
+/* ---------- tables ---------- */
+.scroll{overflow-x:auto}
+table{border-collapse:collapse;width:100%;font-size:14px}
+th{text-align:left;font-family:"Barlow Condensed",sans-serif;font-weight:600;letter-spacing:.08em;text-transform:uppercase;font-size:13px;color:var(--muted);padding:6px 8px;border-bottom:1px solid var(--line);white-space:nowrap}
+td{padding:5px 8px;border-bottom:1px solid var(--line);vertical-align:top;font-variant-numeric:tabular-nums}
+td.num{font-family:"IBM Plex Mono",monospace;font-size:13px;word-break:break-all}
+tr:last-child td{border-bottom:0}
+
+/* ---------- message reader ---------- */
+.conv-opts{display:flex;gap:10px 16px;flex-wrap:wrap;align-items:end;margin:6px 0 10px}
+.conv-opts label{display:flex;flex-direction:column;gap:4px;font-size:13px;color:var(--muted);min-width:0;max-width:100%} /* lets a long select shrink to the card */
+.conv-opts label.inline{flex-direction:row;align-items:center;gap:8px;color:var(--ink);font-size:15px}
+.conv-opts select{border:1px solid var(--line-strong);border-radius:6px;background:var(--surface);padding:6px 8px;font-size:15px;color:var(--ink);max-width:100%}
+.conv-opts input[type=checkbox]{width:17px;height:17px}
+.chips{display:flex;flex-wrap:wrap;gap:6px;margin:8px 0}
+.chip{display:inline-flex;flex-direction:column;align-items:center;border:1px solid var(--line);border-radius:6px;overflow:hidden;min-width:38px;background:var(--surface)}
+.chip .d{font-family:"IBM Plex Mono",monospace;font-size:12.5px;color:var(--muted);padding:2px 6px;background:var(--surface-2);width:100%;text-align:center}
+.chip .t{font-family:"IBM Plex Mono",monospace;font-size:17px;font-weight:600;padding:2px 6px}
+.chip.odd{border-style:dashed}
+.chip.odd .t{color:var(--muted)}
+.chip.pad .d{color:var(--brass)}
+.reading{font-family:"IBM Plex Mono",monospace;font-size:22px;letter-spacing:.04em;word-break:break-all;border:1px solid var(--line);border-left:4px solid var(--accent);border-radius:8px;background:var(--surface-2);padding:12px 14px}
+
+/* ---------- explainer ---------- */
+details.howto{background:var(--surface);border:1px solid var(--line);border-radius:10px;box-shadow:var(--shadow);margin-top:18px}
+details.howto > summary{
+  cursor:pointer;list-style:none;padding:14px 18px;display:flex;align-items:center;gap:10px;
+  font-family:"Barlow Condensed","Barlow",sans-serif;font-weight:600;font-size:20px;letter-spacing:.04em;text-transform:uppercase;
+}
+details.howto > summary::-webkit-details-marker{display:none}
+details.howto > summary::before{content:"";border:6px solid transparent;border-left:8px solid var(--accent);transition:transform .15s}
+details.howto[open] > summary::before{transform:rotate(90deg) translateX(3px)}
+details.howto > summary .meta{margin-left:auto;font-family:"Barlow",sans-serif;font-weight:400;font-size:14px;color:var(--muted);text-transform:none;letter-spacing:0}
+.howto-body{padding:0 18px 18px;color:var(--ink-2)}
+.howto-body ol{padding-left:22px;margin:8px 0}
+.howto-body li{margin:6px 0}
+.howto-body h3{font-family:"Barlow Condensed",sans-serif;font-weight:600;font-size:18px;letter-spacing:.06em;text-transform:uppercase;color:var(--ink);margin:18px 0 6px}
+@media (prefers-reduced-motion:reduce){details.howto > summary::before{transition:none}}
+
+footer{margin-top:28px;color:var(--muted);font-size:13px;display:flex;gap:14px;flex-wrap:wrap;justify-content:space-between}
+footer a{color:inherit}
+.toast{
+  position:fixed;left:50%;bottom:22px;transform:translateX(-50%) translateY(20px);opacity:0;
+  background:var(--ink);color:var(--ground);padding:8px 14px;border-radius:6px;font-size:14px;pointer-events:none;
+  transition:opacity .15s,transform .15s;
+}
+.toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
+@media (max-width:520px){ .brand h1{font-size:42px} .panel{padding:16px 14px 18px} }
+
+/* ---------- modular arithmetic primer ---------- */
+.toc ol{margin:6px 0 0;padding-left:22px;columns:2;column-gap:28px}
+.toc li{margin:3px 0;break-inside:avoid}
+@media (max-width:560px){.toc ol{columns:1}}
+.panel h3{font-family:"Barlow Condensed",sans-serif;font-weight:600;font-size:19px;letter-spacing:.06em;text-transform:uppercase;margin:18px 0 6px}
+.explain ul.facts{padding-left:20px;margin:8px 0}
+.explain ul.facts li{margin:5px 0}
+.play{display:grid;grid-template-columns:minmax(0,260px) minmax(0,1fr);gap:18px;align-items:center;margin-top:10px}
+@media (max-width:620px){.play{grid-template-columns:minmax(0,1fr)}}
+.clock-wrap{max-width:260px;margin:0 auto;width:100%}
+#clock-svg{width:100%;height:auto;display:block}
+#clock-svg .face{fill:var(--surface-2);stroke:var(--line-strong);stroke-width:1.5}
+#clock-svg .tick{stroke:var(--line-strong);stroke-width:2}
+#clock-svg .lbl{font:600 13px "IBM Plex Mono",monospace;fill:var(--ink-2)}
+#clock-svg .lbl.sm{font-size:11px}
+#clock-svg .lbl.on{fill:var(--accent);font-size:15px}
+#clock-svg .lbl.sm.on{font-size:12.5px}
+#clock-svg .hand{stroke:var(--accent);stroke-width:4;stroke-linecap:round}
+#clock-svg .hand.from{stroke:var(--line-strong);stroke-width:2;stroke-dasharray:3 3}
+#clock-svg .hub{fill:var(--accent)}
+#clock-svg .arc{fill:none;stroke:var(--brass);stroke-width:3;stroke-linecap:round;opacity:.85}
+.play-controls{display:flex;flex-direction:column;gap:10px}
+.play-controls label,.calc label{display:flex;flex-direction:column;gap:4px;font-size:14px;color:var(--muted)}
+.calc{display:flex;gap:10px 16px;flex-wrap:wrap;align-items:flex-end;margin:12px 0 6px}
+.calc label{flex-direction:row;align-items:center;gap:8px;color:var(--ink);font-size:15px}
+.calc label{max-width:100%;min-width:0}.calc select{min-width:0;max-width:100%} /* lets a long select shrink to the card on a narrow phone */
+.calc var,.play var{font-family:"IBM Plex Mono",monospace;font-style:normal;font-weight:600}
+input[type=number],input[type=text],select{border:1px solid var(--line-strong);border-radius:6px;background:var(--surface);padding:7px 9px;font-size:15px;color:var(--ink);max-width:100%}
+input[type=text]{font-family:"IBM Plex Mono",monospace;min-width:0;width:12em}
+input[type=number]{width:6.5em;font-family:"IBM Plex Mono",monospace}
+.play-controls input{width:7em}
+.btnrow{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+.say{color:var(--ink-2);margin:4px 0 0}
+.say var,.out var{font-family:"IBM Plex Mono",monospace;font-style:normal;font-weight:600}
+.out{color:var(--ink-2)}
+.out p{margin:8px 0}
+.out p,.out var{overflow-wrap:anywhere} /* long numbers wrap instead of widening the page */
+.out .num,.say .num{font-family:"IBM Plex Mono",monospace;word-break:break-all}
+.out .big,.q .big{font-family:"Barlow Condensed",sans-serif;font-size:26px;color:var(--ink)}
+.one-chip{display:inline-block;background:var(--accent);color:var(--accent-ink);border-radius:4px;padding:0 6px;font-family:"IBM Plex Mono",monospace;font-weight:600}
+table.tt{width:auto;border-collapse:collapse;font-family:"IBM Plex Mono",monospace;font-size:13px;margin:8px 0}
+table.tt th,table.tt td{text-align:center;padding:4px 7px;border:1px solid var(--line);min-width:28px}
+table.tt th{background:var(--surface-2);color:var(--ink-2);font-family:"IBM Plex Mono",monospace;letter-spacing:0;text-transform:none;font-size:13px}
+table.tt td.one{background:var(--accent);color:var(--accent-ink);font-weight:600}
+table.tt tr.noinv td,table.tt tr.noinv th{opacity:.45}
+.chip.one{border-color:var(--accent)}
+.chip.one .t{color:var(--accent)}
+table.tk{width:auto;border-collapse:collapse;font-family:"IBM Plex Mono",monospace;font-size:12.5px;margin:8px 0}
+table.tk th{text-align:right;padding:3px 8px;font-size:12px;letter-spacing:.06em;white-space:nowrap}
+table.tk td{text-align:center;padding:3px 5px;border:1px solid var(--line);min-width:26px;color:var(--muted)}
+table.tk td.m{color:var(--ink);font-weight:600;background:var(--surface-2)}
+table.tk td.hit{background:var(--accent);color:var(--accent-ink);font-weight:600}
+.dd-dates{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;margin:8px 0}
+@media (max-width:560px){.dd-dates{grid-template-columns:minmax(0,1fr)}}
+.dd-dates div{border:1px solid var(--line);border-left:4px solid var(--brass);border-radius:8px;padding:8px 12px;background:var(--surface-2);display:flex;flex-direction:column;gap:2px}
+.dd-dates b{font-family:"IBM Plex Mono",monospace;color:var(--ink)}
+.dd-dates span{font-size:14px;color:var(--ink-2)}
+ol.ddsteps{padding-left:22px;color:var(--ink-2)}
+ol.ddsteps li{margin:6px 0}
+.math{white-space:pre-wrap;word-break:normal;overflow-wrap:anywhere}
+.panel h3 .t-a,.panel h3 .t-y,.panel h3 .t-d{text-transform:none;letter-spacing:0;font-family:"IBM Plex Mono",monospace;font-size:.9em}
+.practice{border:1px solid var(--line);border-radius:10px;padding:14px;background:var(--surface-2)}
+.practice .q{margin-bottom:10px}
+.dows{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:6px;margin-bottom:10px}
+@media (max-width:420px){.dows{grid-template-columns:repeat(4,minmax(0,1fr))}}
+.dows .btn{justify-content:center;padding:9px 4px}
+.dows .btn.right{background:var(--accent);border-color:var(--accent);color:var(--accent-ink);opacity:1}
+.dows .btn.wrong{background:var(--error-soft);border-color:var(--error);color:var(--error);opacity:1}
+.pr-say{min-height:1.5em;color:var(--ink-2);margin-bottom:8px}
+.streak{margin-left:auto;color:var(--muted);font-size:14px;font-variant-numeric:tabular-nums}
+/* doomsday formulas: one colour per term, defined for both themes */
+:root{--t-month:#7B3F8C}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){--t-month:#D9A7E8}}
+:root[data-theme="dark"]{--t-month:#D9A7E8}
+.t-a{color:var(--brass);font-weight:600}
+.t-y{color:var(--accent);font-weight:600}
+.t-d{color:var(--t-month);font-weight:600}
+var.t-a,var.t-y,var.t-d{font-family:"IBM Plex Mono",monospace;font-style:normal}
+.fbox{border:1px solid var(--line);border-left:4px solid var(--brass);border-radius:10px;background:var(--surface-2);padding:12px 14px;margin:12px 0 4px}
+.fline{font-family:"IBM Plex Mono",monospace;font-size:19px;line-height:1.5;color:var(--ink);margin:6px 0 8px;overflow-wrap:anywhere}
+.fline.small{font-size:15px;margin:0 0 6px}
+.legend{list-style:none;margin:0 0 6px;padding:0;display:flex;flex-direction:column;gap:4px;font-size:15px;color:var(--ink-2)}
+.legend .t-a,.legend .t-y,.legend .t-d{font-family:"IBM Plex Mono",monospace;margin-right:6px}
+table.ftab{width:auto;border-collapse:collapse;font-size:14px;margin:8px 0}
+table.ftab th,table.ftab td{border:1px solid var(--line);padding:5px 9px;text-align:center;white-space:nowrap;font-variant-numeric:tabular-nums}
+table.ftab th{background:var(--surface-2);font-family:"Barlow Condensed",sans-serif;letter-spacing:.06em;text-transform:none;font-size:14px;color:var(--ink-2)}
+table.ftab td:last-child{text-align:left}
+.ystrip{display:flex;align-items:center;gap:4px;margin:10px 0;width:max-content}
+.yc{display:flex;flex-direction:column;align-items:center;border:1px solid var(--line);border-radius:6px;padding:4px 7px;background:var(--surface);font-size:13px;color:var(--ink-2);min-width:46px}
+.yc b{font-family:"IBM Plex Mono",monospace;font-size:12.5px;color:var(--ink)}
+.yc.lp{border-color:var(--brass)}
+.yj{display:flex;flex-direction:column;align-items:center;font-family:"IBM Plex Mono",monospace;font-size:12px;color:var(--accent);font-weight:600}
+.yj.two{color:var(--brass)}
+.yj small{font-family:"Barlow",sans-serif;font-weight:400;font-size:10.5px}
+.chain{display:flex;flex-wrap:wrap;align-items:center;gap:6px 4px;margin:10px 0}
+.chain .dt{font-family:"IBM Plex Mono",monospace;font-weight:600;color:var(--t-month);border:1px solid var(--line);background:var(--surface);border-radius:6px;padding:3px 7px}
+.chain .gap{font-size:11.5px;line-height:1.15;color:var(--muted);text-align:center;padding:0 2px}
+.chain .gap::after{content:"→";display:block;color:var(--line-strong);font-size:14px}
+.dd-work{display:grid;grid-template-columns:minmax(0,230px) minmax(0,1fr);gap:16px;align-items:start;margin-top:6px}
+@media (max-width:620px){.dd-work{grid-template-columns:minmax(0,1fr)}}
+.wheel-wrap{max-width:230px;width:100%;margin:0 auto}
+#dd-wheel{width:100%;height:auto;display:block}
+#dd-wheel .face{fill:var(--surface-2);stroke:var(--line-strong);stroke-width:1.5}
+#dd-wheel .dw{fill:var(--surface);stroke:var(--line-strong);stroke-width:1.5}
+#dd-wheel .dw.anc{stroke:var(--brass);stroke-width:3}
+#dd-wheel .dw.dd{stroke:var(--accent);stroke-width:3}
+#dd-wheel .dw.ans{fill:var(--accent);stroke:var(--accent)}
+#dd-wheel .wl{font:600 11px "IBM Plex Mono",monospace;fill:var(--ink-2)}
+#dd-wheel .wl.on{fill:var(--accent-ink)}
+#dd-wheel path.a1{fill:none;stroke:var(--brass);stroke-width:3;stroke-linecap:round}
+#dd-wheel path.a2{fill:none;stroke:var(--accent);stroke-width:3;stroke-linecap:round}
+#dd-wheel text.al{font:700 12px "IBM Plex Mono",monospace}
+#dd-wheel text.al.a1{fill:var(--brass)}
+#dd-wheel text.al.a2{fill:var(--accent)}
+#dd-wheel .wc{font:600 16px "Barlow Condensed",sans-serif;fill:var(--ink)}
+#dd-wheel .wc2{font:600 13px "IBM Plex Mono",monospace;fill:var(--muted)}
+.dd-right{min-width:0}
+.try{border:1px dashed var(--line-strong);border-radius:10px;padding:10px 14px;margin:14px 0 2px;background:var(--surface)}
+.try ol{margin:6px 0 0;padding-left:22px;display:flex;flex-direction:column;gap:8px}
+.try li{color:var(--ink-2)}
+.try li > span{display:block}
+.try details{margin-top:3px}
+.try summary{cursor:pointer;color:var(--accent);font-size:14px;font-weight:500}
+.try details p{margin:4px 0 0;color:var(--ink)}
+.try var,.explain var{font-family:"IBM Plex Mono",monospace;font-style:normal;font-weight:600}
+table tr.hit td{background:var(--accent-soft);font-weight:600}
+table.ftab tr.none td{color:var(--muted)}
+#iv-table,#fp-table{font-size:13.5px}
+
+.defbox{border:1px solid var(--line);border-left:4px solid var(--accent);border-radius:10px;background:var(--surface-2);padding:6px 12px 4px;margin:8px 0}
+.defs{display:grid;grid-template-columns:auto minmax(0,1fr);gap:6px 18px;align-items:baseline;padding:8px 0}
+.defs .dl{font-family:"IBM Plex Mono",monospace;font-size:15px;color:var(--ink);overflow-wrap:anywhere}
+.defs .dl .ind{display:inline-block;width:3.6em;text-align:right;padding-right:.5em;color:var(--accent);font-weight:600}
+.defs .dn{font-size:14px;color:var(--muted)}
+@media (max-width:620px){.defs{grid-template-columns:minmax(0,1fr);gap:0}.defs .dn{margin:0 0 8px 3.6em}.defs .dl .ind{width:auto;padding-right:.4em}}
+.defbox .math{background:transparent;padding:6px 0;margin:4px 0}
+.leapbox{border:1px solid var(--line);border-left:4px solid var(--t-month);border-radius:10px;background:var(--surface-2);padding:12px 14px;margin:14px 0}
+.leapbox p{margin:8px 0}
+.leapbox table.ftab th[scope=row]{text-align:left;white-space:nowrap}
+.leapbox table.ftab td{text-align:left}
+
+@media (prefers-reduced-motion:no-preference){#clock-svg .hand{transition:none}}
+
+/* ---------- tools: Coordinate Formulas, Eldritch Index ---------- */
+textarea.txt{font-family:"Barlow",system-ui,sans-serif;font-size:15.5px;word-break:normal}
+label.inline{display:inline-flex;align-items:center;gap:8px;font-size:15px;color:var(--ink);margin-top:8px}
+label.inline.small{font-size:14px;color:var(--ink-2)}
+label.inline input[type=checkbox]{width:17px;height:17px}
+.lbl{font-weight:600;display:block;margin-bottom:6px}
+input.coordin{width:100%;max-width:26em;border:1px solid var(--line-strong);border-radius:6px;background:var(--surface);padding:8px 10px;font-family:"IBM Plex Mono",monospace;font-size:15px;color:var(--ink)}
+input.coordin.short{width:10em}
+ol.readas{margin:6px 0 0;padding-left:24px;font-family:"IBM Plex Mono",monospace;font-size:14px;color:var(--ink)}
+ol.readas li{margin:3px 0}
+ol.readas li.bad{color:var(--error)}
+.why{font-family:"Barlow",sans-serif;font-size:13px;color:var(--error)}
+.nm{display:inline-block;background:var(--accent-soft);color:var(--ink);border-radius:5px;padding:0 5px;font-family:"Barlow",sans-serif;font-weight:600}
+.vars{display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:10px}
+.var{display:flex;flex-direction:column;gap:5px;border:1px solid var(--line);border-radius:8px;padding:8px 10px;background:var(--surface-2)}
+.var input{border:1px solid var(--line-strong);border-radius:6px;background:var(--surface);padding:7px 9px;font-family:"IBM Plex Mono",monospace;font-size:15px;color:var(--ink);width:100%}
+.fxrows{display:flex;flex-direction:column;gap:8px;margin:6px 0 12px}
+.fxrow{display:grid;grid-template-columns:2em minmax(0,1fr) auto auto;gap:6px 12px;align-items:center;border:1px solid var(--line);border-radius:8px;padding:8px 10px;background:var(--surface)}
+.fxrow .ln{color:var(--muted);font-variant-numeric:tabular-nums}
+.fxrow .fx{font-family:"IBM Plex Mono",monospace;font-size:14px;overflow-wrap:anywhere;line-height:1.7}
+.fxrow .res{font-family:"IBM Plex Mono",monospace;font-size:15px;white-space:nowrap}
+.fxrow select{border:1px solid var(--line-strong);border-radius:6px;background:var(--surface);padding:4px 6px;font-size:14px;color:var(--ink);max-width:100%}
+@media (max-width:620px){.fxrow{grid-template-columns:2em minmax(0,1fr)}.fxrow .res,.fxrow .slot{grid-column:2}}
+.muted{color:var(--muted);font-size:13px}
+.reading.coord span{white-space:nowrap}
+.ftab select{border:1px solid var(--line-strong);border-radius:6px;background:var(--surface);padding:4px 6px;font-size:14px;color:var(--ink)}
+.omen{max-width:var(--page);margin:0 0 4px;padding:10px 14px;border-left:3px solid var(--brass);font-style:italic;color:var(--ink-2);font-size:15px}
+.sanity{margin-left:auto;font-family:"IBM Plex Mono",monospace;font-size:12.5px;color:var(--brass);border:1px solid var(--brass);border-radius:999px;padding:1px 9px}
+.page{border-top:1px solid var(--line);padding:12px 0 4px}
+.page:first-child{border-top:0;padding-top:4px}
+.page .pname{flex:1;min-width:8em;border:1px solid var(--line-strong);border-radius:6px;background:var(--surface);padding:5px 8px;font-size:15px;color:var(--ink);font-family:"Barlow",system-ui,sans-serif}
+.nw{font-size:12.5px;color:var(--muted)}
+.pgsmall{font-size:12.5px;color:var(--muted)}
+table.nums{table-layout:fixed}
+table.nums th:first-child,table.nums td:first-child{width:6.5em}
+.page textarea{margin-top:6px}
+.stir{border:1px solid var(--line);border-left:4px solid var(--line-strong);border-radius:8px;padding:10px 12px;margin:10px 0;background:var(--surface)}
+.stir.s2{border-left-color:var(--brass)}
+.stir.s3{border-left-color:var(--brass);background:var(--surface-2);box-shadow:0 0 0 1px var(--brass) inset}
+.stir p{margin:6px 0 0;color:var(--ink);line-height:1.55;overflow-wrap:anywhere}
+.stir-head{display:flex;flex-wrap:wrap;gap:6px 10px;align-items:baseline;font-size:13.5px}
+.stir-head .pg{font-weight:600;color:var(--ink)}
+.stir-head .verdict{font-style:italic;color:var(--brass)}
+.stir-head .found{display:flex;gap:4px;flex-wrap:wrap;margin-left:auto}
+.tchip{font-size:12px;border:1px solid var(--line-strong);border-radius:999px;padding:0 7px;color:var(--ink-2)}
+mark.hit{background:var(--accent-soft);color:var(--ink);border-radius:3px;padding:0 2px;font-weight:600}
+mark.glimmer{box-shadow:0 0 0 1px var(--brass),0 0 10px var(--brass);animation:glimmer 2.4s ease-in-out infinite}
+@keyframes glimmer{50%{box-shadow:0 0 0 1px var(--brass),0 0 2px var(--brass)}}
+@media (prefers-reduced-motion:reduce){mark.glimmer{animation:none}}
+mark.num{background:transparent;color:var(--ink);border-bottom:2px solid var(--brass);font-weight:600}
+mark.num.w{border-bottom-style:dashed}
+.wait-msg{color:var(--muted);font-style:italic}
+table.nums td{vertical-align:top}
+table.nums td:last-child{overflow-wrap:anywhere;white-space:normal}
+/* ---------- Monkeying Around ---------- */
+:root{--mk-fur:#8A5A36;--mk-fur-2:#6B4226;--mk-skin:#EBCB9F;--mk-ink:#2E1C10;--mk-ear:#D9A877;--mk-key:#C08A1E;--mk-key-2:#7A560C;--mk-branch:#6B4A2E;--mk-leaf:#3E8A55}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){--mk-fur:#A9774E;--mk-fur-2:#86593A;--mk-skin:#F0D6B2;--mk-ink:#24160C;--mk-ear:#DDB084;--mk-key:#E2B04F;--mk-key-2:#9C7419;--mk-branch:#9A7250;--mk-leaf:#63B57D}}
+:root[data-theme="dark"]{--mk-fur:#A9774E;--mk-fur-2:#86593A;--mk-skin:#F0D6B2;--mk-ink:#24160C;--mk-ear:#DDB084;--mk-key:#E2B04F;--mk-key-2:#9C7419;--mk-branch:#9A7250;--mk-leaf:#63B57D}
+
+.mk-intro{display:flex;gap:16px;align-items:center;margin-top:4px}
+@media (max-width:520px){.mk-intro{flex-direction:column;align-items:stretch}.mk-monkey{align-self:center}}
+.mk-side{min-width:0;flex:1}
+.mk-side .note{margin:0;color:var(--ink-2);font-size:15px;max-width:70ch}
+.mk-monkey{flex:none;width:150px;height:159px;padding:4px;border:1px solid transparent;border-radius:12px;background:transparent;cursor:pointer;display:block}
+.mk-monkey:hover{background:var(--surface-2)}
+.mk-monkey:focus-visible{outline:2px solid var(--focus);outline-offset:2px}
+.mk-monkey svg{width:100%;height:100%;display:block;overflow:visible}
+.mk-says{margin:10px 0 0;padding:8px 12px;border:1px solid var(--line);border-left:4px solid var(--brass);border-radius:8px;background:var(--surface);color:var(--ink);font-size:15px;min-height:2.9em}
+.mk-branch{fill:none;stroke:var(--mk-branch);stroke-width:7;stroke-linecap:round}
+.mk-twig{fill:none;stroke:var(--mk-branch);stroke-width:3;stroke-linecap:round}
+.mk-leaf{fill:var(--mk-leaf)}
+.mk-tail{fill:none;stroke:var(--mk-fur-2);stroke-width:5;stroke-linecap:round}
+.mk-limb{fill:none;stroke:var(--mk-fur);stroke-width:8;stroke-linecap:round}
+.mk-fur{fill:var(--mk-fur);stroke:var(--mk-ink);stroke-width:1.2}
+.mk-skin{fill:var(--mk-skin);stroke:var(--mk-ink);stroke-width:1}
+.mk-ear{fill:var(--mk-ear)}
+.mk-tuft{fill:none;stroke:var(--mk-fur-2);stroke-width:3;stroke-linecap:round;stroke-linejoin:round}
+.mk-eye{fill:var(--mk-ink)}
+.mk-shine{fill:#FFFFFF}
+.mk-smile{fill:none;stroke:var(--mk-ink);stroke-width:1.6;stroke-linecap:round}
+.mk-bow{fill:none;stroke:var(--mk-key);stroke-width:4.5}
+.mk-shaft{fill:none;stroke:var(--mk-key);stroke-width:4.5;stroke-linecap:round}
+.mk-key .mk-bow,.mk-key .mk-shaft{paint-order:stroke}
+.mk-swing{transform-box:view-box;transform-origin:80px 21px}
+.mk-key{transform-box:fill-box;transform-origin:50% 50%}
+.mk-monkey.swing .mk-swing{animation:mk-swing 1.5s ease-in-out}
+.mk-monkey.swing .mk-key{animation:mk-turn 1.5s ease-in-out}
+@keyframes mk-swing{20%{transform:rotate(13deg)}45%{transform:rotate(-10deg)}68%{transform:rotate(6deg)}86%{transform:rotate(-2deg)}}
+@keyframes mk-turn{25%{transform:scaleX(-1)}50%{transform:scaleX(1)}75%{transform:scaleX(-1)}}
+@media (prefers-reduced-motion:reduce){.mk-monkey.swing .mk-swing,.mk-monkey.swing .mk-key{animation:none}}
+
+textarea.mk-text{font-family:"IBM Plex Mono",monospace;font-size:15px;word-break:normal;overflow-wrap:anywhere}
+.mk-seg{display:flex;flex-wrap:wrap;gap:6px 8px;align-items:center;margin:10px 0 4px}
+.mk-seglbl{font-size:14px;color:var(--ink-2);margin-right:4px}
+.mk-seg label{display:inline-flex;align-items:center;gap:6px;border:1px solid var(--line-strong);border-radius:999px;padding:5px 12px 5px 9px;font-size:15px;cursor:pointer;background:var(--surface)}
+.mk-seg label:has(input:checked){border-color:var(--accent);background:var(--accent-soft)}
+.mk-seg label:focus-within{outline:2px solid var(--focus);outline-offset:2px}
+.mk-seg input{margin:0}
+.mk-fs{border:0;margin:8px 0 6px;padding:0;min-width:0}
+.mk-fs legend{font-weight:600;padding:0;margin-bottom:2px}
+.mk-fs label.inline{display:flex;align-items:flex-start;gap:8px;margin-top:6px;font-size:15px;color:var(--ink)}
+.mk-fs label.inline input{flex:none;margin-top:3px}
+.mk-formula{font-family:"IBM Plex Mono",monospace;font-size:15px;color:var(--ink);margin:4px 0 0;overflow-wrap:anywhere}
+.fgrid input[type=number]{width:100%}
+.mk-alpha{font-family:"IBM Plex Mono",monospace;font-size:14px;color:var(--ink);margin:8px 0 0;display:grid;grid-template-columns:auto minmax(0,1fr);gap:4px 10px;align-items:baseline}
+.mk-alpha .al{font-family:"Barlow",sans-serif;font-size:13px;color:var(--muted)}
+.mk-alpha .ab{letter-spacing:.12em;overflow-wrap:anywhere;word-break:break-all}
+.mk-keyview{font-family:"IBM Plex Mono",monospace;font-size:14px;color:var(--ink-2);margin:6px 0 0;overflow-wrap:anywhere;word-break:break-all}
+.mk-keyview mark{background:var(--accent-soft);color:var(--ink);font-weight:600;border-radius:3px;padding:0 2px;box-shadow:0 0 0 1px var(--accent)}
+.mk-keyview .dim{color:var(--muted)}
+
+.mk-out{min-height:2.4em;white-space:pre-wrap;word-break:normal;overflow-wrap:anywhere;font-size:19px;letter-spacing:.02em}
+.mk-out:empty::before{content:"The result appears here.";color:var(--muted);font-family:"Barlow",sans-serif;font-size:15px;letter-spacing:0}
+.mk-outbtns{margin:10px 0 2px}
+.mk-h3{font-family:"Barlow Condensed",sans-serif;font-weight:600;font-size:19px;letter-spacing:.06em;text-transform:uppercase;margin:18px 0 2px}
+.mk-legend{display:flex;gap:12px;flex-wrap:wrap;font-size:13px;margin:8px 0 4px}
+.mk-legend span{display:inline-flex;align-items:center;gap:5px;color:var(--ink-2)}
+.mk-legend span::before{content:"";width:10px;height:10px;border-radius:2px}
+.mk-legend .m::before{background:var(--ink)}
+.mk-legend .k::before{background:var(--brass)}
+.mk-legend .o::before{background:var(--accent)}
+.mk-align{display:flex;flex-wrap:wrap;gap:3px 2px;margin:4px 0;padding:2px}
+.mk-align:focus-within{outline:none}
+.mk-col{display:flex;flex-direction:column;align-items:center;min-width:1.55em;padding:2px 1px;border:1px solid transparent;border-radius:5px;background:transparent;font-family:"IBM Plex Mono",monospace;font-size:15px;line-height:1.25;cursor:pointer;color:var(--ink)}
+.mk-col span{display:block;min-height:1.25em;white-space:pre}
+.mk-col .k{color:var(--brass);font-size:13px}
+.mk-col .o{color:var(--accent);font-weight:600}
+.mk-col.nl .m,.mk-col.nl .o{color:var(--muted)}
+.mk-col.nl.skip .k{text-decoration:line-through}
+.mk-col.sc{border-style:dashed;border-color:var(--line-strong)}
+.mk-col.gap .o{color:var(--error)}
+.mk-col:hover{background:var(--surface-2)}
+.mk-col[aria-selected="true"]{background:var(--accent-soft);border-color:var(--accent)}
+.mk-col:focus-visible{outline:2px solid var(--focus);outline-offset:1px}
+.mk-explain{color:var(--ink);margin:8px 0 0;min-height:1.5em;overflow-wrap:anywhere}
+.mk-explain var{font-family:"IBM Plex Mono",monospace;font-style:normal;font-weight:600}
+
+.mk-tabwrap{overflow-x:auto;margin:10px 0 4px;border:1px solid var(--line);border-radius:8px;max-width:100%}
+.mk-tabwrap:focus-visible{outline:2px solid var(--focus);outline-offset:2px}
+table.mk-tab{width:auto;border-collapse:collapse;font-family:"IBM Plex Mono",monospace;font-size:12.5px}
+table.mk-tab th,table.mk-tab td{text-align:center;padding:2px 0;width:21px;min-width:21px;height:20px;border:1px solid var(--line)}
+table.mk-tab th{background:var(--surface-2);color:var(--ink-2);font-family:"IBM Plex Mono",monospace;font-weight:600;font-size:12.5px;letter-spacing:0;text-transform:none;white-space:nowrap}
+table.mk-tab th.rl{min-width:2.4em;padding:2px 4px;position:sticky;left:0;z-index:1}
+table.mk-tab td{color:var(--ink-2)}
+table.mk-tab .hr{background:var(--accent-soft);color:var(--ink)}
+table.mk-tab th.hr{background:var(--accent-soft);color:var(--ink);box-shadow:inset 0 0 0 1px var(--accent)}
+table.mk-tab td.hit{background:var(--accent);color:var(--accent-ink);font-weight:600}
+table.mk-ftab td,table.mk-ftab th{text-align:left;white-space:normal;padding:5px 7px}
+@media (max-width:420px){table.mk-ftab{font-size:13px}}
+.mk-ftab var{font-family:"IBM Plex Mono",monospace;font-style:normal}
+.mk-seg[hidden],.fgrid label[hidden],.mk-exnote[hidden]{display:none}
+.mk-exnote{margin:4px 0 10px;padding:8px 12px;border:1px dashed var(--line-strong);border-radius:8px;color:var(--ink-2);font-size:15px}
+.fgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(190px,1fr));gap:10px;margin:10px 0}
+.fgrid label{display:flex;flex-direction:column;gap:4px;font-size:14px;color:var(--ink-2);min-width:0}
+.fgrid input,.fgrid select{width:100%}
+.mk-formula span{white-space:nowrap;display:inline-block;margin-right:14px}
+
+/* ---------- monkey business ---------- */
+.mb-intro{max-width:none}
+.mb-steps{list-style:none;margin:12px 0 0;padding:0;display:flex;flex-direction:column;gap:12px}
+.mb-step{border:1px solid var(--line-strong);border-left:4px solid var(--accent);border-radius:10px;padding:10px 12px 12px;background:var(--surface);min-width:0}
+.mb-step.off{border-style:dashed;border-left-style:solid;border-left-color:var(--line-strong)}
+.mb-head{display:flex;align-items:center;gap:10px}
+.mb-n{flex:none;width:26px;height:26px;border-radius:50%;background:var(--accent);color:var(--accent-ink);display:inline-flex;align-items:center;justify-content:center;font-family:"IBM Plex Mono",monospace;font-weight:600;font-size:14px}
+.mb-step.off .mb-n{background:var(--surface-2);color:var(--ink-2);box-shadow:inset 0 0 0 1px var(--line-strong)}
+.panel h3.mb-name{flex:1;min-width:0;margin:0;font-family:"Barlow",sans-serif;font-size:17px;font-weight:600;letter-spacing:0;text-transform:none;color:var(--ink);overflow-wrap:anywhere}
+.mb-on{flex:none;display:inline-flex;align-items:center;gap:6px;font-size:15px;color:var(--ink);cursor:pointer}
+.mb-on input{margin:0}
+.mb-tools{display:flex;gap:6px;flex-wrap:wrap;margin:8px 0 0}
+.mb-step .btn.small{font-size:14px;padding:5px 10px}
+.mb-step .btn[aria-disabled="true"]{color:var(--muted);border-style:dashed;cursor:default;background:var(--surface-2)}
+.mb-step .help{max-width:none}
+.mb-opts{display:grid;grid-template-columns:repeat(auto-fill,minmax(190px,1fr));gap:8px 12px;margin:10px 0 4px}
+.mb-opts label{display:flex;flex-direction:column;gap:4px;font-size:14px;color:var(--ink-2);min-width:0}
+.mb-opts label[hidden]{display:none}
+.mb-opts input[type=text],.mb-opts select{width:100%;min-width:0}
+.mb-opts label.mb-check{flex-direction:row;align-items:center;gap:8px;color:var(--ink);font-size:15px;align-self:end;padding-bottom:6px}
+.mb-opts label.mb-check input{flex:none;margin:0}
+.mb-res{margin-top:8px}
+.mb-out{font-family:"IBM Plex Mono",monospace;font-size:16px;line-height:1.45;white-space:pre-wrap;word-break:normal;overflow-wrap:anywhere;border:1px solid var(--line);border-left:4px solid var(--accent);border-radius:8px;background:var(--surface-2);color:var(--ink);padding:9px 12px;min-height:2.4em}
+.mb-out:empty::before{content:"Nothing came out of this step.";color:var(--muted);font-family:"Barlow",sans-serif;font-size:15px}
+.mb-state{margin:4px 0 0;color:var(--ink-2);font-size:15px}
+.mb-cap{margin:8px 0 4px;color:var(--ink-2);font-size:14px}
+.mb-none{margin:12px 0 0;color:var(--ink-2);font-size:15px;border:1px dashed var(--line-strong);border-radius:8px;padding:10px 12px}
+.mb-none[hidden],.mb-add .btn[hidden],#mb-own-wrap[hidden]{display:none}
+#mb-own-wrap{margin-top:6px}
+.mb-item{font-family:"IBM Plex Mono",monospace;font-size:14px;background:var(--surface);border:1px solid var(--line-strong);border-radius:4px;padding:0 4px;white-space:pre-wrap;overflow-wrap:anywhere}
+.mb-dim{color:var(--muted)}
+.mb-btns{margin-top:8px}
+.mb-shifts{list-style:none;margin:8px 0 0;padding:0;font-family:"IBM Plex Mono",monospace;font-size:14px;border:1px solid var(--line);border-radius:8px;background:var(--surface)}
+.mb-shifts li{display:grid;grid-template-columns:2.2em minmax(0,1fr);gap:8px;padding:3px 10px 3px 6px;border-top:1px solid var(--line)}
+.mb-shifts li:first-child{border-top:0}
+.mb-shifts .mb-k{color:var(--brass);text-align:right;font-weight:600}
+.mb-shifts .mb-t{color:var(--ink);white-space:pre-wrap;word-break:normal;overflow-wrap:anywhere}
+.mb-shifts li.pick{background:var(--accent-soft);box-shadow:inset 3px 0 0 var(--accent)}
+.mb-shifts li.pick .mb-k{color:var(--ink)}
+.mb-gridwrap{overflow-x:auto;max-width:100%;margin:0 0 4px;border:1px solid var(--line);border-radius:8px;background:var(--surface);width:max-content}
+.mb-gridwrap:focus-visible{outline:2px solid var(--focus);outline-offset:2px}
+table.mb-grid{border-collapse:collapse;font-family:"IBM Plex Mono",monospace;font-size:14px;width:auto}
+table.mb-grid td{width:24px;min-width:24px;height:24px;padding:0;text-align:center;border:1px solid var(--line);color:var(--ink);white-space:pre}
+table.mb-grid td.e{background:var(--surface-2)}
+table.mb-grid td.ws{color:var(--muted)}
+.mb-counts{list-style:none;margin:0;padding:0;font-family:"IBM Plex Mono",monospace;font-size:14px}
+@media (min-width:640px){.mb-counts{columns:2;column-gap:28px}}
+.mb-counts li{display:grid;grid-template-columns:3.4em 3.2em 3.8em minmax(0,1fr);gap:8px;align-items:center;break-inside:avoid;padding:1px 0}
+.mb-counts .ch{font-weight:600;color:var(--ink);overflow-wrap:anywhere}
+.mb-counts .n{text-align:right;color:var(--ink)}
+.mb-counts .pc{text-align:right;color:var(--ink-2)}
+.mb-counts .bar{height:10px;border-radius:3px;background:var(--surface);box-shadow:inset 0 0 0 1px var(--line-strong);overflow:hidden}
+.mb-counts .bar i{display:block;height:100%;background:var(--accent)}
+.mb-add{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin:14px 0 0}
+.mb-add label{font-weight:600;font-size:15px}
+.mb-add select{flex:1 1 220px;min-width:0;max-width:100%}
+</style>
+</head>
+<body>
+<header class="band">
+  <svg class="topo" viewBox="0 0 1200 260" preserveAspectRatio="xMaxYMid slice" aria-hidden="true" focusable="false"><path d="M970 60C971 63 970 67 968 69C966 72 962 74 959 76C956 78 953 79 950 81C947 82 944 84 941 85C937 86 934 86 930 86C926 86 923 85 920 83C917 82 914 81 911 80C908 78 905 77 903 75C901 73 899 70 898 68C897 65 897 63 897 60C896 57 895 55 895 52C895 49 895 45 897 42C899 39 902 37 906 35C909 34 915 34 919 34C923 35 927 36 930 36C933 37 936 38 939 39C942 39 945 40 948 42C951 43 953 45 955 46C958 48 961 50 964 52C966 54 969 57 970 60ZM1011 60C1012 66 1010 73 1007 78C1003 84 995 88 989 92C983 96 977 98 970 101C964 104 958 108 952 109C945 111 937 112 930 112C923 111 916 109 910 106C903 104 897 102 892 99C886 96 880 93 876 89C871 85 868 80 866 75C864 71 864 65 863 60C862 55 860 49 860 43C860 37 860 30 863 24C867 19 874 13 882 11C889 8 900 9 908 9C916 9 923 12 930 13C937 14 943 15 949 17C955 19 960 21 966 24C971 26 975 29 981 33C986 36 993 39 998 44C1003 48 1009 54 1011 60ZM1052 60C1054 69 1052 80 1046 88C1040 96 1028 102 1019 108C1010 113 1000 117 990 122C981 126 972 131 962 134C952 136 940 137 930 137C920 136 909 132 900 129C890 126 881 123 873 118C864 114 854 110 848 104C841 98 836 91 833 83C830 76 830 68 829 60C828 52 825 44 825 35C825 26 824 14 830 6C835 -2 847 -10 858 -14C869 -17 885 -17 897 -16C909 -15 920 -12 930 -10C940 -8 949 -7 958 -4C967 -1 975 2 983 6C991 10 998 14 1006 19C1014 24 1024 29 1032 35C1040 42 1050 51 1052 60ZM1094 60C1097 72 1093 87 1086 97C1078 108 1061 116 1049 124C1036 131 1023 136 1011 142C998 148 986 155 973 158C959 161 944 162 930 161C916 160 903 155 890 151C877 147 865 143 854 138C842 133 828 127 819 120C810 112 804 101 800 91C796 81 797 71 795 60C793 49 789 38 789 26C790 14 789 -1 796 -12C804 -23 819 -33 834 -38C849 -43 870 -41 886 -41C902 -40 916 -36 930 -33C944 -31 956 -29 967 -25C979 -22 990 -17 1000 -12C1011 -6 1019 -1 1030 6C1041 12 1056 18 1066 27C1077 36 1091 48 1094 60ZM1181 60C1186 78 1178 101 1166 117C1154 133 1128 145 1108 156C1089 167 1070 175 1051 183C1032 191 1014 201 994 205C974 209 950 210 930 208C910 206 891 199 872 193C852 188 834 184 815 177C797 170 775 162 761 151C747 139 738 123 733 108C727 92 728 76 726 60C723 44 717 27 717 9C718 -9 717 -33 728 -49C740 -64 764 -79 787 -86C810 -93 841 -90 865 -89C889 -88 910 -82 930 -79C950 -75 969 -73 986 -68C1003 -62 1019 -54 1034 -46C1050 -39 1063 -30 1080 -20C1097 -11 1120 -3 1137 10C1154 24 1176 42 1181 60ZM1225 60C1231 81 1221 108 1207 127C1192 145 1161 159 1138 172C1115 185 1093 194 1071 203C1048 213 1027 224 1004 229C981 233 954 233 930 231C906 228 885 220 863 214C840 208 818 204 796 197C774 189 747 180 731 167C715 154 705 134 698 116C691 98 694 79 691 60C688 41 680 21 681 0C682 -21 681 -49 694 -67C708 -85 737 -102 764 -109C790 -117 827 -114 854 -112C882 -111 907 -106 930 -102C953 -98 975 -95 995 -89C1016 -83 1033 -73 1051 -64C1069 -54 1084 -45 1104 -34C1124 -23 1152 -14 1173 2C1193 17 1219 39 1225 60ZM1270 60C1277 84 1265 115 1248 137C1231 158 1194 174 1168 188C1142 203 1116 213 1090 224C1065 234 1041 247 1014 252C987 256 957 255 930 252C903 250 879 240 854 234C828 228 802 225 776 217C751 208 719 199 701 183C682 168 670 145 663 124C655 104 659 82 656 60C652 38 643 15 644 -9C645 -33 644 -64 661 -85C677 -106 710 -124 741 -133C772 -141 813 -137 844 -135C876 -134 903 -128 930 -124C957 -120 982 -117 1005 -110C1028 -103 1047 -91 1068 -81C1089 -70 1105 -59 1128 -47C1152 -35 1185 -25 1209 -7C1233 11 1264 36 1270 60ZM1316 60C1323 87 1309 122 1289 146C1269 170 1227 188 1198 204C1168 220 1139 232 1110 244C1081 255 1054 269 1024 274C994 279 960 277 930 274C900 270 874 260 845 254C816 247 786 246 757 237C727 228 691 218 669 200C648 183 635 156 627 133C619 109 623 85 620 60C616 35 606 9 607 -18C608 -45 608 -80 627 -103C645 -126 684 -146 719 -155C754 -164 799 -159 835 -158C870 -156 900 -151 930 -147C960 -142 988 -139 1014 -131C1040 -123 1062 -110 1085 -98C1108 -86 1126 -74 1153 -60C1180 -46 1219 -36 1246 -16C1273 4 1309 33 1316 60ZM1410 60C1418 93 1397 137 1372 166C1346 196 1294 216 1257 236C1220 255 1185 270 1150 284C1114 298 1080 313 1043 318C1007 323 966 318 930 314C894 309 864 298 828 292C793 286 754 287 716 278C679 268 632 256 605 235C578 214 564 180 554 150C545 121 551 91 547 60C543 29 530 -3 532 -36C534 -69 536 -112 560 -139C584 -167 633 -189 676 -199C719 -209 773 -202 816 -201C858 -200 894 -196 930 -191C966 -187 1001 -184 1033 -174C1064 -164 1090 -146 1118 -131C1146 -117 1168 -103 1202 -87C1236 -70 1288 -59 1322 -34C1357 -10 1401 27 1410 60ZM290 330C290 333 289 336 287 339C285 341 281 344 278 345C275 347 272 348 269 349C266 350 263 351 260 352C256 352 253 352 250 352C247 352 244 352 240 352C237 352 232 353 228 352C224 351 219 350 216 348C213 346 212 342 211 339C211 336 213 333 214 330C215 327 216 325 218 322C219 320 221 317 223 315C225 314 228 312 231 311C234 309 237 308 240 307C243 306 246 305 250 305C254 304 258 304 261 305C265 305 268 307 271 309C273 311 275 313 278 315C280 317 283 319 285 322C287 324 290 327 290 330ZM330 330C331 336 328 343 324 348C320 353 312 357 306 360C300 364 294 366 288 368C281 370 275 372 269 373C263 374 256 374 250 374C244 375 238 375 230 375C223 375 214 376 206 375C198 373 188 371 182 367C176 362 173 355 172 349C171 343 175 336 177 330C180 324 183 319 186 315C189 310 192 305 196 301C201 297 207 294 212 291C218 289 224 287 230 285C237 283 243 281 250 279C257 278 265 278 272 279C279 280 286 284 292 288C297 291 301 296 306 300C310 304 316 308 320 313C324 318 329 324 330 330ZM370 330C371 339 366 349 360 357C354 364 343 370 334 375C325 380 315 384 306 387C297 391 288 394 279 395C269 397 260 396 250 396C240 397 232 397 221 397C210 397 196 399 184 397C172 395 156 392 147 385C139 379 134 367 133 358C132 349 138 339 141 330C145 321 149 314 154 307C159 300 163 293 170 287C177 281 186 277 194 273C202 269 211 266 221 263C230 260 239 256 250 254C261 252 273 251 284 253C294 255 304 261 313 266C321 271 327 278 334 285C341 291 350 297 356 305C362 312 369 321 370 330ZM410 330C411 342 404 355 396 365C388 375 372 383 361 390C349 396 337 402 325 406C313 411 301 415 288 417C276 419 263 418 250 418C237 419 226 419 211 419C196 419 178 423 162 420C145 418 124 413 112 404C101 395 95 380 94 368C92 355 100 341 105 330C110 319 116 309 122 299C129 290 135 280 144 273C153 266 165 260 176 255C188 250 199 246 211 242C224 237 236 231 250 228C264 226 282 223 296 226C310 229 323 237 334 244C345 251 353 261 362 270C372 278 384 286 391 296C399 306 409 318 410 330ZM489 330C489 347 478 367 465 382C452 396 430 407 413 418C396 428 380 437 362 444C344 451 326 458 307 461C289 464 269 462 250 462C231 463 214 463 191 464C169 465 141 471 116 467C90 464 58 456 41 443C24 429 16 405 14 387C13 368 25 347 33 330C40 313 49 298 59 284C69 270 79 256 93 246C107 235 126 228 142 220C159 213 175 207 193 200C211 193 229 181 250 176C271 171 298 167 320 171C341 175 362 188 378 199C395 210 406 225 420 238C434 252 452 263 464 279C475 294 489 313 489 330Z"/><path class="ix" d="M1137 60C1141 75 1136 94 1126 107C1116 120 1094 131 1078 140C1063 149 1046 156 1031 163C1015 170 1000 178 983 182C967 185 947 186 930 185C913 183 897 177 881 172C865 168 850 164 835 157C819 151 802 145 791 135C779 125 772 112 767 99C762 87 763 74 761 60C758 46 753 33 754 18C754 2 753 -17 762 -30C772 -44 791 -56 810 -62C829 -68 855 -66 875 -65C895 -64 913 -59 930 -56C947 -53 962 -51 977 -47C991 -42 1004 -36 1017 -29C1031 -23 1041 -15 1055 -7C1069 1 1088 8 1101 19C1115 30 1133 45 1137 60ZM1363 60C1370 90 1353 130 1330 156C1308 183 1261 202 1227 220C1194 238 1162 251 1130 264C1098 277 1067 291 1034 296C1000 301 963 298 930 294C897 290 869 279 837 273C804 267 770 266 737 257C704 248 662 237 637 217C613 198 600 168 591 142C582 115 587 88 584 60C580 32 568 3 569 -27C571 -57 572 -96 593 -121C614 -146 659 -168 697 -177C736 -187 786 -181 825 -180C864 -178 897 -173 930 -169C963 -164 995 -162 1023 -153C1052 -143 1076 -128 1101 -115C1127 -101 1147 -88 1178 -73C1208 -58 1253 -47 1284 -25C1315 -3 1355 30 1363 60ZM450 330C450 344 441 361 431 374C420 386 402 395 387 404C372 412 358 419 343 425C328 431 313 436 298 439C282 441 266 440 250 440C234 441 220 441 201 441C183 442 159 446 139 443C118 440 91 434 77 423C63 412 55 393 54 377C53 362 63 344 69 330C75 316 82 303 90 292C99 280 107 268 118 259C130 250 145 244 159 237C173 231 187 227 202 221C217 215 232 206 250 202C268 199 290 196 308 199C325 202 342 213 356 222C370 231 379 243 391 254C403 265 418 275 427 287C437 300 449 316 450 330Z"/></svg>
+  <div class="band-in">
+    <nav class="suite" aria-label="Tools of the Trade">
+      <span class="crumbs">
+        <a href="../"><svg class="mark" viewBox="0 0 32 32" aria-hidden="true" focusable="false"><circle cx="16" cy="16" r="14.5" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M16 4.5l4.2 11.5L16 27.5 11.8 16z" fill="currentColor" opacity=".55"/><path d="M16 4.5l4.2 11.5h-8.4z" fill="var(--band-hl)"/></svg><span>Tools of the Trade</span></a>
+      </span>
+      <span class="by">AdequateFootwear</span>
+    </nav>
+    <div class="top">
+      <div class="brand">
+        <h1>Monkeying <span class="hl">Around</span></h1>
+        <p>Vigenère and its relatives: Beaufort, Gronsfeld, autokey and more. Use a short key or a long passage of text, decide exactly what counts as a letter, and fold fancy lettering back to plain A to Z. Then get up to some monkey business: reverse it, pick out letters, convert it to numbers, codes or Morse, and more, one step at a time.</p>
+      </div>
+      <div class="top-actions"><button class="btn quiet" id="btn-example" type="button">Try an example</button></div>
+    </div>
+  </div>
+</header>
+
+<main class="wrap">
+  <div class="mk-intro">
+    <button type="button" class="mk-monkey" id="mk-monkey" aria-describedby="mk-says">
+      <span class="sr">A monkey hanging from a branch by its tail, holding a big key. Press for a monkey or cipher fact.</span>
+      <svg viewBox="0 0 160 170" aria-hidden="true" focusable="false">
+        <!-- an original drawing: a monkey hanging by its tail from a branch, holding a big brass key -->
+        <path class="mk-branch" d="M4 22 C40 14 110 28 156 17"/>
+        <path class="mk-twig" d="M120 22 C126 14 132 10 139 8"/>
+        <ellipse class="mk-leaf" cx="142" cy="8" rx="9" ry="4.5" transform="rotate(-18 142 8)"/>
+        <ellipse class="mk-leaf" cx="22" cy="12" rx="9" ry="4.5" transform="rotate(14 22 12)"/>
+        <g id="mk-swing" class="mk-swing">
+          <path class="mk-tail" d="M80 28 C70 28 69 15 80 15 C91 15 93 26 87 33 C79 44 97 58 97 76 C97 96 101 114 92 132"/>
+          <path class="mk-limb" d="M70 136 C66 146 62 151 58 155"/>
+          <path class="mk-limb" d="M90 136 C94 146 98 151 102 155"/>
+          <ellipse class="mk-skin" cx="56" cy="157" rx="7" ry="4"/>
+          <ellipse class="mk-skin" cx="104" cy="157" rx="7" ry="4"/>
+          <ellipse class="mk-fur" cx="80" cy="118" rx="20" ry="24"/>
+          <ellipse class="mk-skin" cx="80" cy="121" rx="12" ry="16"/>
+          <path class="mk-limb" d="M64 106 C52 112 46 124 48 135"/>
+          <circle class="mk-skin" cx="48" cy="138" r="5.5"/>
+          <path class="mk-limb" d="M96 104 C105 99 111 93 115 86"/>
+          <circle class="mk-fur" cx="57" cy="70" r="8.5"/>
+          <circle class="mk-fur" cx="103" cy="70" r="8.5"/>
+          <circle class="mk-ear" cx="57" cy="70" r="4.5"/>
+          <circle class="mk-ear" cx="103" cy="70" r="4.5"/>
+          <circle class="mk-fur" cx="80" cy="74" r="22"/>
+          <path class="mk-tuft" d="M70 53 Q75 46 80 53 Q85 46 90 53"/>
+          <path class="mk-skin" d="M80 63 C74 55 62 57 62 69 C62 77 66 81 68 85 C70 96 90 96 92 85 C94 81 98 77 98 69 C98 57 86 55 80 63 Z"/>
+          <circle class="mk-eye" cx="72" cy="71" r="3.2"/>
+          <circle class="mk-eye" cx="88" cy="71" r="3.2"/>
+          <circle class="mk-shine" cx="73.1" cy="69.9" r="1"/>
+          <circle class="mk-shine" cx="89.1" cy="69.9" r="1"/>
+          <circle class="mk-eye" cx="78" cy="81" r="0.9"/>
+          <circle class="mk-eye" cx="82" cy="81" r="0.9"/>
+          <path class="mk-smile" d="M72 86 Q80 93 88 86"/>
+          <g class="mk-key">
+            <circle class="mk-bow" cx="118" cy="58" r="8.5"/>
+            <path class="mk-shaft" d="M118 66.5 V110 M118 101 H126 M118 107 H124"/>
+          </g>
+          <circle class="mk-skin mk-grip" cx="117" cy="83" r="6"/>
+        </g>
+      </svg>
+    </button>
+    <div class="mk-side">
+      <p class="note">An optional helper: a workbench for the Vigenère family of ciphers, for when you know a key or want to try one, with a chain of simple steps for doing more to the result. It doesn’t guess keys, find key lengths or try to break anything. It runs entirely in your browser and keeps working once it has loaded, even with no signal. What you type stays on this device.</p>
+      <p class="mk-says" id="mk-says" aria-live="polite">A monkey with a key: a monKEY. Tap me for a fact.</p>
+    </div>
+  </div>
+
+  <section class="panel" id="message" aria-labelledby="h-message">
+    <div class="panel-head"><span class="step">1</span><h2 id="h-message">The message</h2></div>
+    <label class="lbl" for="mk-msg">Message</label>
+    <textarea id="mk-msg" class="numin txt mk-text" rows="4" spellcheck="false" autocomplete="off" placeholder="Type or paste the text to encipher or decipher"></textarea>
+    <div class="mk-seg" role="radiogroup" aria-labelledby="mk-dir-lbl">
+      <span class="mk-seglbl" id="mk-dir-lbl">Direction</span>
+      <label><input type="radio" name="mk-dir" value="enc" checked> <span>Encipher</span></label>
+      <label><input type="radio" name="mk-dir" value="dec"> <span>Decipher</span></label>
+    </div>
+    <p class="help" id="mk-msg-stats"></p>
+  </section>
+
+  <section class="panel" id="cipher" aria-labelledby="h-cipher">
+    <div class="panel-head"><span class="step">2</span><h2 id="h-cipher">The cipher</h2></div>
+    <div class="fgrid">
+      <label>Cipher
+        <select id="mk-cipher">
+          <option value="vig">Vigenère</option>
+          <option value="beau">Beaufort</option>
+          <option value="varb">Variant Beaufort</option>
+          <option value="gron">Gronsfeld (a key of digits)</option>
+          <option value="auto">Autokey (plaintext autokey)</option>
+          <option value="porta">Porta</option>
+          <option value="trith">Trithemius (progressive shift)</option>
+          <option value="q1">Quagmire I</option>
+          <option value="q2">Quagmire II</option>
+          <option value="q3">Quagmire III</option>
+          <option value="q4">Quagmire IV</option>
+        </select>
+      </label>
+      <label id="mk-auto-wrap" hidden>Autokey uses the table of
+        <select id="mk-auto">
+          <option value="vig">Vigenère</option>
+          <option value="beau">Beaufort</option>
+          <option value="varb">Variant Beaufort</option>
+        </select>
+      </label>
+      <label id="mk-tri-off-wrap" hidden>Starting shift
+        <input type="text" id="mk-tri-off" inputmode="numeric" autocomplete="off" value="0">
+      </label>
+      <label id="mk-tri-step-wrap" hidden>Step (added each letter)
+        <input type="text" id="mk-tri-step" inputmode="numeric" autocomplete="off" value="1">
+      </label>
+    </div>
+    <p class="mk-formula" id="mk-formula"></p>
+    <p class="help" id="mk-cipher-help"></p>
+    <div id="mk-quag" hidden>
+      <div class="fgrid">
+        <label id="mk-qkw1-wrap"><span id="mk-qkw1-lbl">Alphabet keyword</span>
+          <input type="text" id="mk-qkw1" autocomplete="off" spellcheck="false">
+        </label>
+        <label id="mk-qkw2-wrap">Ciphertext alphabet keyword
+          <input type="text" id="mk-qkw2" autocomplete="off" spellcheck="false">
+        </label>
+        <label>Key letters line up under plaintext letter
+          <input type="text" id="mk-qind" autocomplete="off" spellcheck="false" maxlength="4" placeholder="first letter">
+        </label>
+      </div>
+      <p class="help">A keyed alphabet is the keyword’s letters, each used once, then the rest of A to Z in order. Sources differ on where the key letter (the indicator) lines up: left blank, it goes under the first letter of the plaintext alphabet, as in the Kryptos tableau; type a letter, such as A, to put it under that plaintext letter instead.</p>
+      <div class="mk-alpha" id="mk-alpha"></div>
+    </div>
+  </section>
+
+  <section class="panel" id="key" aria-labelledby="h-key">
+    <div class="panel-head"><span class="step">3</span><h2 id="h-key">The key</h2></div>
+    <div id="mk-key-on">
+      <label class="lbl" for="mk-key" id="mk-key-lbl">Key</label>
+      <textarea id="mk-key" class="numin txt mk-text" rows="2" spellcheck="false" autocomplete="off" placeholder="A short word, or paste a long passage as a running key"></textarea>
+      <div class="mk-seg" role="radiogroup" aria-labelledby="mk-run-lbl" id="mk-run">
+        <span class="mk-seglbl" id="mk-run-lbl">When the key runs out</span>
+        <label><input type="radio" name="mk-run" value="repeat" checked> <span>Repeat it (a short key)</span></label>
+        <label><input type="radio" name="mk-run" value="stop"> <span>Stop (a running key)</span></label>
+      </div>
+      <div class="fgrid">
+        <label>Start at letter number
+          <input type="number" id="mk-start" min="1" step="1" value="1" inputmode="numeric">
+        </label>
+      </div>
+      <p class="help" id="mk-key-stats"></p>
+      <p class="mk-keyview" id="mk-keyview"></p>
+    </div>
+    <p class="help" id="mk-key-off" hidden>Trithemius has no key: each letter is shifted by the starting shift plus the step times its position, so the shifts go 0, 1, 2, 3 … with the usual settings. Set them under The cipher.</p>
+  </section>
+
+  <section class="panel" id="letters" aria-labelledby="h-letters">
+    <div class="panel-head"><span class="step">4</span><h2 id="h-letters">What counts as a letter</h2></div>
+    <fieldset class="mk-fs">
+      <legend>Spaces, digits, punctuation, and letters outside A to Z</legend>
+      <label class="inline"><input type="radio" name="mk-nonl" value="keep" checked> Leave them in place; the key doesn’t move on</label>
+      <label class="inline"><input type="radio" name="mk-nonl" value="move"> Leave them in place, and move the key on one letter for each</label>
+      <label class="inline"><input type="radio" name="mk-nonl" value="drop"> Remove them</label>
+    </fieldset>
+    <fieldset class="mk-fs">
+      <legend>Folding: read these as plain A to Z, in the message and in the key</legend>
+      <label class="inline"><input type="checkbox" id="mk-f-accent" checked> Accented letters: é → e, ñ → n, ø → o, ł → l</label>
+      <label class="inline"><input type="checkbox" id="mk-f-sz" checked> ß → ss</label>
+      <label class="inline"><input type="checkbox" id="mk-f-lig" checked> Æ → AE, Œ → OE, and ligatures such as ﬁ → fi</label>
+      <label class="inline"><input type="checkbox" id="mk-f-fancy" checked> Fancy lettering: 𝔄 𝐀 𝔸 𝒜 𝖠 𝙰 Ａ Ⓐ 🅐 → A</label>
+    </fieldset>
+    <p class="help">Folded letters come out as plain letters, in the message’s own case. Letters from other scripts, such as Greek or Cyrillic, are always left in place and never move the key on. A letter that isn’t folded (é with accents off, say) counts with the spaces and punctuation above.</p>
+  </section>
+
+  <section class="panel" id="result" aria-labelledby="h-result">
+    <div class="panel-head"><span class="step">5</span><h2 id="h-result">The result</h2></div>
+    <p class="mk-exnote" id="mk-exnote" hidden>Example, all made up: a note enciphered with Vigenère, using a passage from a story as a running key, with spaces and punctuation left in place and the key not moving on. Under Monkey business, two steps take the first letter of each line and then reverse them. Now choose “move the key on one letter for each” under What counts as a letter, and the note goes wrong right after its first word.</p>
+    <div class="reading mk-out" id="mk-out" aria-describedby="h-result"></div>
+    <div class="btnrow mk-outbtns">
+      <button type="button" class="btn" id="mk-copy">Copy</button>
+      <button type="button" class="btn" id="mk-swap">Use the result as the message</button>
+    </div>
+    <p class="sr" role="status" id="mk-status"></p>
+    <ul class="checks" id="mk-notes"></ul>
+    <h3 class="mk-h3">Letter by letter</h3>
+    <p class="help">Each column is one character: the message on top, the key in the middle, the result below. Tap a column, or use the arrow keys, Home and End, to see it worked out and lit up in the table.</p>
+    <div class="mk-legend" aria-hidden="true"><span class="m">message</span><span class="k">key</span><span class="o">result</span></div>
+    <div class="mk-align" id="mk-align" role="listbox" aria-label="The message, key and result, letter by letter" aria-orientation="horizontal"></div>
+    <p class="help" id="mk-align-more"></p>
+    <p class="mk-explain" id="mk-explain" aria-live="polite"></p>
+  </section>
+
+  <section class="panel" id="business" aria-labelledby="h-business">
+    <div class="panel-head"><span class="step">6</span><h2 id="h-business">Monkey business</h2></div>
+    <p class="help mb-intro">Do more to the text with a chain of steps. Each step works on what the step before it made, and shows its own result. Switch a step off to skip it, move it with its Up and Down buttons (or press Alt with ↑ or ↓ while one of its buttons has focus), and send any step’s result back up as the message or the key. The steps only show; you decide what any of it means.</p>
+    <div class="mk-seg" role="radiogroup" aria-labelledby="mb-src-lbl">
+      <span class="mk-seglbl" id="mb-src-lbl">Start from</span>
+      <label><input type="radio" name="mb-src" value="result" checked> <span>The result above</span></label>
+      <label><input type="radio" name="mb-src" value="own"> <span>Text of my own</span></label>
+    </div>
+    <div id="mb-own-wrap" hidden>
+      <label class="lbl" for="mb-own">Your text</label>
+      <textarea id="mb-own" class="numin txt mk-text" rows="3" spellcheck="false" autocomplete="off" placeholder="Type or paste any text for the steps to work on"></textarea>
+    </div>
+    <p class="help" id="mb-src-say"></p>
+    <ol class="mb-steps" id="mb-steps" aria-label="The chain of steps"></ol>
+    <p class="mb-none" id="mb-none">No steps yet. Choose one below and add it.</p>
+    <div class="mb-add">
+      <label for="mb-pick">Add a step</label>
+      <select id="mb-pick"></select>
+      <button type="button" class="btn" id="mb-add">Add step</button>
+      <button type="button" class="btn quiet" id="mb-clear">Remove all steps</button>
+    </div>
+    <p class="sr" role="status" id="mb-status"></p>
+  </section>
+
+  <section class="panel" id="table" aria-labelledby="h-table">
+    <div class="panel-head"><span class="step">7</span><h2 id="h-table">The table</h2></div>
+    <p class="help" id="mk-tab-help"></p>
+    <div class="mk-tabwrap" id="mk-tabwrap" tabindex="0" role="region" aria-label="The cipher's table; scroll sideways to see all of it">
+      <table class="mk-tab" id="mk-tab"></table>
+    </div>
+    <p class="mk-explain" id="mk-tab-say"></p>
+  </section>
+
+  <section class="panel" id="about" aria-labelledby="h-about">
+    <div class="panel-head"><span class="step">8</span><h2 id="h-about">About the ciphers</h2></div>
+    <div class="explain">
+      <p>Letters are numbers here: A = 0, B = 1, … Z = 25, and every sum is taken mod 26, so it wraps round from Z back to A. <var>P</var> is a plaintext letter, <var>C</var> its ciphertext letter and <var>K</var> the key letter used on it.</p>
+      <div class="scroll"><table class="ftab mk-ftab">
+        <thead><tr><th scope="col">Cipher</th><th scope="col">Encipher</th><th scope="col">Decipher</th></tr></thead>
+        <tbody>
+          <tr><th scope="row">Vigenère</th><td><var>C = P + K</var></td><td><var>P = C − K</var></td></tr>
+          <tr><th scope="row">Beaufort</th><td><var>C = K − P</var></td><td><var>P = K − C</var></td></tr>
+          <tr><th scope="row">Variant Beaufort</th><td><var>C = P − K</var></td><td><var>P = C + K</var></td></tr>
+          <tr><th scope="row">Gronsfeld</th><td><var>C = P + d</var></td><td><var>P = C − d</var></td></tr>
+          <tr><th scope="row">Trithemius</th><td><var>C = P + s + i·t</var></td><td><var>P = C − s − i·t</var></td></tr>
+        </tbody>
+      </table></div>
+      <p><b>Vigenère</b> adds the key letter, so a key of A changes nothing and a key of B shifts one place. <b>Beaufort</b> subtracts the message letter from the key letter; because <var>K − (K − P) = P</var>, enciphering and deciphering are the same thing. <b>Variant Beaufort</b> subtracts the key, so it enciphers exactly the way Vigenère deciphers. <b>Gronsfeld</b> is Vigenère with a key of digits <var>d</var> from 0 to 9; only the key’s digits are used.</p>
+      <p><b>Autokey</b> here is the plaintext autokey: the key you type is the primer, and once its letters are used up, the message’s own plaintext letters follow it as the key. With a primer of QUEENLY, ATTACKATDAWN is keyed by QUEENLYATTAC. Choose whether its letters are combined by the Vigenère, Beaufort or variant Beaufort rule. Because the key comes from the message’s letters, spaces and punctuation never move it on in autokey.</p>
+      <p><b>Porta</b> has 13 alphabets, one for each pair of key letters (A or B, C or D, … Y or Z). In each one, the first half of the alphabet (A to M) swaps with the second (N to Z): with the pair numbered <var>r</var> (A B is 0, C D is 1, … Y Z is 12), a letter <var>P</var> from A to M becomes <var>13 + (P + r) mod 13</var>, and the swap undoes itself, so the same key deciphers. This is the Porta table most modern references use; some older books lay it out differently, so check that yours matches the one below.</p>
+      <p><b>Trithemius</b> uses no key: letter number <var>i</var> (counting from 0) is shifted by the starting shift <var>s</var> plus <var>i</var> times the step <var>t</var>. The classic form, with <var>s</var> = 0 and <var>t</var> = 1, leaves the first letter alone, shifts the second by one, the third by two, and so on.</p>
+      <p><b>Quagmires</b> use keyed alphabets. Write the plaintext alphabet along the top; under it, slide the ciphertext alphabet along until the key letter sits under the chosen plaintext letter (the indicator position); then read each message letter’s ciphertext letter straight below it. As a formula, with places counted from 0: the slide <var>s</var> is the key letter’s place in the ciphertext alphabet <var>CA</var> minus the indicator’s place in the plaintext alphabet <var>PA</var>, and <var>C = CA[pos(P) + s]</var>, where <var>pos(P)</var> is the place of <var>P</var> in <var>PA</var>; deciphering runs it backwards, <var>P = PA[pos(C) − s]</var> with <var>pos(C)</var> the place of <var>C</var> in <var>CA</var>. Quagmire I keys only the plaintext alphabet, II only the ciphertext alphabet, III uses the same keyed alphabet for both, and IV two different ones. With no keywords, every Quagmire is plain Vigenère. The first two sections of the Kryptos sculpture’s ciphertext are Quagmire III, keyed with KRYPTOS, with the key letter under the first letter of the plaintext alphabet.</p>
+      <p><b>Keys.</b> The key’s letters are read with the same folding as the message, and anything else in the key (spaces, punctuation, other scripts) is skipped. A short key repeats; a running key, such as a passage from a book, is used once from where it starts, and the page says so plainly when it’s shorter than the message, showing <var>_</var> for each letter it didn’t reach. Starting at a later letter is how you’d use, say, a passage that begins partway down a page.</p>
+      <p><b>Monkey business.</b> The steps are exact, and none of them repairs anything: a number, code or Morse group that can’t be read shows as <var>?</var> and is listed, and a setting that doesn’t make sense stops the chain at that step until it’s fixed. A1Z26 numbers the letters A = 1 to Z = 26. Character codes are Unicode code points, the same as ASCII for plain letters, digits and punctuation. Morse is the international code, plus <var>!</var>. Writing in rows and reading down the columns, then writing down the columns and reading along the rows at the same width, gives back the text you started with; when the block isn’t full, its left-hand columns are the longer ones.</p>
+      <p><b>What it doesn’t do.</b> It doesn’t guess keys, find key lengths or attempt any other cryptanalysis. Its Caesar shifts come in order from 1 to 25 and its letter counts are information only: nothing on the page ranks results or says which one reads like words. It’s a workbench for when you know a key, or are trying one.</p>
+    </div>
+  </section>
+
+  <footer>
+    <span>Monkeying Around · <a href="../">all AdequateFootwear tools</a></span>
+    <span class="mono">A key for every lock</span>
+  </footer>
+</main>
+
+<script>
+(() => {
+'use strict';
+const $ = (id) => document.getElementById(id);
+const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+const reduced = () => !!(window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches);
+const fmt = (n) => n.toLocaleString('en-GB');
+const plural = (n, one, many) => `${fmt(n)} ${n === 1 ? one : (many || one + 's')}`;
+
+/* ---------- Monkeying Around: the engine (no page code here, so it can be tested on its own) ---------- */
+const MK = (() => {
+const mod = (x, n) => ((x % n) + n) % n;
+const AZ = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
+const L = (v) => AZ[v];
+
+/* ---- fancy lettering, written from the Unicode block layouts ----
+   Mathematical Alphanumeric Symbols (U+1D400 to U+1D7FF) holds the Latin letters in 13 styles of 52 code points each,
+   capitals A to Z then small a to z. A few of those code points are left empty because the letter was already in
+   Letterlike Symbols (U+2100 to U+214F); the HOLES below say which, and where the letter lives instead. */
+const MATH_STYLES = [
+  [0x1D400, 'bold'], [0x1D434, 'italic'], [0x1D468, 'bold italic'], [0x1D49C, 'script'], [0x1D4D0, 'bold script'],
+  [0x1D504, 'Fraktur'], [0x1D538, 'double-struck'], [0x1D56C, 'bold Fraktur'], [0x1D5A0, 'sans-serif'],
+  [0x1D5D4, 'sans-serif bold'], [0x1D608, 'sans-serif italic'], [0x1D63C, 'sans-serif bold italic'], [0x1D670, 'monospace']];
+const HOLES = { // style start → { index within its 52 (0 = A, 26 = a): the Letterlike Symbols code point used instead }
+  0x1D434: { 33: 0x210E },                                                            // italic h: ℎ (Planck constant)
+  0x1D49C: { 1: 0x212C, 4: 0x2130, 5: 0x2131, 7: 0x210B, 8: 0x2110, 11: 0x2112, 12: 0x2133, 17: 0x211B,
+             30: 0x212F, 32: 0x210A, 40: 0x2134 },                                    // script B E F H I L M R, e g o
+  0x1D504: { 2: 0x212D, 7: 0x210C, 8: 0x2111, 17: 0x211C, 25: 0x2128 },                // Fraktur C H I R Z
+  0x1D538: { 2: 0x2102, 7: 0x210D, 13: 0x2115, 15: 0x2119, 16: 0x211A, 17: 0x211D, 25: 0x2124 } // double-struck C H N P Q R Z
+};
+const FANCY = new Map(); // code point → { c: plain letter, s: style }
+const run = (start, first, n, style) => { for (let i = 0; i < n; i++) FANCY.set(start + i, { c: String.fromCharCode(first + i), s: style }); };
+for (const [b, s] of MATH_STYLES) {
+  run(b, 65, 26, s); run(b + 26, 97, 26, s);
+  const h = HOLES[b] || {};
+  for (const i in h) { const e = FANCY.get(b + +i); FANCY.delete(b + +i); FANCY.set(h[i], e); }
+}
+FANCY.set(0x1D6A4, { c: 'i', s: 'italic dotless' }); FANCY.set(0x1D6A5, { c: 'j', s: 'italic dotless' });
+run(0xFF21, 65, 26, 'fullwidth'); run(0xFF41, 97, 26, 'fullwidth');
+run(0x24B6, 65, 26, 'circled'); run(0x24D0, 97, 26, 'circled');
+run(0x249C, 97, 26, 'parenthesized'); run(0x1F110, 65, 26, 'parenthesized');
+run(0x1F130, 65, 26, 'squared'); run(0x1F150, 65, 26, 'negative circled'); run(0x1F170, 65, 26, 'negative squared');
+// fancy digits, used for a Gronsfeld key: fullwidth, and the five digit styles at U+1D7CE (bold, double-struck, sans-serif, sans-serif bold, monospace)
+const FDIGIT = new Map();
+for (let i = 0; i < 10; i++) FDIGIT.set(0xFF10 + i, i);
+for (let k = 0; k < 5; k++) for (let i = 0; i < 10; i++) FDIGIT.set(0x1D7CE + 10 * k + i, i);
+
+/* ---- accented Latin letters ----
+   Most come apart into a letter plus combining accents (Unicode's canonical decomposition, NFD), and the accents are
+   dropped. Letters with a stroke, bar or middle dot don't come apart, so they are listed here, from their Unicode names
+   ("LATIN SMALL LETTER O WITH STROKE" and so on), with dotless i and j and the long s. */
+const STROKE = new Map();
+{ const s = 'ØOøoĐDđdĦHħhıiĿLŀlŁLłlŦTŧtſsƀbƗIƚlƵZƶzǤGǥgȷjȺAȻCȼcȽLȾTɃBɆEɇeɈJɉjɌRɍrɎYɏyɨiᵽpⱠLⱡlⱣPⱥaⱦtꝀKꝁkꝂKꝃkꝘQꝙqꝞVꝟvꞒCꞓcꞘFꞙfꞸUꞹu';
+  const a = Array.from(s); for (let i = 0; i < a.length; i += 2) STROKE.set(a[i].codePointAt(0), a[i + 1]); }
+const SZ = new Map([[0xDF, 'ss'], [0x1E9E, 'SS']]);
+const LIG = new Map([[0xC6, 'AE'], [0xE6, 'ae'], [0x152, 'OE'], [0x153, 'oe'], [0x132, 'IJ'], [0x133, 'ij'],
+  [0x1C4, 'DZ'], [0x1C5, 'Dz'], [0x1C6, 'dz'], [0x1C7, 'LJ'], [0x1C8, 'Lj'], [0x1C9, 'lj'], [0x1CA, 'NJ'], [0x1CB, 'Nj'], [0x1CC, 'nj'],
+  [0x1F1, 'DZ'], [0x1F2, 'Dz'], [0x1F3, 'dz'],
+  [0xFB00, 'ff'], [0xFB01, 'fi'], [0xFB02, 'fl'], [0xFB03, 'ffi'], [0xFB04, 'ffl'], [0xFB05, 'st'], [0xFB06, 'st']]);
+
+const RE_MARK = /\p{M}/gu;
+const RE_LETTER = /^\p{L}/u;
+const RE_LATINISH = /^[\p{Script=Latin}\p{Script=Common}\p{Script=Inherited}]/u;
+let segmenter = null;
+try { segmenter = new Intl.Segmenter('en', { granularity: 'grapheme' }); } catch (e) { segmenter = null; }
+function graphemes(s) { // what a reader sees as one character: a letter with its accents, an emoji with its modifiers
+  if (segmenter) return Array.from(segmenter.segment(s), (x) => x.segment);
+  const out = [];
+  for (const ch of s) { if (out.length && /^[\p{M}‍︀-️]$/u.test(ch)) out[out.length - 1] += ch; else out.push(ch); }
+  return out;
+}
+
+/* One character → its plain letters, or null if it isn't a letter A to Z after folding.
+   f = { accent, sz, lig, fancy } says which foldings are on. */
+function foldOne(g, f) {
+  // variation selectors (an emoji keyboard's 🅰️ is 🅰 + U+FE0F) only choose how a character is drawn
+  let s = g.normalize('NFC').replace(/[\uFE00-\uFE0F]|\uDB40[\uDD00-\uDDEF]/g, ''), how = null;
+  if (f.accent) { const d = s.normalize('NFD').replace(RE_MARK, ''); if (d !== s) how = 'accent'; s = d; }
+  const cps = Array.from(s);
+  if (cps.length !== 1) return null;
+  const cp = cps[0].codePointAt(0);
+  let t = null;
+  if ((cp >= 65 && cp <= 90) || (cp >= 97 && cp <= 122)) t = cps[0];
+  else if (f.accent && STROKE.has(cp)) { t = STROKE.get(cp); how = 'accent'; }
+  else if (f.sz && SZ.has(cp)) { t = SZ.get(cp); how = 'sz'; }
+  else if (f.lig && LIG.has(cp)) { t = LIG.get(cp); how = 'lig'; }
+  else if (f.fancy && FANCY.has(cp)) { t = FANCY.get(cp).c; how = 'fancy'; }
+  if (t === null) return null;
+  return { L: Array.from(t, (c) => ({ v: c.toUpperCase().charCodeAt(0) - 65, up: c >= 'A' && c <= 'Z' })), how };
+}
+/* Split a text into units: letters (with their plain A–Z letters), other scripts' letters, and everything else. */
+function segment(text, f) {
+  return graphemes(String(text)).map((g) => {
+    const r = foldOne(g, f);
+    if (r) return { s: g, kind: 'letter', L: r.L, how: r.how };
+    const first = Array.from(g.normalize('NFC'))[0] || '';
+    return { s: g, kind: RE_LETTER.test(first) && !RE_LATINISH.test(first) ? 'script' : 'other' };
+  });
+}
+/* The key's letters (or, for Gronsfeld, its digits), after the same folding. */
+function keyValues(text, f, digits) {
+  const vals = [], shown = []; let skipped = 0;
+  for (const g of graphemes(String(text))) {
+    if (digits) {
+      const cp = g.codePointAt(0);
+      if (g.length === 1 && cp >= 48 && cp <= 57) { vals.push(cp - 48); shown.push(g); }
+      else if (f.fancy && Array.from(g).length === 1 && FDIGIT.has(cp)) { vals.push(FDIGIT.get(cp)); shown.push(String(FDIGIT.get(cp))); }
+      else if (foldOne(g, f)) skipped++;
+    } else {
+      const r = foldOne(g, f);
+      if (r) for (const x of r.L) { vals.push(x.v); shown.push(L(x.v)); }
+    }
+  }
+  return { vals, shown, skipped };
+}
+/* A keyed alphabet: the keyword's letters, each used once, then the rest of A to Z in order. */
+function keyed(word, f) {
+  const seen = new Set(), out = [];
+  for (const v of keyValues(word || '', f, false).vals) if (!seen.has(v)) { seen.add(v); out.push(v); }
+  for (let v = 0; v < 26; v++) if (!seen.has(v)) out.push(v);
+  return out;
+}
+
+/* ---- the ciphers, on numbers 0 to 25 (A = 0); p plaintext, c ciphertext, k the key's value ---- */
+const RULES = {
+  vig:  { enc: (p, k) => mod(p + k, 26), dec: (c, k) => mod(c - k, 26) },
+  beau: { enc: (p, k) => mod(k - p, 26), dec: (c, k) => mod(k - c, 26) },
+  varb: { enc: (p, k) => mod(p - k, 26), dec: (c, k) => mod(c + k, 26) },
+  porta: { // 13 alphabets, one for each pair of key letters (AB, CD … YZ); each swaps the first half of A–Z with the second
+    enc: (p, k) => { const r = k >> 1; return p < 13 ? 13 + mod(p + r, 13) : mod(p - 13 - r, 13); },
+    dec: (c, k) => { const r = k >> 1; return c < 13 ? 13 + mod(c + r, 13) : mod(c - 13 - r, 13); } }
+};
+function quagRule(PA, CA, ind) { // plaintext alphabet PA, ciphertext alphabet CA, key letter set under plaintext letter ind
+  const pPA = [], pCA = [];
+  PA.forEach((v, i) => { pPA[v] = i; }); CA.forEach((v, i) => { pCA[v] = i; });
+  const sh = (k) => mod(pCA[k] - pPA[ind], 26); // how far the ciphertext alphabet slides for key letter k
+  return { PA, CA, pPA, pCA, sh,
+    enc: (p, k) => CA[mod(pPA[p] + sh(k), 26)],
+    dec: (c, k) => PA[mod(pCA[c] - sh(k), 26)] };
+}
+const CIPHERS = {
+  vig: 'Vigenère', beau: 'Beaufort', varb: 'Variant Beaufort', gron: 'Gronsfeld', auto: 'Autokey', porta: 'Porta',
+  trith: 'Trithemius', q1: 'Quagmire I', q2: 'Quagmire II', q3: 'Quagmire III', q4: 'Quagmire IV' };
+const RECIPROCAL = { beau: 1, porta: 1 };
+
+/* The rule (enc and dec) a configuration uses. */
+function ruleOf(cfg) {
+  const c = cfg.cipher;
+  if (c === 'vig' || c === 'gron' || c === 'trith') return RULES.vig;
+  if (c === 'beau' || c === 'varb' || c === 'porta') return RULES[c];
+  if (c === 'auto') return RULES[cfg.auto] || RULES.vig;
+  if (c[0] === 'q') return quagOf(cfg);
+  return RULES.vig;
+}
+function quagOf(cfg) {
+  const f = cfg.fold, q = cfg.quag || {}, straight = keyed('', f);
+  const kp = keyed(q.pa, f), kc = keyed(cfg.cipher === 'q4' ? q.ca : q.pa, f);
+  const PA = cfg.cipher === 'q2' ? straight : kp;
+  const CA = cfg.cipher === 'q1' ? straight : kc;
+  const ind = keyValues(q.ind || '', f, false).vals[0]; // left blank: the first letter of the plaintext alphabet
+  return quagRule(PA, CA, ind === undefined ? PA[0] : ind);
+}
+
+/* ---- run a whole message ----
+   cfg = { cipher, dir: 'enc' | 'dec', key, start (1-based), repeat (true: a short key repeats; false: a running key stops),
+           nonl: 'keep' | 'move' | 'drop', fold: { accent, sz, lig, fancy }, auto: 'vig' | 'beau' | 'varb',
+           tri: { offset, step }, quag: { pa, ca, ind } } */
+const GAP = '_'; // shown for a letter the running key didn't reach
+function process(msg, cfg) {
+  const f = cfg.fold, c = cfg.cipher, dec = cfg.dir === 'dec';
+  const units = segment(msg, f);
+  const rule = ruleOf(cfg);
+  const digits = c === 'gron';
+  const kv = c === 'trith' ? { vals: [], shown: [], skipped: 0 } : keyValues(cfg.key, f, digits);
+  const n = kv.vals.length, st = Math.max(1, Math.floor(+cfg.start || 1));
+  const off = Math.trunc(+((cfg.tri || {}).offset) || 0), step = Math.trunc(+((cfg.tri || {}).step) || 0);
+  const move = cfg.nonl === 'move' && c !== 'auto'; // autokey takes its key from the message's letters, so only letters move it
+  const plain = []; // autokey: the plaintext letters so far
+  const primer = c === 'auto' ? kv.vals.slice(st - 1) : null;
+  const keyAt = (j) => { // the key's value at step j, or null when there is none
+    if (c === 'trith') return mod(off + j * step, 26);
+    if (c === 'auto') return j < primer.length ? primer[j] : (j - primer.length < plain.length ? plain[j - primer.length] : null);
+    if (!n || st > n) return null;
+    if (cfg.repeat) return kv.vals[(st - 1 + j) % n];
+    return st - 1 + j < n ? kv.vals[st - 1 + j] : null;
+  };
+  let j = 0, letters = 0, missing = 0, others = 0, scripts = 0, removed = 0;
+  const folded = { accent: 0, sz: 0, lig: 0, fancy: 0 };
+  const out = [], cols = [];
+  for (const u of units) {
+    if (u.kind === 'letter') {
+      const col = { s: u.s, kind: 'letter', how: u.how, steps: [] };
+      if (u.how) folded[u.how]++;
+      let o = '';
+      for (const x of u.L) {
+        const k = keyAt(j), pos = j; j++; letters++;
+        if (k === null) { missing++; o += GAP; col.steps.push({ inp: x.v, up: x.up, k: null, j: pos }); continue; }
+        const r = dec ? rule.dec(x.v, k) : rule.enc(x.v, k);
+        if (c === 'auto') plain.push(dec ? r : x.v);
+        o += x.up ? L(r) : L(r).toLowerCase();
+        col.steps.push({ inp: x.v, up: x.up, k, out: r, j: pos });
+      }
+      col.out = o; out.push(o); cols.push(col);
+    } else if (u.kind === 'script') {
+      scripts++; out.push(u.s); cols.push({ s: u.s, kind: 'script', out: u.s });
+    } else {
+      others++;
+      if (cfg.nonl === 'drop') { removed++; continue; }
+      const col = { s: u.s, kind: 'other', out: u.s };
+      if (move) { col.skip = { k: keyAt(j), j }; j++; }
+      out.push(u.s); cols.push(col);
+    }
+  }
+  const used = j;
+  return { text: out.join(''), cols, letters, missing, others, scripts, removed, folded, used, key: kv, start: st, rule };
+}
+
+/* ---- the table for a cipher: rows by key, columns by plaintext letter, each cell the ciphertext letter ---- */
+function tableau(cfg) {
+  const c = cfg.cipher, rule = ruleOf(cfg);
+  let head = [...Array(26).keys()];
+  if (c[0] === 'q') head = rule.PA.slice();
+  const rows = [];
+  if (c === 'gron') for (let k = 0; k < 10; k++) rows.push({ k, label: String(k) });
+  else if (c === 'porta') for (let r = 0; r < 13; r++) rows.push({ k: 2 * r, label: L(2 * r) + L(2 * r + 1) });
+  else for (let k = 0; k < 26; k++) rows.push({ k, label: c === 'trith' ? String(k) : L(k) });
+  rows.forEach((r) => { r.cells = head.map((p) => rule.enc(p, r.k)); });
+  const rowOf = (k) => (c === 'porta' ? k >> 1 : k);
+  const colOf = (p) => head.indexOf(p);
+  return { head, rows, rowOf, colOf };
+}
+
+return { mod, L, AZ, FANCY, FDIGIT, STROKE, SZ, LIG, HOLES, MATH_STYLES, graphemes, foldOne, segment, keyValues, keyed,
+  RULES, quagRule, quagOf, ruleOf, CIPHERS, RECIPROCAL, process, tableau, GAP };
+})();
+/* ---------- Monkeying Around: monkey business, the steps of the chain (no page code here, so it can be tested on its own) ----------
+   Every step takes text and gives text back. Steps are exact: anything a step can't convert is listed in a note, and shown as ?
+   where it would have been; nothing is guessed, ranked or judged. Needs MK (monkey.core.js) for its grapheme splitter. */
+const MKC = ((MK) => {
+const G = (s) => MK.graphemes(s);
+const RE_L = /^\p{L}/u, RE_D = /^\p{Nd}/u, RE_WS = /^\p{White_Space}/u, RE_PS = /^[\p{P}\p{S}]/u;
+const isL = (g) => RE_L.test(g), isD = (g) => RE_D.test(g), isWS = (g) => RE_WS.test(g), isPS = (g) => RE_PS.test(g);
+const isAZ = (g) => /^[A-Za-z]$/.test(g);
+/* A letter's capital, for counting and sorting capitals and small letters together; a letter whose capital is
+   something else (ß → SS, dotless ı → I, long ſ → S) stays as it is, so it isn't taken for another letter. */
+const caseKey = (g) => { const u = g.toUpperCase(); return u !== g && u.toLowerCase() === g.toLowerCase() && isAZ(u) === isAZ(g) ? u : g; };
+/* A word's first character in title case: ǆ → ǅ, ﬁ → Fi, ŉ → ʼN (capital up to its first letter, then small). */
+const TITLE = { 0x01C4: 'ǅ', 0x01C5: 'ǅ', 0x01C6: 'ǅ', 0x01C7: 'ǈ', 0x01C8: 'ǈ', 0x01C9: 'ǈ', 0x01CA: 'ǋ', 0x01CB: 'ǋ', 0x01CC: 'ǋ', 0x01F1: 'ǲ', 0x01F2: 'ǲ', 0x01F3: 'ǲ' };
+function titleOne(g) {
+  const cps = Array.from(g), first = cps[0], t = TITLE[first.codePointAt(0)];
+  if (t) return t + cps.slice(1).join('');
+  const u = first.toUpperCase(), k = u.search(/[\p{Lu}\p{Ll}\p{Lt}]/u); // a cased letter: ʼ in ʼN isn't one
+  const cut = k < 0 ? u.length : k + String.fromCodePoint(u.codePointAt(k)).length;
+  return u.slice(0, cut) + u.slice(cut).toLowerCase() + cps.slice(1).join('');
+}
+// a word: letters (with their accents) and digits, with ' or ’ allowed between two of them, as in don't
+const WORD = /[\p{L}\p{M}\p{Nd}]+(?:['’][\p{L}\p{M}\p{Nd}]+)*/gu;
+const words = (s) => s.match(WORD) || [];
+const LINES = /\r\n|\n|\r/;
+const BAD = '?'; // shown where something couldn't be converted
+const intOf = (s) => { const t = String(s).trim().replace(/[−‒–—]/g, '-'); return /^[-+]?\d{1,9}$/.test(t) ? parseInt(t, 10) : null; };
+const cpCmp = (a, b) => { // compare by code point (plain < compares UTF-16 units, which puts some characters in the wrong order)
+  const x = Array.from(a), y = Array.from(b);
+  for (let i = 0; i < Math.min(x.length, y.length); i++) { const d = x[i].codePointAt(0) - y[i].codePointAt(0); if (d) return d; }
+  return x.length - y.length;
+};
+const n_ = (n, one, many) => `${n.toLocaleString('en-GB')} ${n === 1 ? one : (many || one + 's')}`;
+const shown = (g) => (g === ' ' ? 'space' : g === '\t' ? 'tab' : /^(\r\n|\n|\r)$/.test(g) ? 'line break' : isWS(g) ? 'a blank' : g);
+const listOf = (arr) => { // distinct items, in the order first met, at most 20; the page shows each one on its own
+  const u = [...new Set(arr)];
+  return { items: u.slice(0, 20).map(shown), more: Math.max(0, u.length - 20) };
+};
+// a note is [kind, text, list, after]: kind is info or warn; list (optional) is shown item by item after the text
+
+/* ---- Morse (International Morse code, ITU-R M.1677, plus ! which many tables add) ---- */
+const MORSE = {
+  A: '.-', B: '-...', C: '-.-.', D: '-..', E: '.', F: '..-.', G: '--.', H: '....', I: '..', J: '.---', K: '-.-', L: '.-..', M: '--',
+  N: '-.', O: '---', P: '.--.', Q: '--.-', R: '.-.', S: '...', T: '-', U: '..-', V: '...-', W: '.--', X: '-..-', Y: '-.--', Z: '--..',
+  0: '-----', 1: '.----', 2: '..---', 3: '...--', 4: '....-', 5: '.....', 6: '-....', 7: '--...', 8: '---..', 9: '----.',
+  '.': '.-.-.-', ',': '--..--', '?': '..--..', "'": '.----.', '!': '-.-.--', '/': '-..-.', '(': '-.--.', ')': '-.--.-', '&': '.-...',
+  ':': '---...', ';': '-.-.-.', '=': '-...-', '+': '.-.-.', '-': '-....-', '_': '..--.-', '"': '.-..-.', '$': '...-..-', '@': '.--.-.'
+};
+const UNMORSE = Object.fromEntries(Object.entries(MORSE).map(([k, v]) => [v, k]));
+
+/* ---- the steps ---- */
+const caesar = (t, k) => t.replace(/[A-Za-z]/g, (c) => { const b = c <= 'Z' ? 65 : 97; return String.fromCharCode(b + (c.charCodeAt(0) - b + k) % 26); });
+const otherLetters = (t) => G(t).filter((g) => isL(g) && !isAZ(g));
+const A1SEP = { space: [' ', ' / '], hyphen: ['-', ' '], comma: [',', ' '] };
+const BASES = { dec: 10, hex: 16, bin: 2 };
+const BASENAME = { dec: 'decimal', hex: 'hex', bin: 'binary' };
+
+const STEPS = {
+  reverse: {
+    name: 'Reverse', group: 'Rearrange',
+    help: 'Reverses the whole text, or each word in its place. A word is a run of letters and digits; spaces and punctuation stay where they are.',
+    opts: [{ k: 'mode', type: 'select', label: 'Reverse', def: 'all', choices: [['all', 'the whole text'], ['words', 'each word, in place']] }],
+    run(t, o) { return { text: o.mode === 'words' ? t.replace(WORD, (w) => G(w).reverse().join('')) : G(t).reverse().join('') }; }
+  },
+  nth: {
+    name: 'Every nth letter', group: 'Pick out',
+    help: 'Takes letter number “start”, then every nth one after it, and leaves the rest out.',
+    opts: [{ k: 'n', type: 'int', label: 'Every', def: '2', min: 1 }, { k: 'start', type: 'int', label: 'Starting at number', def: '1', min: 1 },
+      { k: 'count', type: 'select', label: 'Count', def: 'letters', choices: [['letters', 'letters only'], ['alnum', 'letters and digits'], ['visible', 'all but spaces'], ['all', 'every character']] }],
+    run(t, o) {
+      const keep = { letters: isL, alnum: (g) => isL(g) || isD(g), visible: (g) => !isWS(g), all: () => true }[o.count];
+      const unit = { letters: ['letter'], alnum: ['letter or digit', 'letters and digits'], visible: ['character'], all: ['character'] }[o.count];
+      const gs = G(t).filter(keep), out = [];
+      if (gs.length && o.start > gs.length) return { text: '', notes: [['info', `There ${gs.length === 1 ? 'is' : 'are'} only ${n_(gs.length, ...unit)}, so there’s no number ${o.start} to start at.`]] };
+      for (let i = o.start - 1; i < gs.length; i += o.n) out.push(gs[i]);
+      return { text: out.join(''), notes: gs.length ? [['info', `Took ${n_(out.length, ...unit)} of ${gs.length.toLocaleString('en-GB')}: number ${o.start}, ${o.start + o.n}, ${o.start + 2 * o.n} and so on.`]] : [] };
+    }
+  },
+  first: {
+    name: 'First letters', group: 'Pick out',
+    help: 'The first letter of each word, or of each line. A word is a run of letters and digits, so a word can start with a digit.',
+    opts: [{ k: 'of', type: 'select', label: 'Of each', def: 'words', choices: [['words', 'word'], ['lines', 'line']] }],
+    run(t, o) { return ends(t, o, true); }
+  },
+  last: {
+    name: 'Last letters', group: 'Pick out',
+    help: 'The last letter of each word, or of each line. A word is a run of letters and digits, so a word can end with a digit.',
+    opts: [{ k: 'of', type: 'select', label: 'Of each', def: 'words', choices: [['words', 'word'], ['lines', 'line']] }],
+    run(t, o) { return ends(t, o, false); }
+  },
+  lengths: {
+    name: 'Word lengths as numbers', group: 'Pick out',
+    help: 'How many letters and digits each word has (an apostrophe isn’t counted, so don’t is 4). Each line of text gives one line of numbers.',
+    opts: [{ k: 'sep', type: 'select', label: 'Between the numbers', def: 'space', choices: [['space', 'a space'], ['comma', 'a comma'], ['none', 'nothing (3141)']] }],
+    run(t, o) {
+      const sep = { space: ' ', comma: ', ', none: '' }[o.sep];
+      let long = 0;
+      const text = t.split(LINES).map((line) => words(line).map((w) => { const n = G(w).filter((g) => !/^['’]/.test(g)).length; if (n > 9) long++; return n; }).join(sep)).join('\n');
+      return { text, notes: o.sep === 'none' && long ? [['info', `${n_(long, 'word')} ${long === 1 ? 'has' : 'have'} 10 or more letters, so ${long === 1 ? 'its number has' : 'their numbers have'} two digits or more, and run together they can’t be told apart from shorter words.`]] : [] };
+    }
+  },
+  blocks: {
+    name: 'Group into blocks', group: 'Rearrange',
+    help: 'Takes out the spaces and line breaks, then splits what’s left into blocks of n characters. The last block can be shorter.',
+    opts: [{ k: 'n', type: 'int', label: 'Characters in a block', def: '5', min: 1 },
+      { k: 'between', type: 'select', label: 'Between blocks', def: 'space', choices: [['space', 'a space'], ['line', 'a new line']] }],
+    run(t, o) {
+      const gs = G(t).filter((g) => !isWS(g)), out = [];
+      for (let i = 0; i < gs.length; i += o.n) out.push(gs.slice(i, i + o.n).join(''));
+      const last = gs.length % o.n;
+      return { text: out.join(o.between === 'line' ? '\n' : ' '), notes: gs.length ? [['info', `${n_(out.length, 'block')} from ${n_(gs.length, 'character')}${last ? `; the last block has ${n_(last, 'character')}` : ''}.`]] : [] };
+    }
+  },
+  remove: {
+    name: 'Remove spaces or punctuation', group: 'Tidy',
+    help: 'Takes out the characters you choose and keeps everything else. Punctuation and symbols are marks such as . , ! ? ’ - ( ) & $ +.',
+    opts: [{ k: 'what', type: 'select', label: 'Remove', def: 'spaces', choices: [['spaces', 'spaces and line breaks'], ['spacesonly', 'spaces (keep line breaks)'],
+      ['punct', 'punctuation and symbols'], ['both', 'all spaces and punctuation'], ['digits', 'digits'], ['nonletters', 'all but letters'], ['nonalnum', 'all but letters and digits']] }],
+    run(t, o) {
+      const nl = (g) => /^(\r\n|\n|\r)$/.test(g);
+      const drop = { spaces: isWS, spacesonly: (g) => isWS(g) && !nl(g), punct: isPS, both: (g) => isWS(g) || isPS(g), digits: isD,
+        nonletters: (g) => !isL(g), nonalnum: (g) => !isL(g) && !isD(g) }[o.what];
+      const gs = G(t), kept = gs.filter((g) => !drop(g));
+      return { text: kept.join(''), notes: gs.length ? [['info', `Removed ${n_(gs.length - kept.length, 'character')}.`]] : [] };
+    }
+  },
+  case: {
+    name: 'Change case', group: 'Tidy',
+    help: 'Capitals or small letters. “Each Word Capitalised” makes the first letter of each word a capital and the rest small.',
+    opts: [{ k: 'to', type: 'select', label: 'Change to', def: 'upper', choices: [['upper', 'CAPITALS'], ['lower', 'small letters'], ['swap', 'swap: capitals ↔ small'], ['title', 'Each Word Capitalised']] }],
+    run(t, o) {
+      if (o.to === 'upper') return { text: t.toUpperCase() };
+      if (o.to === 'lower') return { text: t.toLowerCase() };
+      if (o.to === 'swap') return { text: Array.from(t, (c) => { const u = c.toUpperCase(); return u !== c ? u : c.toLowerCase(); }).join('') };
+      return { text: t.replace(WORD, (w) => { const g = G(w); return titleOne(g[0]) + g.slice(1).join('').toLowerCase(); }) };
+    }
+  },
+  caesar: {
+    name: 'All 25 Caesar shifts', group: 'Convert',
+    help: 'Every shift from 1 to 25 at once, in order, for you to scan by eye. Shift 1 turns A into B; shift 13 is ROT13. Pass on the whole list, or just the shift you pick.',
+    opts: [{ k: 'pass', type: 'select', label: 'Pass on', def: 'list', choices: [['list', 'the whole list'], ['one', 'one shift only']] },
+      { k: 'shift', type: 'int', label: 'Shift', def: '13', min: 1, max: 25, when: ['pass', 'one'] }],
+    run(t, o) {
+      const rows = []; for (let k = 1; k <= 25; k++) rows.push({ k, text: caesar(t, k) });
+      const one = o.pass === 'one';
+      return { text: one ? rows[o.shift - 1].text : rows.map((r) => `${r.k}: ${r.text}`).join('\n'), view: { kind: 'caesar', rows, pick: one ? o.shift : 0 }, notes: azNote(t) };
+    }
+  },
+  atbash: {
+    name: 'Atbash', group: 'Convert',
+    help: 'Reverses the alphabet: A ↔ Z, B ↔ Y, C ↔ X and so on. It undoes itself, and keeps each letter’s case.',
+    opts: [],
+    run(t) { return { text: t.replace(/[A-Za-z]/g, (c) => { const b = c <= 'Z' ? 65 : 97; return String.fromCharCode(b + 25 - (c.charCodeAt(0) - b)); }), notes: azNote(t) }; }
+  },
+  a1z26: {
+    name: 'Letters → numbers (A1Z26)', group: 'Convert',
+    help: 'A = 1, B = 2 … Z = 26, capitals or not. Spaces between words become the word gap you choose, and punctuation is left out. Anything else, such as é or a digit, shows as ?.',
+    opts: [{ k: 'sep', type: 'select', label: 'Numbers joined by', def: 'space', choices: [['space', 'spaces (1 2 / 3 4)'], ['hyphen', 'hyphens (1-2 3-4)'], ['comma', 'commas (1,2 3,4)']] }],
+    run(t, o) {
+      const [inner, between] = A1SEP[o.sep], punct = [], bad = [];
+      const text = t.split(LINES).map((line) => {
+        const ws = []; let cur = [];
+        for (const g of G(line)) {
+          if (isAZ(g)) cur.push(g.toUpperCase().charCodeAt(0) - 64);
+          else if (isWS(g)) { if (cur.length) { ws.push(cur); cur = []; } }
+          else if (isPS(g)) punct.push(g); else { bad.push(g); cur.push(BAD); }
+        }
+        if (cur.length) ws.push(cur);
+        return ws.map((w) => w.join(inner)).join(between);
+      }).join('\n');
+      const notes = [];
+      if (bad.length) notes.push(['warn', 'Can’t be turned into A1Z26 numbers, so shown as ?:', listOf(bad), 'Only the letters A to Z have numbers here.']);
+      if (punct.length) notes.push(['info', `Left out ${n_(punct.length, 'punctuation mark or symbol', 'punctuation marks and symbols')}:`, listOf(punct)]);
+      return { text, notes, marked: bad.length > 0 };
+    }
+  },
+  num2let: {
+    name: 'Numbers → letters (A1Z26)', group: 'Convert',
+    help: '1 = A, 2 = B … 26 = Z. Each number must be on its own, between the separators you choose; a / also marks a word gap. Anything else shows as ?.',
+    opts: [{ k: 'sep', type: 'select', label: 'Numbers separated by', def: 'space', choices: [['space', 'spaces (1 2 / 3 4)'], ['hyphen', 'hyphens (1-2 3-4)'], ['comma', 'commas (1,2 3,4)']] },
+      { k: 'case', type: 'select', label: 'Letters as', def: 'upper', choices: [['upper', 'CAPITALS'], ['lower', 'small letters']] }],
+    run(t, o) {
+      const bad = [];
+      const split = { space: [/[\/|]/, /\p{White_Space}+/u], hyphen: [/[\/|]|\p{White_Space}+/u, /-/], comma: [/[\/|]|\p{White_Space}+/u, /,/] }[o.sep];
+      const text = t.split(LINES).map((line) => line.split(split[0]).map((w) => w.split(split[1]).filter((x) => x !== '').map((tok) => {
+        const v = /^\d{1,9}$/.test(tok) ? parseInt(tok, 10) : NaN;
+        if (v >= 1 && v <= 26) { const c = String.fromCharCode(64 + v); return o.case === 'lower' ? c.toLowerCase() : c; }
+        bad.push(tok); return BAD;
+      }).join('')).filter((w) => w !== '').join(' ')).join('\n');
+      return { text, marked: bad.length > 0, notes: bad.length ? [['warn', 'Can’t be read as a number from 1 to 26, so shown as ?:', listOf(bad)]] : [] };
+    }
+  },
+  tocodes: {
+    name: 'Characters → codes', group: 'Convert',
+    help: 'Each character’s Unicode code (the same as ASCII for plain letters, digits and punctuation), spaces and line breaks too, separated by spaces. An accent typed as a separate mark has its own code.',
+    opts: [{ k: 'base', type: 'select', label: 'Write the codes in', def: 'dec', choices: [['dec', 'decimal (A = 65)'], ['hex', 'hex (A = 41)'], ['bin', 'binary (A = 01000001)']] }],
+    run(t, o) {
+      const f = { dec: (v) => String(v), hex: (v) => v.toString(16).toUpperCase().padStart(2, '0'), bin: (v) => v.toString(2).padStart(8, '0') }[o.base];
+      return { text: Array.from(t, (c) => f(c.codePointAt(0))).join(' ') };
+    }
+  },
+  fromcodes: {
+    name: 'Codes → characters', group: 'Convert',
+    help: 'Reads codes separated by spaces or commas, one character each. For a long run of bits with no spaces, put a “Group into blocks” step of 8 in front.',
+    opts: [{ k: 'base', type: 'select', label: 'The codes are in', def: 'dec', choices: [['dec', 'decimal (65 = A)'], ['hex', 'hex (41 = A, 0x41 too)'], ['bin', 'binary (01000001 = A)']] }],
+    run(t, o) {
+      const re = { dec: /^\d{1,8}$/, hex: /^(?:0[xX])?([0-9A-Fa-f]{1,6})$/, bin: /^(?:0[bB])?([01]{1,21})$/ }[o.base], bad = [];
+      let ctrl = 0, long = 0;
+      const text = t.split(/[\p{White_Space},;]+/u).filter((x) => x !== '').map((tok) => {
+        const m = tok.match(re), v = m ? parseInt(m[1] || m[0], BASES[o.base]) : NaN;
+        if (m && o.base === 'bin' && (m[1] || m[0]).length > 8) long++;
+        if (!(v >= 0 && v <= 0x10FFFF) || (v >= 0xD800 && v <= 0xDFFF)) { bad.push(tok); return BAD; }
+        if ((v < 32 && v !== 9 && v !== 10 && v !== 13) || (v >= 127 && v < 160)) ctrl++;
+        return String.fromCodePoint(v);
+      }).join('');
+      const notes = [];
+      if (bad.length) notes.push(['warn', `Not a character code in ${BASENAME[o.base]}, so shown as ?:`, listOf(bad)]);
+      if (long) notes.push(['info', `${n_(long, 'code')} ${long === 1 ? 'is' : 'are'} longer than 8 bits and ${long === 1 ? 'was' : 'were'} read as one number each. Codes run together aren’t split here; a “Group into blocks” step in front does that.`]);
+      if (ctrl) notes.push(['info', `${n_(ctrl, 'code')} ${ctrl === 1 ? 'is a control character' : 'are control characters'}, with nothing to see.`]);
+      return { text, marked: bad.length > 0, notes };
+    }
+  },
+  tomorse: {
+    name: 'Text → Morse', group: 'Convert',
+    help: 'International Morse code for A to Z, 0 to 9 and common punctuation. Letters are separated by a space and words by /. A character with no code here shows as ?.',
+    opts: [],
+    run(t) {
+      const bad = [];
+      const text = t.split(LINES).map((line) => line.split(/\p{White_Space}+/u).map((w) => G(w).map((g) => {
+        const m = MORSE[isAZ(g) ? g.toUpperCase() : g]; if (!m) { bad.push(g); return BAD; } return m;
+      }).join(' ')).filter((w) => w !== '').join(' / ')).join('\n');
+      return { text, marked: bad.length > 0, notes: bad.length ? [['warn', 'No Morse code here for these, so shown as ?:', listOf(bad)]] : [] };
+    }
+  },
+  frommorse: {
+    name: 'Morse → text', group: 'Convert',
+    help: 'Reads dots and dashes (· • and – — _ work too), letters separated by spaces and words by / or |. A code it doesn’t know shows as ?.',
+    opts: [],
+    run(t) {
+      const bad = [];
+      const text = t.split(LINES).map((line) => line.split(/[\/|]/).map((w) => w.split(/\p{White_Space}+/u).filter((x) => x !== '').map((tok) => {
+        const c = UNMORSE[tok.replace(/[·•∙]/g, '.').replace(/[−–—_]/g, '-')];
+        if (c === undefined) { bad.push(tok); return BAD; } return c;
+      }).join('')).filter((w) => w !== '').join(' ')).join('\n');
+      return { text, marked: bad.length > 0, notes: bad.length ? [['warn', 'Not a Morse code it knows, so shown as ?:', listOf(bad)]] : [] };
+    }
+  },
+  columns: {
+    name: 'Write in rows or columns', group: 'Rearrange',
+    help: 'Writes the text into a block so many columns wide, then reads it off the other way. The two directions undo each other at the same width.',
+    opts: [{ k: 'width', type: 'int', label: 'Columns', def: '5', min: 1 },
+      { k: 'dir', type: 'select', label: 'Write in', def: 'rows', choices: [['rows', 'rows, read columns'], ['cols', 'columns, read rows']] },
+      { k: 'spaces', type: 'check', label: 'Leave out spaces and line breaks', def: true }],
+    run(t, o) {
+      const gs = o.spaces ? G(t).filter((g) => !isWS(g)) : G(t), n = gs.length;
+      const w = Math.min(o.width, Math.max(n, 1)), h = Math.ceil(n / w), r = n % w; // wider than the text is the same as one row
+      const grid = Array.from({ length: h }, (_, i) => Array.from({ length: w }, (_, j) => null));
+      if (o.dir === 'rows') {
+        gs.forEach((g, i) => { grid[Math.floor(i / w)][i % w] = g; });
+      } else { // the columns on the left are one longer when the block isn't full, so this undoes the other direction exactly
+        let i = 0;
+        for (let j = 0; j < w; j++) for (let row = 0; row < (r === 0 || j < r ? h : h - 1); row++) grid[row][j] = gs[i++];
+      }
+      const out = [];
+      if (o.dir === 'rows') { for (let j = 0; j < w; j++) for (let i = 0; i < h; i++) if (grid[i][j] !== null) out.push(grid[i][j]); }
+      else for (const row of grid) for (const g of row) if (g !== null) out.push(g);
+      return { text: out.join(''), view: { kind: 'grid', grid, dir: o.dir },
+        notes: n ? [['info', `${n_(n, 'character')} in ${n_(w, 'column')}${w < o.width ? ` (the text is shorter than ${o.width.toLocaleString('en-GB')})` : ''} and ${n_(h, 'row')}${r ? `; the last row has ${n_(r, 'character')}` : ''}.`]] : [] };
+    }
+  },
+  counts: {
+    name: 'Letter counts', group: 'Look',
+    help: 'How often each letter comes up, as a table and a bar chart, with capitals and small letters counted together. It’s information only: the text goes on to the next step unchanged.',
+    opts: [{ k: 'what', type: 'select', label: 'Count', def: 'az', choices: [['az', 'letters A to Z'], ['all', 'all but spaces']] },
+      { k: 'order', type: 'select', label: 'Order', def: 'alpha', choices: [['alpha', 'alphabetical'], ['most', 'most often first']] }],
+    run(t, o) {
+      const gs = G(t), m = new Map();
+      if (o.what === 'az') for (let i = 0; i < 26; i++) m.set(String.fromCharCode(65 + i), 0);
+      let total = 0;
+      for (const g of gs) {
+        if (o.what === 'az' ? !isAZ(g) : isWS(g)) continue;
+        const k = o.what === 'az' ? g.toUpperCase() : isL(g) ? caseKey(g) : g; m.set(k, (m.get(k) || 0) + 1); total++;
+      }
+      const rows = [...m].map(([ch, n]) => ({ ch, n })).sort((a, b) => (o.order === 'most' ? b.n - a.n : 0) || cpCmp(a.ch, b.ch));
+      const others = o.what === 'az' ? otherLetters(t).length : 0;
+      return { text: t, view: { kind: 'counts', rows, total }, notes: others ? [['info', `${n_(others, 'letter')} outside A to Z (such as é or Greek letters) ${others === 1 ? 'isn’t' : 'aren’t'} counted.`]] : [] };
+    }
+  },
+  sort: {
+    name: 'Sort the letters', group: 'Rearrange',
+    help: 'Puts the letters in alphabetical order, capitals and small letters together. Letters outside A to Z come after Z, in the order of their codes.',
+    opts: [{ k: 'what', type: 'select', label: 'Sort', def: 'letters', choices: [['letters', 'letters only'], ['visible', 'all but spaces']] },
+      { k: 'order', type: 'select', label: 'Order', def: 'az', choices: [['az', 'A to Z'], ['za', 'Z to A']] }],
+    run(t, o) {
+      const gs = G(t).filter(o.what === 'letters' ? isL : (g) => !isWS(g));
+      gs.sort((a, b) => cpCmp(caseKey(a), caseKey(b)) || cpCmp(a, b)); // ß, ı and ſ come after Z, by their own codes
+      if (o.order === 'za') gs.reverse();
+      return { text: gs.join('') };
+    }
+  },
+  dedupe: {
+    name: 'Remove repeated letters', group: 'Tidy',
+    help: 'Keeps the first of each letter and drops its repeats, as when a keyword starts a mixed alphabet. Or drops only a letter that repeats the one right before it.',
+    opts: [{ k: 'mode', type: 'select', label: 'Drop', def: 'all', choices: [['all', 'every repeat'], ['doubles', 'only doubles (AA → A)']] },
+      { k: 'anycase', type: 'check', label: 'Count A and a as the same letter', def: true },
+      { k: 'others', type: 'select', label: 'Spaces, digits and punctuation', def: 'keep', choices: [['keep', 'keep them as they are'], ['drop', 'remove them']] }],
+    run(t, o) {
+      let gs = G(t); if (o.others === 'drop') gs = gs.filter(isL);
+      const norm = (g) => (o.anycase ? g.toLowerCase() : g), seen = new Set(), out = [];
+      gs.forEach((g, i) => {
+        if (isL(g)) {
+          if (o.mode === 'all') { if (seen.has(norm(g))) return; seen.add(norm(g)); }
+          else if (i > 0 && norm(gs[i - 1]) === norm(g)) return;
+        }
+        out.push(g);
+      });
+      return { text: out.join(''), notes: gs.length ? [['info', `Removed ${n_(G(t).length - out.length, 'character')}.`]] : [] };
+    }
+  }
+};
+function ends(t, o, first) {
+  const pick = (gs) => (first ? gs[0] : gs[gs.length - 1]);
+  if (o.of === 'words') return { text: words(t).map((w) => pick(G(w).filter((g) => !/^['’]/.test(g)))).join('') };
+  let skipped = 0;
+  const out = t.split(LINES).map((line) => { const gs = G(line).filter((g) => isL(g) || isD(g)); if (!gs.length) { skipped++; return ''; } return pick(gs); }).join('');
+  return { text: out, notes: skipped && t !== '' ? [['info', `${n_(skipped, 'line')} with no letters or digits (blank lines too) ${skipped === 1 ? 'was' : 'were'} skipped.`]] : [] };
+}
+function azNote(t) {
+  const n = otherLetters(t).length;
+  return n ? [['info', `${n_(n, 'letter')} outside A to Z (such as é or Greek letters) ${n === 1 ? 'was' : 'were'} left as ${n === 1 ? 'it is' : 'they are'}.`]] : [];
+}
+
+/* ---- settings: read the raw values from the page, and say plainly what's wrong with them ---- */
+function settle(type, raw) {
+  const def = STEPS[type], o = {}, errs = [];
+  for (const op of def.opts) {
+    const v = raw && raw[op.k] !== undefined ? raw[op.k] : op.def;
+    if (op.when && (raw && raw[op.when[0]] !== undefined ? raw[op.when[0]] : def.opts.find((x) => x.k === op.when[0]).def) !== op.when[1]) { o[op.k] = intOf(op.def); continue; }
+    if (op.type === 'int') {
+      const n = intOf(v);
+      if (n === null || n < op.min || (op.max !== undefined && n > op.max)) {
+        errs.push(`“${op.label}” should be a whole number${op.max !== undefined ? ` from ${op.min} to ${op.max}` : `, ${op.min} or more`}.`);
+      }
+      o[op.k] = n;
+    } else if (op.type === 'select') o[op.k] = op.choices.some((c) => c[0] === v) ? v : op.def;
+    else o[op.k] = typeof v === 'boolean' ? v : !!op.def;
+  }
+  return { o, errs };
+}
+function run(type, text, raw) {
+  const { o, errs } = settle(type, raw);
+  if (errs.length) return { text: null, errs, notes: [] };
+  const r = STEPS[type].run(text, o);
+  return { text: r.text, view: r.view || null, notes: r.notes || [], marked: !!r.marked, errs: [] };
+}
+/* ---- the chain: each step that's on works on the text from the one before; a step that's off passes its text on ---- */
+function chain(text, steps) {
+  let cur = text, blockedBy = 0, markedBy = 0;
+  return steps.map((s, i) => {
+    if (blockedBy) return { input: null, text: null, blockedBy, notes: [], errs: [] };
+    if (!s.on) return { input: cur, text: cur, off: true, notes: [], errs: [], markedBy };
+    const r = run(s.type, cur, s.o);
+    r.input = cur; r.markedBy = markedBy;
+    if (r.text === null) blockedBy = i + 1;
+    else { cur = r.text; if (r.marked) markedBy = i + 1; }
+    return r;
+  });
+}
+
+return { STEPS, MORSE, UNMORSE, WORD, settle, run, chain, intOf, cpCmp, BAD };
+})(MK);
+
+const { L, mod } = MK;
+const radio = (name) => (document.querySelector(`input[name="${name}"]:checked`) || {}).value;
+const setRadio = (name, v) => { const r = document.querySelector(`input[name="${name}"][value="${v}"]`); if (r) r.checked = true; };
+const intOf = (s) => { const t = String(s).trim().replace(/[−‒–—]/g, '-'); return /^[-+]?\d{1,9}$/.test(t) ? parseInt(t, 10) : null; };
+
+function cfg() {
+  return {
+    cipher: $('mk-cipher').value, dir: radio('mk-dir') || 'enc', key: $('mk-key').value,
+    start: intOf($('mk-start').value) || 1, repeat: radio('mk-run') !== 'stop', nonl: radio('mk-nonl') || 'keep',
+    fold: { accent: $('mk-f-accent').checked, sz: $('mk-f-sz').checked, lig: $('mk-f-lig').checked, fancy: $('mk-f-fancy').checked },
+    auto: $('mk-auto').value,
+    tri: { offset: intOf($('mk-tri-off').value) || 0, step: intOf($('mk-tri-step').value) === null ? 1 : intOf($('mk-tri-step').value) },
+    quag: { pa: $('mk-qkw1').value, ca: $('mk-qkw2').value, ind: $('mk-qind').value }
+  };
+}
+
+/* ---------- what each cipher says about itself ---------- */
+const FORMULA = {
+  vig: ['C = P + K', 'P = C − K'], gron: ['C = P + d', 'P = C − d'], beau: ['C = K − P', 'P = K − C'], varb: ['C = P − K', 'P = C + K'],
+  trith: ['C = P + s + i·t', 'P = C − s − i·t'], porta: ['C = Porta(K, P)', 'P = Porta(K, C)']
+};
+const HELP = {
+  vig: 'Each message letter is shifted along by its key letter: A shifts 0 places, B 1, and so on up to Z, 25.',
+  beau: 'The message letter is subtracted from the key letter. It undoes itself: enciphering and deciphering are the same.',
+  varb: 'The key letter is subtracted from the message letter, so it enciphers the way Vigenère deciphers.',
+  gron: 'Vigenère with a key of digits, 0 to 9: each digit is how many places to shift. Only the key’s digits are used.',
+  auto: 'The key you type is a primer. After it, the plaintext’s own letters carry on as the key.',
+  porta: 'Thirteen alphabets, one for each pair of key letters (AB, CD … YZ). Each swaps the first half of the alphabet with the second, so the same key deciphers.',
+  trith: 'No key: the shift starts at the starting shift and grows by the step for each letter. With 0 and 1, the shifts go 0, 1, 2, 3 …',
+  q1: 'The plaintext alphabet is keyed; the ciphertext alphabet is plain A to Z, slid along for each key letter.',
+  q2: 'The plaintext alphabet is plain A to Z; the ciphertext alphabet is keyed and slid along for each key letter.',
+  q3: 'The same keyed alphabet is used for the plaintext and the ciphertext, slid along for each key letter.',
+  q4: 'Two different keyed alphabets: one for the plaintext, one for the ciphertext, slid along for each key letter.'
+};
+function formulaOf(c) {
+  if (c.cipher === 'auto') return FORMULA[c.auto];
+  if (c.cipher[0] === 'q') return ['C = CA[pos(P) + s]', 'P = PA[pos(C) − s]'];
+  return FORMULA[c.cipher];
+}
+const keyShown = (c, k) => (c.cipher === 'gron' || c.cipher === 'trith' ? String(k) : L(k));
+
+/* ---------- the alignment view ---------- */
+const MAX_COLS = 3000;
+let last = null, sel = -1, lastCfg = null;
+function visible(s) {
+  if (s === ' ') return '·';
+  if (s === '\n' || s === '\r\n' || s === '\r') return '↵';
+  if (s === '\t') return '⇥';
+  if (/^\s$/u.test(s)) return '·';
+  return s;
+}
+function colLabel(c, col, i) {
+  if (col.kind === 'letter') {
+    const k = col.steps.map((st) => (st.k === null ? 'none' : keyShown(c, st.k))).join(' ');
+    return `${i + 1}: ${col.s}, key ${k}, result ${col.out}`;
+  }
+  if (col.kind === 'script') return `${i + 1}: ${col.s}, another script, left in place`;
+  return `${i + 1}: ${col.s === ' ' ? 'space' : col.s}, left in place${col.skip ? ', key moves on' : ''}`;
+}
+function renderAlign(c, r) {
+  const box = $('mk-align');
+  const cols = r.cols.slice(0, MAX_COLS);
+  if (sel >= cols.length) sel = -1;
+  if (sel < 0) sel = cols.findIndex((x) => x.kind === 'letter');
+  if (sel < 0 && cols.length) sel = 0;
+  box.innerHTML = cols.map((col, i) => {
+    let m = esc(visible(col.s)), k = '', o = esc(visible(col.out)), cls = 'mk-col';
+    if (col.kind === 'letter') {
+      k = col.steps.map((st) => (st.k === null ? ' ' : keyShown(c, st.k))).join('');
+      if (col.steps.some((st) => st.k === null)) cls += ' gap';
+    } else {
+      cls += col.kind === 'script' ? ' nl sc' : ' nl';
+      if (col.skip) { cls += ' skip'; k = col.skip.k === null ? '' : keyShown(c, col.skip.k); }
+    }
+    return `<div class="${cls}" role="option" id="mk-c${i}" tabindex="${i === sel ? 0 : -1}" aria-selected="${i === sel}" aria-label="${esc(colLabel(c, col, i))}" data-i="${i}"><span class="m">${m}</span><span class="k">${esc(k)}</span><span class="o">${o}</span></div>`;
+  }).join('');
+  $('mk-align-more').textContent = r.cols.length > MAX_COLS ? `Showing the first ${fmt(MAX_COLS)} of ${fmt(r.cols.length)} characters here; the result above has all of them.` : '';
+  explain();
+}
+function select(i, focus) {
+  const cols = last ? Math.min(last.cols.length, MAX_COLS) : 0;
+  if (!cols) return;
+  i = Math.max(0, Math.min(cols - 1, i));
+  const old = $('mk-c' + sel); if (old) { old.setAttribute('aria-selected', 'false'); old.tabIndex = -1; }
+  sel = i;
+  const el = $('mk-c' + i); el.setAttribute('aria-selected', 'true'); el.tabIndex = 0;
+  if (focus) el.focus();
+  explain(true);
+}
+$('mk-align').addEventListener('click', (e) => { const el = e.target.closest('.mk-col'); if (el) select(+el.dataset.i, true); });
+$('mk-align').addEventListener('keydown', (e) => {
+  const el = e.target.closest('.mk-col'); if (!el) return;
+  const i = +el.dataset.i, cols = Math.min(last.cols.length, MAX_COLS);
+  // up and down move by a visual row: find the nearest column above or below
+  const rowJump = (dir) => {
+    const r0 = el.getBoundingClientRect(); let best = -1, bd = Infinity;
+    for (let j = i + dir; j >= 0 && j < cols; j += dir) {
+      const r = $('mk-c' + j).getBoundingClientRect();
+      if (dir > 0 ? r.top <= r0.top + 2 : r.top >= r0.top - 2) continue;
+      if (best >= 0 && Math.abs(r.top - $('mk-c' + best).getBoundingClientRect().top) > 2) break;
+      const d = Math.abs(r.left - r0.left); if (d < bd) { bd = d; best = j; }
+    }
+    return best < 0 ? i : best;
+  };
+  const to = { ArrowRight: i + 1, ArrowLeft: i - 1, Home: 0, End: cols - 1, ArrowDown: null, ArrowUp: null }[e.key];
+  if (to === undefined) return;
+  e.preventDefault();
+  select(to === null ? rowJump(e.key === 'ArrowDown' ? 1 : -1) : to, true);
+});
+
+/* ---------- one letter, worked out ---------- */
+function stepText(c, st) {
+  const x = st.inp, k = st.k, r = st.out, dec = c.dir === 'dec';
+  const li = `<var>${L(x)}</var> (${x})`, lr = `<var>${L(r)}</var>`;
+  const sum = (v) => (v > 25 ? `${v} − 26 = ${v - 26}` : v < 0 ? `${v} + 26 = ${v + 26}` : String(v));
+  const kd = `<var>${esc(keyShown(c, k))}</var>`;
+  const rule = c.cipher === 'auto' ? c.auto : c.cipher;
+  if (c.cipher === 'trith') {
+    const o = c.tri.offset, t = c.tri.step, raw = o + st.j * t;
+    const sh = `shift (${o} + ${st.j} × ${t < 0 ? `(${t})` : t} = ${raw}${raw !== k ? ` ≡ ${k}` : ''})`;
+    return dec ? `${li} − ${sh} = ${sum(x - k)} → ${lr}` : `${li} + ${sh} = ${sum(x + k)} → ${lr}`;
+  }
+  if (c.cipher === 'porta') {
+    const pr = k >> 1;
+    return `Key ${kd} uses the <var>${L(2 * pr)}${L(2 * pr + 1)}</var> alphabet (number ${pr} of 0 to 12), where ${li.replace(/ \(\d+\)/, '')} and ${lr} swap places`;
+  }
+  if (c.cipher[0] === 'q') {
+    const q = last.rule, ind = q.PA[mod(q.pCA[k] - q.sh(k), 26)];
+    const slid = `With key ${kd} under plaintext <var>${L(ind)}</var>, the ciphertext alphabet is slid ${q.sh(k)} place${q.sh(k) === 1 ? '' : 's'} along`;
+    return dec ? `${slid}, and ciphertext <var>${L(x)}</var> is under plaintext ${lr}` : `${slid}, and plaintext <var>${L(x)}</var> is over ciphertext ${lr}`;
+  }
+  const kk = `${kd} (${k})`;
+  if (rule === 'beau') return `${kk} − ${li} = ${sum(k - x)} → ${lr}`;
+  const add = (rule === 'varb') === dec; // Vigenère enciphers by adding; variant Beaufort deciphers by adding
+  return add ? `${li} + ${kk} = ${sum(x + k)} → ${lr}` : `${li} − ${kk} = ${sum(x - k)} → ${lr}`;
+}
+function explain(user) {
+  const out = $('mk-explain');
+  if (!last || sel < 0 || !last.cols[sel]) { out.innerHTML = ''; highlight(null); return; }
+  const c = lastCfg, col = last.cols[sel], n = sel + 1;
+  const ch = `“${esc(visible(col.s))}”`;
+  let h = '';
+  if (col.kind === 'letter') {
+    const read = col.how ? ` (read as ${esc(col.steps.map((st) => (st.up ? L(st.inp) : L(st.inp).toLowerCase())).join(''))})` : '';
+    const parts = col.steps.map((st) => {
+      if (st.k === null) return 'no key letter reached this one: the running key ran out, so it shows as _.';
+      let from = '';
+      if (c.cipher === 'auto') {
+        const primer = last.key.vals.length - (last.start - 1);
+        from = st.j < primer ? ` The key comes from the primer.` : ` The key is plaintext letter ${st.j - primer + 1}.`;
+      }
+      return stepText(c, st) + '.' + from;
+    });
+    h = `Character ${n}, ${ch}${read}: ${parts.join(' Then ')}`;
+    highlight(col.steps.find((st) => st.k !== null) || null, user);
+  } else if (col.kind === 'script') {
+    h = `Character ${n}, ${ch}, is from another script, so it stays as it is and the key doesn’t move.`; highlight(null);
+  } else {
+    h = `Character ${n}, ${ch}, isn’t a letter A to Z, so it stays as it is` + (col.skip ? (col.skip.k === null ? ', and it uses up a key position.' : `, and it uses up key letter <var>${esc(keyShown(c, col.skip.k))}</var>.`) : ', and the key doesn’t move.');
+    highlight(null);
+  }
+  out.innerHTML = h;
+}
+
+/* ---------- the table ---------- */
+let tab = null, tabSig = '', grid = [], hl = [];
+function buildTable(c) {
+  const sig = JSON.stringify([c.cipher, c.auto, c.cipher[0] === 'q' ? [c.quag, c.fold] : 0]);
+  if (sig === tabSig) return;
+  tabSig = sig; tab = MK.tableau(c);
+  const corner = c.cipher === 'gron' ? 'digit' : c.cipher === 'trith' ? 'shift' : 'key';
+  let h = `<thead><tr><th class="rl" scope="col">${corner}</th>${tab.head.map((p) => `<th scope="col">${L(p)}</th>`).join('')}</tr></thead><tbody>`;
+  h += tab.rows.map((r) => `<tr><th class="rl" scope="row">${esc(r.label)}</th>${r.cells.map((v) => `<td>${L(v)}</td>`).join('')}</tr>`).join('');
+  $('mk-tab').innerHTML = h + '</tbody>';
+  const t = $('mk-tab');
+  grid = Array.from(t.rows, (tr) => Array.from(tr.cells));
+  hl = [];
+  const rowsWord = { gron: 'digits', trith: 'shifts', porta: 'pairs of key letters' }[c.cipher] || 'key letters';
+  const colsWord = c.cipher[0] === 'q' ? 'plaintext letters, in the order of the plaintext alphabet' : 'plaintext letters';
+  $('mk-tab-help').textContent = `Rows are ${rowsWord}, columns are ${colsWord}, and each cell is the ciphertext letter. To encipher, go along the key’s row to the message letter’s column. To decipher, find the ciphertext letter in the key’s row and read the heading of its column.`;
+}
+function highlight(st, user) {
+  hl.forEach((el) => el.classList.remove('hr', 'hit')); hl = [];
+  const say = $('mk-tab-say');
+  if (!st || !tab) { say.textContent = 'Pick a letter in the letter-by-letter view to light up its row and column.'; return; }
+  const c = lastCfg, plain = c.dir === 'dec' ? st.out : st.inp, ciph = c.dir === 'dec' ? st.inp : st.out;
+  const ri = tab.rowOf(st.k) + 1, ci = tab.colOf(plain) + 1;
+  if (!grid[ri] || !grid[0][ci]) return;
+  for (let i = 0; i < grid.length; i++) { grid[i][ci].classList.add('hr'); hl.push(grid[i][ci]); }
+  for (const el of grid[ri]) { el.classList.add('hr'); hl.push(el); }
+  grid[ri][ci].classList.add('hit');
+  const rowName = c.cipher === 'porta' ? `row ${tab.rows[ri - 1].label}` : c.cipher === 'gron' ? `row ${st.k}` : c.cipher === 'trith' ? `shift ${st.k}` : `row ${L(st.k)}`;
+  say.innerHTML = `Lit up: ${esc(rowName)}, column <var>${L(plain)}</var>, where they meet: <var>${L(ciph)}</var>. Plaintext <var>${L(plain)}</var> ↔ ciphertext <var>${L(ciph)}</var>.`;
+  if (user) { // keep the lit cell in view, inside the table's own scroll box only
+    const w = $('mk-tabwrap'), cell = grid[ri][ci];
+    const left = cell.offsetLeft, right = left + cell.offsetWidth, lab = grid[ri][0].offsetWidth;
+    if (left - lab < w.scrollLeft) w.scrollLeft = Math.max(0, left - lab - 8);
+    else if (right > w.scrollLeft + w.clientWidth) w.scrollLeft = right - w.clientWidth + 8;
+  }
+}
+
+/* ---------- notes and counts ---------- */
+const note = (kind, html) => `<li class="${kind}"><span class="ic" aria-hidden="true">${kind === 'warn' ? '!' : 'i'}</span><span>${html}</span></li>`;
+function update() {
+  save();
+  const c = cfg(); lastCfg = c;
+  const isQ = c.cipher[0] === 'q', isTri = c.cipher === 'trith', isAuto = c.cipher === 'auto', isGron = c.cipher === 'gron';
+  // which controls apply
+  $('mk-auto-wrap').hidden = !isAuto;
+  $('mk-tri-off-wrap').hidden = $('mk-tri-step-wrap').hidden = !isTri;
+  $('mk-quag').hidden = !isQ;
+  $('mk-qkw2-wrap').hidden = c.cipher !== 'q4';
+  $('mk-qkw1-lbl').textContent = { q1: 'Plaintext alphabet keyword', q2: 'Ciphertext alphabet keyword', q3: 'Alphabet keyword (both alphabets)', q4: 'Plaintext alphabet keyword' }[c.cipher] || 'Alphabet keyword';
+  $('mk-key-on').hidden = isTri; $('mk-key-off').hidden = !isTri;
+  $('mk-run').hidden = isAuto;
+  $('mk-key-lbl').textContent = isAuto ? 'Primer (the key that starts it off)' : isGron ? 'Key (digits)' : 'Key';
+  const f = formulaOf(c);
+  $('mk-formula').innerHTML = `<span>Encipher: ${esc(f[0])}</span><span>Decipher: ${esc(f[1])}</span><span>(mod 26)</span>`;
+  $('mk-cipher-help').textContent = HELP[c.cipher];
+
+  const errs = [];
+  if (isTri) {
+    if (intOf($('mk-tri-off').value) === null && $('mk-tri-off').value.trim() !== '') errs.push('The starting shift should be a whole number, such as 0 or 3.');
+    if (intOf($('mk-tri-step').value) === null && $('mk-tri-step').value.trim() !== '') errs.push('The step should be a whole number, such as 1 or −2.');
+  }
+  if (isQ) { // the indicator is one letter; blank means the first letter of the plaintext alphabet
+    const typed = $('mk-qind').value.trim(), iv = typed ? MK.keyValues(typed, c.fold, false).vals : [];
+    if (typed && !iv.length) errs.push(`The indicator should be one letter A to Z, and “${typed}” has none here, so the first letter of the plaintext alphabet is used, as when the box is blank.`);
+    else if (iv.length > 1) errs.push(`The indicator should be one letter, and “${typed}” has ${iv.length}, so only the first, ${MK.L(iv[0])}, is used.`);
+  }
+  const stTyped = $('mk-start').value.trim();
+  if (!isTri && stTyped !== '' && !(intOf(stTyped) >= 1)) errs.push('The starting letter should be a whole number, 1 or more.');
+
+  const r = MK.process($('mk-msg').value, c); last = r;
+  const n = r.key.vals.length, st = r.start, avail = Math.max(0, n - st + 1);
+  const unitWord = isGron ? 'digit' : 'letter';
+  const notes = [];
+  let blank = false;
+  if (!isTri && !n) { blank = r.letters > 0; if (r.letters) notes.push(note('info', isGron ? 'Type a key made of digits to see the result.' : isAuto ? 'Type a primer to see the result.' : 'Type a key to see the result.')); }
+  else if (!isTri && st > n) { blank = true; notes.push(note('warn', `The key has only ${plural(n, unitWord)}, so it can’t start at ${unitWord} ${fmt(st)}.`)); }
+  if (r.missing && !blank) notes.push(note('warn', `The running key is shorter than the message. From ${unitWord} ${fmt(st)} it has ${plural(avail, unitWord)}, but the message needs ${fmt(r.used)}, so the last ${plural(r.missing, 'letter')} have no key and show as _.`));
+  if (r.scripts) notes.push(note('info', `${plural(r.scripts, 'letter')} from other scripts, such as Greek or Cyrillic, ${r.scripts === 1 ? 'was' : 'were'} left in place. They never move the key on.`));
+  const fl = r.folded, fparts = [];
+  if (fl.accent) fparts.push(`${fmt(fl.accent)} accented`); if (fl.sz) fparts.push(`${fmt(fl.sz)} ß`); if (fl.lig) fparts.push(`${fmt(fl.lig)} Æ, Œ or ligature`); if (fl.fancy) fparts.push(`${fmt(fl.fancy)} fancy`);
+  if (fparts.length) notes.push(note('info', `Read as plain letters: ${fparts.join(', ')}.`));
+  if (isAuto && c.nonl === 'move' && r.others) notes.push(note('info', 'In autokey the key comes from the message’s letters, so spaces and punctuation don’t move it on, whichever choice is made under What counts as a letter.'));
+  if (isGron && r.key.skipped) notes.push(note('info', `Gronsfeld uses only the key’s digits, so its ${plural(r.key.skipped, 'letter')} ${r.key.skipped === 1 ? 'was' : 'were'} skipped.`));
+  if (MK.RECIPROCAL[c.cipher] && r.letters) notes.push(note('info', `${MK.CIPHERS[c.cipher]} undoes itself: enciphering and deciphering give the same result.`));
+  errs.forEach((e) => notes.unshift(`<li class="bad"><span class="ic" aria-hidden="true">!</span><span>${esc(e)}</span></li>`));
+  $('mk-notes').innerHTML = notes.join('');
+
+  // message counts
+  const verb = c.dir === 'dec' ? 'decipher' : 'encipher';
+  const otherSay = r.others ? (c.nonl === 'drop' ? `${plural(r.others, 'other character')} will be removed.` : `${plural(r.others, 'other character')} ${r.others === 1 ? 'stays' : 'stay'} in place${c.nonl === 'move' && !isAuto ? ', each moving the key on' : ', not moving the key'}.`) : '';
+  $('mk-msg-stats').textContent = r.letters || r.others || r.scripts ? `${plural(r.letters, 'letter')} to ${verb}. ${otherSay}` : '';
+
+  // key counts
+  if (!isTri) {
+    const kv = r.key;
+    let ks = '';
+    if (!n) ks = isGron && kv.skipped ? 'No digits in the key yet.' : '';
+    else if (isAuto) ks = `The primer has ${plural(avail, 'letter')}${st > 1 ? ` from letter ${fmt(st)}` : ''}; after it, the plaintext’s own letters carry on as the key.`;
+    else if (c.repeat) ks = `The key has ${plural(n, unitWord)}, repeating every ${fmt(n)}${st > 1 && st <= n ? `, starting at ${unitWord} ${fmt(st)}` : ''}.`;
+    else ks = `The key has ${plural(n, unitWord)}. From ${unitWord} ${fmt(st)}, ${fmt(avail)} ${avail === 1 ? 'is' : 'are'} left${r.used ? `, and the message needs ${fmt(r.used)}` : ''}.`;
+    $('mk-key-stats').textContent = ks;
+    $('mk-start').max = String(Math.max(1, n));
+    if (n && st <= n) {
+      const a = Math.max(0, st - 1 - 12), shown = kv.shown;
+      const before = shown.slice(a, st - 1).join(''), after = shown.slice(st, st + 47).join('');
+      $('mk-keyview').innerHTML = `${a > 0 ? '<span class="dim">…</span>' : ''}<span class="dim">${esc(before)}</span><mark>${esc(shown[st - 1])}</mark>${esc(after)}${st + 47 < n ? '<span class="dim">…</span>' : ''}`;
+      $('mk-keyview').setAttribute('aria-label', `The key from ${unitWord} ${st}: ${shown.slice(st - 1, st + 47).join('')}`);
+    } else { $('mk-keyview').textContent = ''; $('mk-keyview').removeAttribute('aria-label'); }
+  }
+
+  // Quagmire alphabets
+  if (isQ) {
+    const q = r.rule;
+    $('mk-alpha').innerHTML = `<span class="al">Plaintext</span><span class="ab">${q.PA.map(L).join('')}</span><span class="al">Ciphertext</span><span class="ab">${q.CA.map(L).join('')}</span>`;
+  }
+
+  $('mk-out').textContent = blank ? '' : r.text;
+  mbFrom = blank ? '' : r.text; mbCompute();
+  clearTimeout(update.t);
+  update.t = setTimeout(() => { $('mk-status').textContent = blank || !r.text ? '' : `Result ready: ${plural(r.letters, 'letter')}.`; }, 900);
+  buildTable(c);
+  if (blank) { last = Object.assign({}, r, { cols: [] }); $('mk-align').innerHTML = ''; $('mk-align-more').textContent = ''; explain(); return; }
+  renderAlign(c, r);
+}
+let tId = 0;
+const soon = () => { clearTimeout(tId); tId = setTimeout(update, $('mk-msg').value.length + $('mk-key').value.length > 4000 ? 150 : 30); };
+// the example's note stays only while the solver tries its suggestion (what counts as a letter); any other change ends it
+const leaveExample = () => { $('mk-exnote').hidden = true; };
+['mk-msg', 'mk-key', 'mk-start', 'mk-tri-off', 'mk-tri-step', 'mk-qkw1', 'mk-qkw2', 'mk-qind'].forEach((id) => $(id).addEventListener('input', () => { leaveExample(); soon(); }));
+['mk-cipher', 'mk-auto', 'mk-f-accent', 'mk-f-sz', 'mk-f-lig', 'mk-f-fancy'].forEach((id) => $(id).addEventListener('change', () => { leaveExample(); update(); }));
+document.querySelectorAll('input[name="mk-dir"], input[name="mk-run"]').forEach((el) => el.addEventListener('change', () => { leaveExample(); update(); }));
+document.querySelectorAll('input[name="mk-nonl"]').forEach((el) => el.addEventListener('change', update));
+
+/* ---------- copy and swap ---------- */
+$('mk-copy').addEventListener('click', () => {
+  const b = $('mk-copy'), t = $('mk-out').textContent;
+  if (!t) return;
+  const done = (msg) => { b.textContent = msg; clearTimeout(b._t); b._t = setTimeout(() => { b.textContent = 'Copy'; }, 1400); };
+  const fallback = () => { const r = document.createRange(); r.selectNodeContents($('mk-out')); const s = getSelection(); s.removeAllRanges(); s.addRange(r); done('Selected: copy it'); };
+  if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(t).then(() => done('Copied'), fallback); else fallback();
+});
+$('mk-swap').addEventListener('click', () => {
+  const t = $('mk-out').textContent; if (!t) return;
+  $('mk-msg').value = t;
+  setRadio('mk-dir', radio('mk-dir') === 'dec' ? 'enc' : 'dec');
+  $('mk-exnote').hidden = true;
+  update();
+  $('mk-msg').focus();
+});
+
+/* ---------- monkey business: a chain of steps on the result, or on the solver's own text ---------- */
+const MB_ORDER = [['Pick out', ['nth', 'first', 'last', 'lengths']], ['Rearrange', ['reverse', 'columns', 'blocks', 'sort']],
+  ['Tidy', ['remove', 'case', 'dedupe']], ['Convert', ['caesar', 'atbash', 'a1z26', 'num2let', 'tocodes', 'fromcodes', 'tomorse', 'frommorse']], ['Look', ['counts']]];
+const MB_SHOW = 20000; // characters shown in one step's box; Copy and the Use buttons always take all of it
+let chain = [], mbNext = 1, mbFrom = '', mbRes = [];
+$('mb-pick').innerHTML = MB_ORDER.map(([g, ids]) => `<optgroup label="${esc(g)}">${ids.map((id) => `<option value="${id}">${esc(MKC.STEPS[id].name)}</option>`).join('')}</optgroup>`).join('');
+const mbDefaults = (type) => Object.fromEntries(MKC.STEPS[type].opts.map((op) => [op.k, op.def]));
+const mbStep = (type, o, on) => ({ id: mbNext++, type, on: on !== false, o: Object.assign(mbDefaults(type), o || {}) });
+const mbSay = (t) => { const s = $('mb-status'); s.textContent = ''; setTimeout(() => { s.textContent = t; }, 30); };
+const mbName = (s) => MKC.STEPS[s.type].name;
+
+function mbOptHTML(s, op) {
+  const v = s.o[op.k], hid = op.when && s.o[op.when[0]] !== op.when[1] ? ' hidden' : '';
+  if (op.type === 'check') return `<label class="mb-check"${hid}><input type="checkbox" data-k="${op.k}"${v ? ' checked' : ''}> ${esc(op.label)}</label>`;
+  if (op.type === 'select') return `<label${hid}>${esc(op.label)} <select data-k="${op.k}">${op.choices.map(([c, t]) => `<option value="${c}"${c === v ? ' selected' : ''}>${esc(t)}</option>`).join('')}</select></label>`;
+  return `<label${hid}>${esc(op.label)} <input type="text" inputmode="numeric" autocomplete="off" data-k="${op.k}" value="${esc(v)}"></label>`;
+}
+function mbCardHTML(s, i) {
+  const d = MKC.STEPS[s.type], n = i + 1, last = i === chain.length - 1, nm = esc(d.name);
+  return `<li class="mb-step${s.on ? '' : ' off'}" id="mb-s${s.id}" data-id="${s.id}" aria-labelledby="mb-h${s.id}">
+  <div class="mb-head"><span class="mb-n" aria-hidden="true">${n}</span><h3 class="mb-name" id="mb-h${s.id}"><span class="sr">Step ${n}: </span>${nm}</h3>
+    <label class="mb-on"><input type="checkbox" data-act="on"${s.on ? ' checked' : ''}> On</label></div>
+  <div class="mb-tools">
+    <button type="button" class="btn small" data-act="up" aria-label="Move step ${n}, ${nm}, up"${i === 0 ? ' aria-disabled="true"' : ''}>↑ Up</button>
+    <button type="button" class="btn small" data-act="down" aria-label="Move step ${n}, ${nm}, down"${last ? ' aria-disabled="true"' : ''}>↓ Down</button>
+    <button type="button" class="btn small" data-act="remove" aria-label="Remove step ${n}, ${nm}">Remove</button>
+  </div>
+  <p class="help">${esc(d.help)}</p>
+  ${d.opts.length ? `<div class="mb-opts">${d.opts.map((op) => mbOptHTML(s, op)).join('')}</div>` : ''}
+  <div class="mb-res" id="mb-r${s.id}"></div>
+  <div class="btnrow mb-btns">
+    <button type="button" class="btn small" data-act="msg" aria-label="Use step ${n}’s result as the message">Use as the message</button>
+    <button type="button" class="btn small" data-act="key" aria-label="Use step ${n}’s result as the key">Use as the key</button>
+    <button type="button" class="btn small" data-act="copy" aria-label="Copy step ${n}’s result">Copy</button>
+  </div>
+</li>`;
+}
+function mbRender(focus) { // focus: { id, sel } puts the focus back where it was after the cards are rebuilt
+  $('mb-steps').innerHTML = chain.map(mbCardHTML).join('');
+  $('mb-none').hidden = chain.length > 0;
+  $('mb-clear').hidden = chain.length === 0; mbClearArm(false);
+  mbCompute();
+  if (focus) { const el = focus.id ? document.querySelector(`#mb-s${focus.id} ${focus.sel}`) : $(focus.el); if (el) el.focus(); }
+}
+const mbNoteHTML = (nt) => {
+  const [kind, text, list, after] = nt;
+  const items = list ? ' ' + list.items.map((x) => `<code class="mb-item">${esc(x)}</code>`).join(' ') + (list.more ? ` … and ${fmt(list.more)} more` : '') : '';
+  return `<li class="${kind}"><span class="ic" aria-hidden="true">${kind === 'info' ? 'i' : '!'}</span><span>${esc(text)}${items}${after ? ' ' + esc(after) : ''}</span></li>`;
+};
+const mbShown = (t) => (t.length > MB_SHOW ? t.slice(0, MB_SHOW) : t);
+function mbView(v, s) {
+  if (v.kind === 'caesar') {
+    const cut = (t) => (t.length > 2000 ? esc(t.slice(0, 2000)) + '<span class="mb-dim"> …</span>' : esc(t));
+    return `<ol class="mb-shifts" aria-label="All 25 shifts, in order">${v.rows.map((r) => `<li${r.k === v.pick ? ' class="pick"' : ''}><span class="mb-k">${r.k}</span><span class="mb-t">${cut(r.text)}</span></li>`).join('')}</ol>`;
+  }
+  if (v.kind === 'grid') {
+    const R = Math.min(v.grid.length, 60), C = v.grid.length ? Math.min(v.grid[0].length, 60) : 0;
+    const cell = (g) => (g === null ? '<td class="e"></td>' : `<td${/^\s/u.test(g) ? ' class="ws"' : ''}>${esc(visible(g))}</td>`);
+    const rows = v.grid.slice(0, R).map((row) => `<tr>${row.slice(0, C).map(cell).join('')}</tr>`).join('');
+    const more = v.grid.length > R || (v.grid[0] && v.grid[0].length > C) ? `<p class="help">Showing ${fmt(R)} rows and ${fmt(C)} columns of the block; the result has all of it.</p>` : '';
+    return `<p class="mb-cap">${v.dir === 'rows' ? 'Written along the rows, read down the columns:' : 'Written down the columns, read along the rows:'}</p>
+      <div class="mb-gridwrap" tabindex="0" role="region" aria-label="Step ${chain.indexOf(s) + 1}’s block of letters; scroll sideways if it’s wide"><table class="mb-grid">${rows}</table></div>${more}`;
+  }
+  if (v.kind === 'counts') {
+    const max = Math.max(1, ...v.rows.map((r) => r.n)), rows = v.rows.slice(0, 300);
+    const nm = (c) => (c === '\t' ? 'tab' : /^\s/u.test(c) ? 'blank' : c);
+    return `<p class="mb-cap">${fmt(v.total)} counted:</p><ul class="mb-counts">${rows.map((r) => {
+      const pc = v.total ? (100 * r.n / v.total).toFixed(1) + '%' : '';
+      return `<li aria-label="${esc(nm(r.ch))}: ${fmt(r.n)}${pc ? `, ${pc}` : ''}"><span class="ch">${esc(nm(r.ch))}</span><span class="n">${fmt(r.n)}</span><span class="pc">${pc}</span><span class="bar" aria-hidden="true"><i style="width:${(100 * r.n / max).toFixed(1)}%"></i></span></li>`;
+    }).join('')}</ul>${v.rows.length > 300 ? `<p class="help">Showing 300 of ${fmt(v.rows.length)} different characters.</p>` : ''}`;
+  }
+  return '';
+}
+function mbCompute() {
+  const own = radio('mb-src') === 'own';
+  $('mb-own-wrap').hidden = !own;
+  const src = own ? $('mb-own').value : mbFrom;
+  $('mb-src-say').textContent = own ? '' : (src ? `The steps start from the result above, ${plural(Array.from(src).length, 'character')}, and follow it as it changes.` : 'The steps start from the result above, which is empty for now.');
+  mbRes = MKC.chain(src, chain);
+  chain.forEach((s, i) => {
+    const box = $('mb-r' + s.id); if (!box) return;
+    const r = mbRes[i]; let h = '';
+    if (r.blockedBy) h = `<p class="mb-state">Waiting: step ${r.blockedBy} has a setting to fix.</p>`;
+    else if (r.errs.length) h = `<ul class="checks">${r.errs.map((e) => `<li class="bad"><span class="ic" aria-hidden="true">!</span><span>${esc(e)}</span></li>`).join('')}</ul>`;
+    else if (r.off) h = '<p class="mb-state">Off: the text goes on to the next step unchanged.</p>';
+    else if (r.input === '') h = `<p class="mb-state">${i ? 'Nothing to work on: the text coming in is empty.' : 'Nothing to work on yet.'}</p>`;
+    else {
+      const notes = r.notes.slice();
+      if (r.markedBy) notes.unshift(['info', `The text coming in has ? marks from step ${r.markedBy}, where something couldn’t be converted.`]);
+      const v = r.view, listOnly = v && v.kind === 'caesar' && !v.pick, passOn = v && v.kind === 'counts';
+      if (!listOnly && !passOn) h += `<div class="mb-out" role="region" aria-label="Step ${i + 1}’s result">${esc(mbShown(r.text))}</div>`;
+      if (passOn) h += '<p class="mb-state">The text goes on to the next step unchanged.</p>';
+      if (r.text.length > MB_SHOW && !listOnly) h += `<p class="help">Showing the first ${fmt(MB_SHOW)} characters; Copy and the Use buttons take all ${fmt(r.text.length)}.</p>`;
+      if (notes.length) h += `<ul class="checks">${notes.map(mbNoteHTML).join('')}</ul>`;
+      if (v) h += mbView(v, s);
+    }
+    box.innerHTML = h;
+    const none = r.text === null;
+    box.closest('.mb-step').querySelectorAll('[data-act="msg"], [data-act="key"], [data-act="copy"]').forEach((b) => { if (none) b.setAttribute('aria-disabled', 'true'); else b.removeAttribute('aria-disabled'); });
+  });
+}
+const mbIndex = (el) => { const li = el.closest('.mb-step'); return li ? chain.findIndex((s) => s.id === +li.dataset.id) : -1; };
+function mbMove(i, by, sel) {
+  const j = i + by; if (i < 0 || j < 0 || j >= chain.length) return false;
+  const s = chain[i]; chain.splice(i, 1); chain.splice(j, 0, s);
+  mbRender({ id: s.id, sel }); save();
+  mbSay(`Moved ${mbName(s)} to step ${j + 1} of ${chain.length}.`);
+  return true;
+}
+function mbCopy(btn, text, i) {
+  const done = (m) => { btn.textContent = m; clearTimeout(btn._t); btn._t = setTimeout(() => { btn.textContent = 'Copy'; }, 1400); };
+  const fallback = () => { const box = $('mb-r' + chain[i].id).querySelector('.mb-out, .mb-shifts'); if (!box) return done('Can’t copy here'); const r = document.createRange(); r.selectNodeContents(box); const s = getSelection(); s.removeAllRanges(); s.addRange(r); done('Selected: copy it'); };
+  if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(text).then(() => done('Copied'), fallback); else fallback();
+}
+$('mb-steps').addEventListener('click', (e) => {
+  const b = e.target.closest('button[data-act]'); if (!b) return;
+  const i = mbIndex(b); if (i < 0) return;
+  const act = b.dataset.act, s = chain[i];
+  if (b.getAttribute('aria-disabled') === 'true') return;
+  if (act === 'up' || act === 'down') { mbMove(i, act === 'up' ? -1 : 1, `[data-act="${act}"]`); return; }
+  if (act === 'remove') {
+    chain.splice(i, 1);
+    const next = chain[i] || chain[i - 1];
+    mbRender(next ? { id: next.id, sel: '[data-act="remove"]' } : { el: 'mb-pick' }); save();
+    mbSay(`Removed step ${i + 1}, ${mbName(s)}. ${chain.length ? `${plural(chain.length, 'step')} left.` : 'No steps left.'}`);
+    return;
+  }
+  const text = mbRes[i] && mbRes[i].text; if (text === null || text === undefined) return;
+  if (act === 'copy') { mbCopy(b, text, i); return; }
+  if (act === 'msg' || act === 'key') {
+    const to = act === 'msg' ? 'mk-msg' : 'mk-key';
+    $(to).value = text; leaveExample(); update(); $(to).focus();
+    mbSay(`Step ${i + 1}’s result is now the ${act === 'msg' ? 'message' : 'key'}.`);
+  }
+});
+$('mb-steps').addEventListener('keydown', (e) => { // Alt with an arrow moves the step whose button has focus
+  if (!e.altKey || (e.key !== 'ArrowUp' && e.key !== 'ArrowDown')) return;
+  const t = e.target; if (!(t.tagName === 'BUTTON' || (t.tagName === 'INPUT' && t.type === 'checkbox'))) return;
+  const i = mbIndex(t); if (i < 0) return;
+  e.preventDefault();
+  const sel = t.dataset.act ? `[data-act="${t.dataset.act}"]` : `[data-k="${t.dataset.k}"]`;
+  if (!mbMove(i, e.key === 'ArrowUp' ? -1 : 1, sel)) mbSay(e.key === 'ArrowUp' ? `${mbName(chain[i])} is already the first step.` : `${mbName(chain[i])} is already the last step.`);
+});
+const mbSetting = (e) => {
+  const el = e.target, i = mbIndex(el); if (i < 0) return;
+  const s = chain[i];
+  if (el.dataset.act === 'on') { s.on = el.checked; el.closest('.mb-step').classList.toggle('off', !s.on); mbSay(`${mbName(s)} is ${s.on ? 'on' : 'off'}.`); }
+  else if (el.dataset.k) {
+    s.o[el.dataset.k] = el.type === 'checkbox' ? el.checked : el.value;
+    MKC.STEPS[s.type].opts.forEach((op) => { if (op.when) { const w = el.closest('.mb-step').querySelector(`[data-k="${op.k}"]`).closest('label'); w.hidden = s.o[op.when[0]] !== op.when[1]; } });
+  } else return;
+  mbCompute(); save();
+};
+$('mb-steps').addEventListener('input', (e) => { if (e.target.tagName === 'INPUT' && e.target.type === 'text') mbSetting(e); });
+$('mb-steps').addEventListener('change', (e) => { if (e.target.tagName === 'SELECT' || e.target.type === 'checkbox') mbSetting(e); });
+$('mb-add').addEventListener('click', () => {
+  const s = mbStep($('mb-pick').value); chain.push(s);
+  mbRender({ id: s.id, sel: '[data-act="on"]' }); save();
+  mbSay(`Added step ${chain.length}, ${mbName(s)}.`);
+});
+function mbClearArm(on) { const b = $('mb-clear'); b.dataset.armed = on ? '1' : ''; b.textContent = on ? 'Press again to remove them all' : 'Remove all steps'; }
+$('mb-clear').addEventListener('click', () => {
+  if (!$('mb-clear').dataset.armed) { mbClearArm(true); return; }
+  chain = []; mbRender({ el: 'mb-pick' }); save(); mbSay('Removed every step.');
+});
+$('mb-clear').addEventListener('blur', () => mbClearArm(false));
+document.querySelectorAll('input[name="mb-src"]').forEach((el) => el.addEventListener('change', () => { mbCompute(); save(); }));
+$('mb-own').addEventListener('input', () => { clearTimeout(mbCompute.t); mbCompute.t = setTimeout(() => { mbCompute(); save(); }, 40); });
+function mbLoad(list) { // saved steps are checked against what the page knows; anything else is dropped
+  if (!Array.isArray(list)) return;
+  chain = list.filter((x) => x && typeof x.type === 'string' && Object.prototype.hasOwnProperty.call(MKC.STEPS, x.type)).slice(0, 50).map((x) => {
+    const o = {};
+    for (const op of MKC.STEPS[x.type].opts) { const v = x.o && x.o[op.k]; o[op.k] = op.type === 'check' ? (typeof v === 'boolean' ? v : op.def) : typeof v === 'string' ? v.slice(0, 40) : op.def; }
+    return mbStep(x.type, o, x.on !== false);
+  });
+}
+
+/* ---------- the monkey ---------- */
+const FACTS = [
+  'A monkey with a key: a monKEY. Tap me for a fact.',
+  'The cipher now called Vigenère was first described by Giovan Battista Bellaso, in 1553. Blaise de Vigenère’s own book of 1586 described a stronger one: an autokey.',
+  'It was long called le chiffre indéchiffrable: the indecipherable cipher.',
+  'Friedrich Kasiski published a general way to break it in 1863. Charles Babbage had broken it some years earlier, but never published how.',
+  'Johannes Trithemius’s tabula recta was printed in his book Polygraphia in 1518, two years after he died.',
+  'Giovanni Battista della Porta described his cipher in De Furtivis Literarum Notis, in 1563.',
+  'The Beaufort cipher is named after Sir Francis Beaufort, the admiral whose name is also on the Beaufort wind scale.',
+  'Beaufort and Porta both undo themselves: the same key enciphers and deciphers.',
+  'Gronsfeld is Vigenère with a key of digits, so it only ever shifts a letter by 0 to 9 places.',
+  'A key as long as the message, truly random and never used again, turns Vigenère into a one-time pad, which can’t be broken.',
+  'In autokey, once the primer runs out, the message becomes its own key.',
+  'The monkeys with tails that can grip a branch, such as spider monkeys and howler monkeys, all live in Central and South America. No Old World monkey has one.',
+  'Apes, such as chimpanzees and gorillas, aren’t monkeys. One easy way to tell: apes have no tail.',
+  'The pygmy marmoset, from the Amazon, is the smallest monkey: an adult weighs about 100 grams.',
+  'The mandrill is the largest monkey. A big male can weigh over 30 kilograms.',
+  'Some capuchin monkeys crack nuts open with stones, using a flat rock as an anvil.',
+  'Japanese macaques in the mountains of Nagano bathe in hot springs in winter.',
+  'In 1913, Émile Borel imagined monkeys typing at random. Given endless time, they would almost surely type any text at all. A key would save them some time.'
+];
+let factI = 0;
+$('mk-monkey').addEventListener('click', () => {
+  factI = (factI + 1) % FACTS.length;
+  $('mk-says').textContent = FACTS[factI];
+  const m = $('mk-monkey');
+  if (reduced()) return;
+  m.classList.remove('swing'); void m.getBoundingClientRect(); m.classList.add('swing');
+});
+$('mk-monkey').addEventListener('animationend', (e) => { if (e.animationName === 'mk-swing') $('mk-monkey').classList.remove('swing'); });
+
+/* ---------- remember the solver's own work, on this device only ---------- */
+const KEY = 'aft.monkeying-around';
+const TEXT = ['mk-msg', 'mk-key', 'mk-start', 'mk-tri-off', 'mk-tri-step', 'mk-qkw1', 'mk-qkw2', 'mk-qind'];
+const SELECT = ['mk-cipher', 'mk-auto'], CHECK = ['mk-f-accent', 'mk-f-sz', 'mk-f-lig', 'mk-f-fancy'], RADIO = ['mk-dir', 'mk-run', 'mk-nonl'];
+function save() {
+  const o = {};
+  TEXT.concat(SELECT).forEach((id) => { o[id] = $(id).value; });
+  CHECK.forEach((id) => { o[id] = $(id).checked; });
+  RADIO.forEach((n) => { o[n] = radio(n); });
+  o.mbSrc = radio('mb-src'); o.mbOwn = $('mb-own').value;
+  o.chain = chain.map((s) => ({ type: s.type, on: s.on, o: s.o }));
+  try { localStorage.setItem(KEY, JSON.stringify(o)); } catch (e) { /* storage unavailable */ }
+}
+function load() {
+  let o = {};
+  try { o = JSON.parse(localStorage.getItem(KEY) || '{}') || {}; } catch (e) { o = {}; }
+  TEXT.forEach((id) => { if (typeof o[id] === 'string') $(id).value = o[id]; });
+  SELECT.forEach((id) => { if (typeof o[id] === 'string' && [...$(id).options].some((x) => x.value === o[id])) $(id).value = o[id]; });
+  CHECK.forEach((id) => { if (typeof o[id] === 'boolean') $(id).checked = o[id]; });
+  RADIO.forEach((n) => { if (typeof o[n] === 'string') setRadio(n, o[n]); });
+  if (o.mbSrc === 'own' || o.mbSrc === 'result') setRadio('mb-src', o.mbSrc);
+  if (typeof o.mbOwn === 'string') $('mb-own').value = o.mbOwn;
+  mbLoad(o.chain);
+}
+
+/* ---------- the example: all made up ---------- */
+const EX_KEY = 'Far up the river, where the forest grows so thick that the sun comes down in coins, an old monkey named Juniper kept a ledger of every fruit tree she had ever climbed. She wrote it in a small, careful hand, page after page, and when the rains came she read it aloud to anyone who would sit still long enough to listen.';
+const EX_MSG = 'Ierl Ebw,\nSy, bci wenw sc moi tzu wlhtv kadd okl zkzx ht etzx!\nGhya qaqw dh jbwa, cbl ojiau ekq pyei znswiw.\nOcyt xx wyv iae ear uj lg.';
+$('btn-example').addEventListener('click', () => {
+  $('mk-msg').value = EX_MSG; $('mk-key').value = EX_KEY; $('mk-cipher').value = 'vig'; $('mk-start').value = '1';
+  setRadio('mk-dir', 'dec'); setRadio('mk-run', 'stop'); setRadio('mk-nonl', 'keep');
+  CHECK.forEach((id) => { $(id).checked = true; });
+  chain = [mbStep('first', { of: 'lines' }), mbStep('reverse', { mode: 'all' })]; setRadio('mb-src', 'result');
+  sel = -1; mbRender(); update();
+  $('mk-exnote').hidden = false;
+  $('result').scrollIntoView({ behavior: reduced() ? 'auto' : 'smooth', block: 'start' });
+});
+
+/* ---------- start ---------- */
+load();
+mbRender();
+update();
+})();
+</script>
+</body>
+</html>

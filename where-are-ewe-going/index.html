@@ -1356,7 +1356,8 @@ function typedCells() {
 [1, 2, 3].forEach((n) => $(`code-${n}`).addEventListener('paste', (e) => {
   const t = (e.clipboardData && e.clipboardData.getData('text')) || '';
   const runs = t.match(/(?<!\d)\d{6}(?!\d)/g), all = t.replace(/\D/g, '');
-  const codes = runs && runs.length === 3 ? runs : /^[\d\s\-.,;/|]+$/.test(t.trim()) && all.length === 18 ? all.match(/\d{6}/g) : null;
+  const codes = runs && runs.length === 3 && !/\d{3}/.test(t.replace(/(?<!\d)\d{6}(?!\d)/g, '')) ? runs :   // nothing else that could be a code (labels like Code 1 are fine)
+    /^[\d\s\-.,;/|]+$/.test(t.trim()) && all.length === 18 ? all.match(/\d{6}/g) : null;
   if (!codes) return;   // anything else pastes as usual
   e.preventDefault();
   codes.forEach((c, i) => { state.typed[i] = c; $(`code-${i + 1}`).value = c; });

@@ -5158,7 +5158,7 @@ function shapeProblem(g) {
   if (!g) return '';
   if (g.type === 'GeometryCollection') { for (const x of g.geometries || []) { const w = shapeProblem(x); if (w) return w; } return ''; }
   const c = g.coordinates || [];
-  const same = (p, q) => p.length === q.length && p.every((v, i) => v === q[i]);
+  const same = (p, q) => p.length === q.length && p.every((v, i) => v === q[i] || (v !== v && q[i] !== q[i])); // NaN M or Z values match too
   const line = (l) => (l.length === 1 ? `a line with only one position; a line needs two or more.` : '');
   const ring = (r) => (!r.length ? '' : r.length < 4 ? `a polygon ring with ${r.length} position${r.length === 1 ? '' : 's'}; a ring needs four or more, ending where it starts.`
     : !same(r[0], r[r.length - 1]) ? 'a polygon ring that doesn’t end where it starts, so it isn’t closed.' : '');
@@ -5206,7 +5206,7 @@ function crsOf(code, def, geoFlag, name) {
 function datumOf(crs) {
   if (crs.mode === 'merc' || crs.code === 4326 || crs.code === 4979) return 'WGS 84';
   if (crs.code === 4258 || crs.code === 4937) return 'ETRS89';
-  return crs.code !== null && crs.code !== undefined ? `EPSG:${crs.code}` : `?${crs.label}`;
+  return crs.code !== null && crs.code !== undefined ? `EPSG:${crs.code}` : null; // no code: the datum isn't known
 }
 const R_MERC = 6378137;
 const mercToLL = (x, y) => [x / R_MERC * 180 / Math.PI, (2 * Math.atan(Math.exp(y / R_MERC)) - Math.PI / 2) * 180 / Math.PI];
@@ -5249,7 +5249,9 @@ async function renderMap(e, panel, tok, fmt) {
   for (const o of curOpts.otherEntries || []) if (o && o !== e && viewsFor(o.name).includes('map')) others.push(o); // the other files that have a Map view by name
   const first = main[0].crs;
   const disp = first.mode === 'native' ? { mode: 'native', code: first.code, label: first.label, unit: first.unit, unitM: first.unitM } : { mode: 'll', label: first.label };
-  const fits = (crs) => (disp.mode === 'll' ? crs.mode !== 'native' && datumOf(crs) === datumOf(first) : crs.mode === 'native' && crs.code === disp.code && crs.label === disp.label);
+  // latitude and longitude only on the same known datum; a layer whose datum isn't known is never overlaid on another
+  const fits = (crs, L) => (disp.mode === 'll' ? crs.mode !== 'native' && (L === main[0] || (datumOf(crs) !== null && datumOf(crs) === datumOf(first)))
+    : crs.mode === 'native' && crs.code === disp.code && crs.label === disp.label);
   const hasTab = (id) => curTabs.some((t) => t.key === id);
   const seeAlso = fmt === 'tiff' ? (hasTab('picture:tiff') ? 'The picture’s pixel values are in the Picture view.' : '')
     : fmt === 'gpkg' ? (hasTab('tables:sqlite') ? 'The same features are listed in the Tables view.' : '')
@@ -5271,8 +5273,10 @@ async function renderMap(e, panel, tok, fmt) {
   const skipped = [];
   /* Turn a source layer into something drawable on this map: coordinates in map units (degrees, or the file's own units). */
   function prep(entry, L) {
-    if (!fits(L.crs)) return { why: disp.mode === 'll' && L.crs.mode !== 'native'
-      ? `It uses ${L.crs.label}, which may be on a different datum from this map’s ${disp.label}, so the same place could be drawn tens of metres or more apart; it isn’t drawn here.`
+    if (!fits(L.crs, L)) return { why: disp.mode === 'll' && L.crs.mode !== 'native'
+      ? (datumOf(L.crs) === null || datumOf(first) === null
+        ? `It uses ${L.crs.label}${datumOf(L.crs) === null ? ', which doesn’t say which datum it is on' : `, and this map’s ${disp.label} doesn’t say which datum it is on`}, so the two can’t be lined up: the same place could be drawn tens of metres or more apart. It isn’t drawn here.`
+        : `It uses ${L.crs.label}, which may be on a different datum from this map’s ${disp.label}, so the same place could be drawn tens of metres or more apart; it isn’t drawn here.`)
       : `It uses ${L.crs.label}, which can’t be drawn on this map of ${disp.label}.` };
     const conv = disp.mode === 'll' && L.crs.mode === 'merc' ? mercToLL : (x, y) => [x, y];
     const out = { entry, label: L.label, colour: COLOURS[colourN++ % COLOURS.length], feats: [], raster: null, on: true, bad: 0, badWhy: '' };

@@ -536,12 +536,13 @@ table.nums td:last-child{overflow-wrap:anywhere;white-space:normal}
   const CARD = alt(Object.keys(SMALL));
   const SCALE = 'hundred|thousand|million|billion|trillion|dozen|score';
   const SUB = alt(Object.keys(SMALL).concat(Object.keys(ORDS)).filter((w) => (SMALL[w] ?? ORDS[w]) < 100));
-  // words join with a hyphen or any run of spaces or a line break, or with "and" after a hundred, thousand, score and so on (two hundred and thirteen)
-  const SEP = `(?:-\\s*|(?<=(?:${SCALE}))\\s+and\\s+(?=(?:${SUB})\\b)|\\s+)`;
+  // words join with a hyphen or any run of spaces, or with "and" after a hundred, thousand, score and so on (two hundred and thirteen)
+  // a line break joins words only after a hyphen or before hundred, thousand and so on, so a heading ending "Twenty" stays apart from "One night" below it
+  const SEP = `(?:-\\s*|(?<=(?:${SCALE}))\\s+and\\s+(?=(?:${SUB})\\b)|[^\\S\\n]+|\\s+(?=(?:${SCALE})\\b))`;
   // "second" on its own is usually time, so it only counts as "the second" or at the end of a compound (twenty-second)
   const ORD1 = alt(Object.keys(ORDS).filter((w) => w !== 'second'));
   // "a" or "an" counts as one only before a hundred, a thousand, a dozen and so on, not before a twenty-four
-  const NUMWORD = new RegExp(`\\b(?:(?:an?)\\s+(?=(?:${SCALE})\\b))?(?:(?:${CARD})(?:${SEP}(?:${CARD}))*(?:${SEP}(?:${ORD1})|-second)?|(?:${ORD1})|(?<=\\bthe\\s+)second)\\b`, 'gi');
+  const NUMWORD = new RegExp(`\\b(?:(?:an?)\\s+(?=(?:${SCALE})\\b))?(?:(?:${CARD})(?:${SEP}(?:${CARD}))*(?:${SEP}(?:${ORD1})|-\\s*second)?|(?:${ORD1})|(?<=\\bthe\\s+)second)\\b`, 'gi');
   const kind = (v, w) => w === 'dozen' || w === 'score' || v === 100 ? 'hund' : v >= 1000 ? 'scale' : v === 0 || (v >= 10 && v < 20) ? 'teen' : v < 10 ? 'unit' : 'tens';
   // reads a run of number words; a run that is really two numbers ("nineteen twenty-three") comes back as two
   function wordNumbers(raw, at){

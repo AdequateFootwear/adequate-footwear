@@ -1356,8 +1356,10 @@ function typedCells() {
 [1, 2, 3].forEach((n) => $(`code-${n}`).addEventListener('paste', (e) => {
   const t = (e.clipboardData && e.clipboardData.getData('text')) || '';
   const runs = t.match(/(?<!\d)\d{6}(?!\d)/g), all = t.replace(/\D/g, '');
+  // 18 digits in groups that each sit inside one code (123 456 234 567 …, or one run of 18); a group never spans two codes
+  const fits = () => { let at = 0; for (const g of t.match(/\d+/g) || []) { if (Math.floor(at / 6) !== Math.floor((at + g.length - 1) / 6) && g.length !== 18) return false; at += g.length; } return true; };
   const codes = runs && runs.length === 3 && !/\d{3}/.test(t.replace(/(?<!\d)\d{6}(?!\d)/g, '')) ? runs :   // nothing else that could be a code (labels like Code 1 are fine)
-    /^[\d\s\-.,;/|]+$/.test(t.trim()) && all.length === 18 ? all.match(/\d{6}/g) : null;
+    /^[\d\s\-.,;/|]+$/.test(t.trim()) && all.length === 18 && fits() ? all.match(/\d{6}/g) : null;
   if (!codes) return;   // anything else pastes as usual
   e.preventDefault();
   codes.forEach((c, i) => { state.typed[i] = c; $(`code-${i + 1}`).value = c; });

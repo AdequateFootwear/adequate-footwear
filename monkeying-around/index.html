@@ -1387,7 +1387,7 @@ const STEPS = {
       // a letter is compared in its composed form, so e + ◌́ sorts with é, after Z; one with no composed form
       // (q + ◌́) is still outside A to Z, so it goes after the rest rather than among the Q's
       const key = (g) => caseKey(composed(g)), outside = (g) => (isL(g) && pastZ(key(g)) ? 1 : 0);
-      gs.sort((a, b) => outside(a) - outside(b) || cpCmp(key(a), key(b)) || cpCmp(a, b));
+      gs.sort((a, b) => outside(a) - outside(b) || cpCmp(key(a), key(b)) || cpCmp(composed(a), composed(b)) || cpCmp(a, b));
       if (o.order === 'za') gs.reverse();
       return { text: gs.join('') };
     }

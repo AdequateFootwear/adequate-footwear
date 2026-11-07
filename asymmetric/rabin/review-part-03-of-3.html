@@ -1,0 +1,100 @@
+<!-- Review copy: lines 1601-1699 of asymmetric/rabin/index.html, split so Copilot can review it. Not served. -->
+        $('#factors-out').innerHTML = K.valBox('p', 'first prime', pq[0]) + K.valBox('q', 'second prime', pq[1]) + `<p class="explain">Check: <var>p × q</var> gives back <var>n</var> exactly. ${how}</p>`;
+        fC.push(['ok', `<var>n</var> is the product of exactly two primes, ${K.plural(D(pq[0]), 'digit')} and ${K.plural(D(pq[1]), 'digit')} long, as this system expects.`]);
+        for (const [nm, pr] of [['p', pq[0]], ['q', pq[1]]]) {
+          if (pr % 4n === 3n) fC.push(['ok', `<var>${nm}</var> leaves remainder 3 when divided by 4, so its square root comes straight from the Euler shortcut.`]);
+          else fC.push(['info', `<var>${nm}</var> leaves remainder ${pr % 4n} when divided by 4, so the shortcut doesn’t apply to it. The worksheet uses the general method (Tonelli–Shanks) instead and still gets the roots.`]);
+        }
+      } else {
+        $('#factors-out').innerHTML = `<div class="val"><div class="vh"><span class="sym">n</span><span class="formula">=</span></div><output class="num">${K.factorList(factors)}</output></div>`;
+        const cnt = NT.countFactors(factors);
+        if (cnt.length === 2 && cnt.some(([, e]) => e === 2) && cnt.some(([, e]) => e === 1)) fC.push(['bad', '<b>n is one prime squared times another.</b> This system’s key is two <i>different</i> primes multiplied once each. A shape this tidy is unlikely to be a copying slip, so if <var>n</var> matches the puzzle exactly, reread how the puzzle describes its system.']);
+        else fC.push(['bad', `<b>n isn’t two different primes multiplied together</b> (it splits as shown). This system’s key is exactly two primes, so a digit in <var>n</var> is almost certainly wrong. Compare it with the puzzle.`]);
+      }
+    }
+    K.setChecks('#ck-f', fC);
+
+    /* STEP 3: roots */
+    let roots = null;
+    const rC = [];
+    const cOk = c !== undefined && n !== undefined && c < n;
+    if (pq && cOk) {
+      K.ready('#s3');
+      const html = [];
+      const r = {};
+      for (const [nm, pr] of [['p', pq[0]], ['q', pq[1]]]) {
+        const cm = c % pr;
+        const euler = NT.modPow(cm, (pr - 1n) / 2n, pr);
+        if (cm !== 0n && euler !== 1n) {
+          rC.push(['bad', `<b>c isn’t a square modulo ${nm}.</b> Euler’s criterion: <var>c<sup>(${nm}−1)/2</sup> mod ${nm}</var> should be 1 for a square, and here it’s ${euler === pr - 1n ? '<var>' + nm + ' − 1</var> (that is, −1)' : euler}. No message squares to this <var>c</var> under this key. Either <var>c</var> or <var>n</var> has a wrong digit, or this ciphertext wasn’t made by squaring: if both match the puzzle exactly, reread how the puzzle describes its system.`]);
+          continue;
+        }
+        const root = NT.sqrtModP(cm, pr);
+        r[nm] = root;
+        const formula = pr % 4n === 3n ? `= c<sup>(${nm}+1)/4</sup> mod ${nm}` : `= √c mod ${nm} (Tonelli–Shanks)`;
+        html.push(K.valBox('m<sub>' + nm + '</sub>', formula, root, { extra: `<span class="explain">and its negative, <var>${nm} − m<sub>${nm}</sub> = ${pr - root}</var></span>` }));
+        rC.push(['ok', `Check: <var>m<sub>${nm}</sub><sup>2</sup> mod ${nm}</var> equals <var>c mod ${nm}</var>.`]);
+      }
+      $('#roots-out').innerHTML = html.join('');
+      if (r.p !== undefined && r.q !== undefined) roots = r;
+    } else {
+      K.waiting('#s3', !pq ? 'Needs p and q from Step 2.' : 'Needs a c that’s smaller than n: see the note under c in Step 1.');
+      $('#roots-out').innerHTML = '';
+    }
+    K.setChecks('#ck-r', rC);
+
+    /* STEP 4: CRT */
+    let cands = null;
+    const c4 = [];
+    if (roots) {
+      K.ready('#s4');
+      const [p, q] = pq;
+      const eg = NT.egcdSteps(p, q), yp = eg.x, yq = eg.y;
+      const A = yp * p * roots.q, B = yq * q * roots.p;
+      const r = NT.mod(A + B, n), s = NT.mod(A - B, n);
+      cands = [r, n - r, s, n - s];
+      $('#crt-out').innerHTML = `<div class="math">y_p × p + y_q × q = 1, with
+  y_p = ${yp}
+  y_q = ${yq}
+r = (y_p·p·m_q + y_q·q·m_p) mod n
+s = (y_p·p·m_q − y_q·q·m_p) mod n</div>`;
+      $('#euclid').innerHTML = '<thead><tr><th>Divide</th><th>by</th><th>Goes in</th><th>Remainder</th></tr></thead><tbody>' +
+        eg.rows.map((w) => `<tr><td class="num">${w.r0}</td><td class="num">${w.r1}</td><td class="num">${w.q}</td><td class="num">${w.rem}</td></tr>`).join('') + '</tbody>';
+      const names = ['r', 'n − r', 's', 'n − s'];
+      $('#cands').innerHTML = cands.map((v, i) => K.valBox(`#${i + 1}`, names[i], v)).join('');
+      c4.push(cands.every((v) => v * v % n === c) ? ['ok', 'Check: each candidate squared, modulo <var>n</var>, gives back <var>c</var>. All four are valid decryptions, and exactly one is the message.'] : ['bad', 'A candidate didn’t square back to <var>c</var>. That shouldn’t happen; please recheck the inputs.']);
+    } else {
+      K.waiting('#s4', 'Needs both square roots from Step 3.');
+      $('#crt-out').innerHTML = ''; $('#cands').innerHTML = ''; $('#euclid').innerHTML = '';
+    }
+    K.setChecks('#ck-c4', c4);
+
+    /* STEP 5: read */
+    if (cands) {
+      K.ready('#s5');
+      if (!(st.pick >= 0 && st.pick < 4)) st.pick = 0;
+      $('#pick').innerHTML = cands.map((v, i) => `<label><input type="radio" name="pick" value="${i}" ${i === st.pick ? 'checked' : ''}><span><b>Candidate #${i + 1}</b> <span class="num small">${K.esc(v.toString().slice(0, 18))}${D(v) > 18 ? '…' : ''}</span></span></label>`).join('');
+      readMsg(cands[st.pick]);
+    } else K.waiting('#s5', 'Needs the four candidates from Step 4.');
+  }
+
+  /* wiring */
+  for (const id of IDS) $('#in-' + id).addEventListener('input', (ev) => { st[id] = ev.target.value; S.save(); render(); });
+  $('#pick').addEventListener('change', (ev) => { if (ev.target.name === 'pick') { st.pick = +ev.target.value; S.save(); render(); } });
+  document.addEventListener('click', (ev) => {
+    if (ev.target.closest('[data-stop="prog-f"]')) fslot.stop();
+    if (ev.target.id === 'retry-f') { fslot.retry(); render(); K.refocus('[data-stop="prog-f"]', '#s2'); }
+  });
+  const fill = () => { for (const id of IDS) $('#in-' + id).value = st[id]; if (st.p || st.q) $('#more-known').open = true; };
+  $('#btn-example').addEventListener('click', () => { Object.assign(st, EXAMPLE, { pick:3, cv:{ mode:'ascii3', align:'left', pad:true, skip:0 } }); fslot.clear(); fill(); S.save(); render(); K.toast('Example loaded'); });
+  $('#btn-clear').addEventListener('click', () => {
+    if (IDS.some((id) => st[id]) && !confirm('Clear every box on this page?')) return;
+    Object.assign(st, JSON.parse(JSON.stringify(DEF))); fslot.clear(); fill(); S.save(); render();
+  });
+  if (!st.loaded) $('#howto').open = true;
+  fill(); render();
+})();
+</script>
+</body>
+</html>
+

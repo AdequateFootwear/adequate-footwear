@@ -1970,7 +1970,7 @@ function parse(src, isVar) {
     const tk = next();
     if (tk.t === 'num') {
       const nx = toks[k];
-      if (tk.rep) say(`${tk.text} is read as a repeating decimal (the digits in brackets repeat), which is exactly ${tk.v.d === 1n ? tk.v.n : tk.v.n + '/' + tk.v.d}.` + (tk.rep[0].endsWith('.') ? '' : ` For ${tk.rep[0]} × ${tk.rep[1]}, write the ×.`));
+      if (tk.rep) say(`${tk.text} is read as a repeating decimal (the digits in brackets repeat), which is exactly ${tk.v.d === 1n ? tk.v.n : tk.v.n + '/' + tk.v.d}.` + ` To multiply instead, this calculator needs an operator: write ${tk.rep[0].replace(/\.$/, '')} × ${tk.rep[1]}.`);
       if (tk.whole && nx && nx.t === 'id' && adj(tk, nx) && /^[CP]\d+$/.test(nx.v)) { // 5C2, 5P2
         const which = nx.v[0] === 'C' ? 'nCr' : 'nPr', r = nx.v.slice(1);
         if (!isV(nx.v)) {

@@ -2247,7 +2247,7 @@ function parse(src, isVar) {
     const tk = next();
     if (tk.t === 'num') {
       const nx = toks[k];
-      if (tk.rep) say(`${tk.text} is read as a repeating decimal (the digits in brackets repeat), which is exactly ${tk.v.d === 1n ? tk.v.n : tk.v.n + '/' + tk.v.d}.` + (tk.rep[0].endsWith('.') ? '' : ` For ${tk.rep[0]} × ${tk.rep[1]}, write the ×.`));
+      if (tk.rep) say(`${tk.text} is read as a repeating decimal (the digits in brackets repeat), which is exactly ${tk.v.d === 1n ? tk.v.n : tk.v.n + '/' + tk.v.d}.` + ` To multiply instead, this calculator needs an operator: write ${tk.rep[0].replace(/\.$/, '')} × ${tk.rep[1]}.`);
       if (tk.whole && nx && nx.t === 'id' && adj(tk, nx) && /^[CP]\d+$/.test(nx.v)) { // 5C2, 5P2
         const which = nx.v[0] === 'C' ? 'nCr' : 'nPr', r = nx.v.slice(1);
         if (!isV(nx.v)) {
@@ -3635,7 +3635,7 @@ const DIR = [
   { g: 'num', l: '3.14', n: 'Decimal point', c: '3.14', t: '.', a: [], o: 'A point, not a comma: commas separate a function’s values.', k: 'decimal point comma' },
   { g: 'num', l: '1.5 × 10<sup>3</sup>', n: 'Powers of ten', c: '1.5e3', t: '@e‸', a: ['1.5E3', '1.5 × 10^3'], o: 'The e goes straight after the number.', k: 'scientific notation exponent standard form x10 e notation' },
   { g: 'num', l: '1.618…', n: 'A value known only to its digits', c: '1.618…', t: '@…‸', a: ['1.618...'], o: 'Results show only the digits it can vouch for.', k: 'approximate ellipsis dots truncated rounded' },
-  { g: 'num', l: '0.<span class="dx-over">3</span>, 0.(3)', n: 'Repeating decimal', c: '0.(3)', t: '@.(‸)', a: ['0.1(6)'], o: 'The digits in brackets repeat, as results show them: 0.(3) is 1/3, and 0.1(6) is 1/6.', k: 'repeating recurring decimal period bar dot' },
+  { g: 'num', l: '0.<span class="dx-over">3</span>, 0.(3)', n: 'Repeating decimal', c: '0.(3)', t: '@.(‸)', a: ['0.1(6)'], o: 'The digits in brackets repeat, as results show them: 0.(3) is 1/3, and 0.1(6) is 1/6. To multiply a decimal by a bracket, write the ×: 2.5 × (3).', k: 'repeating recurring decimal period bar dot' },
   { g: 'num', l: '<span class="dx-frac"><span>1</span><span>2</span></span>', n: 'Fraction', c: '1/2', t: '@/‸', a: ['1 ÷ 2'], o: 'Fractions stay exact: 1/3 + 1/6 is 1/2.', k: 'fraction half over ½ 1/2' },
   { g: 'ar', l: 'a + b', n: 'Add', c: 'a + b', t: ' + ', a: [], o: '', k: 'plus add sum' },
   { g: 'ar', l: 'a − b', n: 'Subtract', c: 'a - b', t: ' - ', a: ['a − b'], o: '', k: 'minus subtract difference negative' },

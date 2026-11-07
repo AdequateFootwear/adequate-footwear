@@ -1346,9 +1346,20 @@ function typedCells() {
 [1, 2, 3].forEach((n) => $(`code-${n}`).addEventListener('input', () => {
   const v = $(`code-${n}`).value;
   const digits = v.replace(/[^0-9]/g, '');
-  if (n === 1 && digits.length === 18) { // all three pasted into the first box: they replace whatever the boxes held
+  if (n === 1 && digits.length === 18 && !$('code-2').value && !$('code-3').value) { // all three typed into the first box
     [0, 1, 2].forEach((i) => { state.typed[i] = digits.slice(i * 6, i * 6 + 6); $(`code-${i + 1}`).value = state.typed[i]; });
   } else state.typed[n - 1] = v.slice(0, 60);
+  update();
+}));
+// three codes pasted into any box fill all three, replacing what they held: "123456 234567 345678",
+// one run of 18 digits, or the codes with labels ("Code 1: 123456, ...")
+[1, 2, 3].forEach((n) => $(`code-${n}`).addEventListener('paste', (e) => {
+  const t = (e.clipboardData && e.clipboardData.getData('text')) || '';
+  const runs = t.match(/(?<!\d)\d{6}(?!\d)/g), all = t.replace(/\D/g, '');
+  const codes = runs && runs.length === 3 ? runs : /^[\d\s\-.,;/|]+$/.test(t.trim()) && all.length === 18 ? all.match(/\d{6}/g) : null;
+  if (!codes) return;   // anything else pastes as usual
+  e.preventDefault();
+  codes.forEach((c, i) => { state.typed[i] = c; $(`code-${i + 1}`).value = c; });
   update();
 }));
 

@@ -1366,7 +1366,7 @@ const STEPS = {
       let total = 0;
       for (const g of gs) {
         if (o.what === 'az' ? !isAZ(g) : isWS(g)) continue;
-        const k = o.what === 'az' ? g.toUpperCase() : isL(g) ? caseKey(g) : g; m.set(k, (m.get(k) || 0) + 1); total++;
+        const k = o.what === 'az' ? g.toUpperCase() : isL(g) ? caseKey(g.normalize('NFC')) : g; /* e + ◌́ counts as é */ m.set(k, (m.get(k) || 0) + 1); total++;
       }
       const rows = [...m].map(([ch, n]) => ({ ch, n })).sort((a, b) => (o.order === 'most' ? b.n - a.n : 0) || cpCmp(a.ch, b.ch));
       const others = o.what === 'az' ? otherLetters(t).length : 0;
@@ -1380,9 +1380,10 @@ const STEPS = {
       { k: 'order', type: 'select', label: 'Order', def: 'az', choices: [['az', 'A to Z'], ['za', 'Z to A']] }],
     run(t, o) {
       const gs = G(t).filter(o.what === 'letters' ? isL : (g) => !isWS(g));
-      // a letter written as A to Z plus an accent (e + ◌́) is outside A to Z too, so it goes after Z, not among them
-      const outside = (g) => (isL(g) && !isAZ(g) && /^[A-Za-z]/.test(g) ? 1 : 0);
-      gs.sort((a, b) => outside(a) - outside(b) || cpCmp(caseKey(a), caseKey(b)) || cpCmp(a, b));
+      // a letter is compared in its composed form, so e + ◌́ sorts with é, after Z; one with no composed form
+      // (q + ◌́) is still outside A to Z, so it goes after the rest rather than among the Q's
+      const key = (g) => caseKey(g.normalize('NFC')), outside = (g) => (isL(g) && /^[A-Za-z]./su.test(key(g)) ? 1 : 0);
+      gs.sort((a, b) => outside(a) - outside(b) || cpCmp(key(a), key(b)) || cpCmp(a, b));
       if (o.order === 'za') gs.reverse();
       return { text: gs.join('') };
     }
@@ -1886,9 +1887,13 @@ function mbMove(i, by, sel) {
 function mbCopy(btn, text, i) {
   const done = (m) => { btn.textContent = m; clearTimeout(btn._t); btn._t = setTimeout(() => { btn.textContent = 'Copy'; }, 1400); };
   const fallback = () => { // copy all of it through a hidden box, since the step's own box may show only part
+    if (!text) return done('Nothing to copy'); // copying an empty selection would leave the old clipboard
     const ta = document.createElement('textarea'), back = document.activeElement; ta.value = text; ta.setAttribute('readonly', ''); ta.style.position = 'fixed'; ta.style.opacity = '0';
     document.body.appendChild(ta); ta.select(); let ok = false; try { ok = document.execCommand('copy'); } catch (e) { ok = false; } ta.remove(); if (back && back.focus) back.focus();
-    done(ok ? 'Copied' : 'Can’t copy here');
+    if (ok) return done('Copied');
+    // last resort: select the step's own box so it can be copied by hand
+    const box = $('mb-r' + chain[i].id).querySelector('.mb-out, .mb-shifts'); if (!box) return done('Can’t copy here');
+    const r = document.createRange(); r.selectNodeContents(box); const sel = getSelection(); sel.removeAllRanges(); sel.addRange(r); done('Selected: copy it');
   };
   if (navigator.clipboard && navigator.clipboard.writeText) { try { navigator.clipboard.writeText(text).then(() => done('Copied'), fallback); } catch (e) { fallback(); } } else fallback();
 }

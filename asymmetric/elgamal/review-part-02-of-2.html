@@ -1,0 +1,775 @@
+<!-- Review copy: lines 833-1606 of asymmetric/elgamal/index.html, split so Copilot can review it. Not served. -->
+      var keyX = () => xBig.toString(16);
+    }
+    function restart(){ a = rand(q); b = rand(q); setX(modPow(g, a, p) * modPow(h, b, p) % p); counts.fill(0); sinceDP = 0; }
+    restart();
+    function collect(){
+      for (let j = 0; j < 32; j++) { const c = counts[j]; if (c) { a += BigInt(c) * table[j].a; b += BigInt(c) * table[j].b; } }
+      counts.fill(0); a %= q; b %= q;
+    }
+    function jsWalk(steps){
+      let s = 0;
+      const big = BigInt(dbits ? 32 : 0), dm = BigInt(dmask);
+      while (s < steps) {
+        const j = Number(xBig & 31n); xBig = xBig * table[j].M % p; counts[j]++; s++;
+        if (((xBig >> 32n) & dm) === 0n) break;
+      }
+      return s;
+    }
+    return {
+      fast: !!ex,
+      run(maxSteps){ // walk up to maxSteps; returns { steps, dps: [{key, a, b}] }
+        const dps = []; let steps = 0;
+        while (steps < maxSteps) {
+          const want = Math.min(maxSteps - steps, 1 << 22);
+          const s = ex ? ex.walk(n, want, dmask) : jsWalk(want);
+          steps += s; sinceDP += s;
+          const isDP = ex ? (u32[33] & dmask) === 0 : ((xBig >> 32n) & BigInt(dmask)) === 0n;
+          if (isDP && s > 0) { collect(); dps.push({ key: keyX(), a, b }); sinceDP = 0; }
+          else if (sinceDP > 40 * (dmask + 1) + 100000) restart(); // stuck in a loop with no distinguished point
+        }
+        return { steps, dps };
+      },
+      restart
+    };
+  }
+  /* Two visits to one distinguished point: g^a1 h^b1 = g^a2 h^b2, so x = (a2 - a1)/(b1 - b2) mod q. */
+  function rhoSolve(plan, d1, d2){
+    const { g, h, p, q } = plan;
+    const db = mod(d1.b - d2.b, q);
+    if (db === 0n) return null;
+    const x = mod((d2.a - d1.a) * modInv(db, q), q);
+    return modPow(g, x, p) === mod(h, p) ? x : null;
+  }
+  function rhoSync(g, h, p, q, onProgress){ // single-threaded version (used for testing and as a fallback)
+    const plan = rhoPlan(g, h, p, q), w = rhoWalker(plan), seen = new Map();
+    let total = 0;
+    for (;;) {
+      const r = w.run(1 << 20); total += r.steps;
+      for (const d of r.dps) {
+        const prev = seen.get(d.key);
+        if (prev) { const x = rhoSolve(plan, prev, d); if (x !== null) return x; w.restart(); }
+        else seen.set(d.key, d);
+      }
+      if (onProgress) onProgress({ phase: 'rho', steps: total, expected: plan.expected });
+    }
+  }
+  function solvePrimeSync(g, h, p, q){
+    h = mod(h, p);
+    if (h === 1n) return 0n;
+    if (q <= 10000000000n) return bsgs(g, h, p, q);
+    return rhoSync(g, h, p, q);
+  }
+  /* Pohlig-Hellman: solve g^x = h mod p using the factors of p-1. solvePrime(g, h, q) solves in a group of prime order q
+     and may return a Promise. Returns { x, order, parts: [{ q, e, mod, residue }] } or { noSolution } */
+  async function dlog(g, h, p, pm1Factors, solvePrime){
+    g = mod(g, p); h = mod(h, p);
+    const order = orderOf(g, p, pm1Factors);
+    if (modPow(h, order, p) !== 1n) return { noSolution: true, order };
+    const parts = [];
+    for (const [q, e] of countFactors(pm1Factors)) {
+      let k = 0; let nn = order; while (nn % q === 0n) { nn /= q; k++; }
+      if (!k) continue;
+      const gq = modPow(g, order / q, p), ginv = modInv(g, p);
+      let xk = 0n, qi = 1n;
+      for (let i = 0; i < k; i++) {
+        const hk = modPow(h * modPow(ginv, xk, p) % p, order / (qi * q), p);
+        const d = hk === 1n ? 0n : await solvePrime(gq, hk, q);
+        if (d === null) throw new Error('no solution in the subgroup of order ' + q);
+        xk += d * qi; qi *= q;
+      }
+      parts.push({ q, e: k, mod: qi, residue: xk });
+    }
+    const { x } = parts.length ? crt(parts.map((t) => t.residue), parts.map((t) => t.mod)) : { x: 0n };
+    if (modPow(g, x, p) !== h) throw new Error('check failed');
+    return { x, order, parts };
+  }
+
+  /* ---------- full factorisation ---------- */
+  const SIQS_MAX_DIGITS = 100; // beyond this the sieve would run for weeks (and past ~620 digits its setup overflows)
+  function factor(n, onProgress){
+    const t0 = Date.now(), out = [], notes = [];
+    if (n < 2n) return { factors: [], notes, ms: 0 };
+    let m = n;
+    for (const p of SMALL) {
+      const P = BigInt(p); if (P * P > m) break;
+      if (m % P === 0n) { while (m % P === 0n) { out.push(P); m /= P; } notes.push('trial division found ' + p); }
+      if (p > 20000) break;
+    }
+    const stack = m > 1n ? [m] : [];
+    while (stack.length) {
+      const c = stack.pop();
+      if (isProbablePrime(c)) { out.push(c); continue; }
+      let d = null;
+      for (let k = 2; k <= 8 && !d; k++) { const r = iroot(c, k); if (r ** BigInt(k) === c) { d = r; notes.push('perfect power'); } }
+      if (!d) { d = fermat(c, 2000); if (d) notes.push('Fermat (the two factors are close together)'); }
+      if (!d) { d = rho(c, 6e4); if (d) notes.push('Pollard rho'); }
+      if (!d && c < 10n ** 20n) { d = rho(c, 2e7, 3n); if (d) notes.push('Pollard rho'); }
+      const digits = c.toString().length;
+      // The sieve slows down steeply with size, while rho's time depends mostly on the size of the factor it finds,
+      // so give rho a longer run first on anything big: it finds factors of up to about 12 digits (10 digits once c has
+      // 600 or more), and gives up within about 10 seconds at any size.
+      if (!d && digits > 50) { d = rho(c, digits > 70 ? Math.round(Math.min(4e6, 1e11 / (digits * digits))) : 2e6, 3n); if (d) notes.push('Pollard rho'); }
+      if (!d && digits > SIQS_MAX_DIGITS) throw new Error(`a part with ${digits} digits is left that has no small factors, and the quadratic sieve on this page can’t split a number that size in any reasonable time (from about 70 digits it takes hours). If the puzzle also gives you one of the secret values, enter it and this step isn’t needed.`);
+      if (!d) {
+        for (let attempt = 0; attempt < 3 && !d; attempt++) d = siqs(c, onProgress);
+        if (d) notes.push('quadratic sieve');
+      }
+      if (!d) { for (let cc = 2n; cc < 20n && !d; cc++) d = rho(c, 5e7, cc); if (d) notes.push('Pollard rho'); }
+      if (!d) throw new Error('could not factor ' + c);
+      stack.push(d, c / d);
+    }
+    out.sort((a, b) => (a < b ? -1 : a > b ? 1 : 0));
+    return { factors: out, notes, ms: Date.now() - t0 };
+  }
+
+  return { abs, mod, gcd, modPow, egcdSteps, modInv, bitLength, iroot, isqrt, isProbablePrime, smallestFactorBelow, factor, SMALL_PRIMES: SMALL,
+    legendre, jacobi, sqrtModP, crt, countFactors, orderOf, rand, bsgs, rhoPlan, rhoWalker, rhoSolve, rhoSync, solvePrimeSync, dlog, hasFastWalk: () => !!getWasm() };
+}
+</script>
+<script>
+/* Page helpers shared by the Asymmetric worksheets (identical copy in each page; needs ntModule). */
+function asymKit(NT){
+  'use strict';
+  const $ = (s) => document.querySelector(s);
+  const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;' }[c]));
+  const D = (x) => x.toString().length;
+  const plural = (k, w) => k + ' ' + w + (k === 1 ? '' : 's');
+  const cmp = (a, b) => (a < b ? -1 : a > b ? 1 : 0);
+
+  /* ---------- number boxes ---------- */
+  function parseNum(raw){
+    const t = String(raw || '').trim();
+    if (!t) return { empty: true };
+    const cleaned = t.replace(/[\s,_]/g, '');
+    if (/^-/.test(cleaned)) return { error: 'This has a minus sign. Every number here is positive, so leave the minus off.' };
+    const bad = cleaned.match(/[^0-9]/);
+    if (bad) return { error: `Only digits belong here, but this has <b>${esc(bad[0])}</b> in it. If you copied from a page, a letter such as O or l may have slipped in for a 0 or 1.` };
+    const v = BigInt(cleaned);
+    return { value: v, digits: D(v), stripped: cleaned !== t, leadingZeros: /^0\d/.test(cleaned) };
+  }
+  /* fields: [{ id, sym, label, tag: 'public'|'private'|'', help, rows }] -> markup */
+  function fieldsHTML(fields){
+    return fields.map((f) => `
+      <div class="field" id="f-${f.id}">
+        <div class="field-head"><span class="sym">${f.sym}</span><label for="in-${f.id}">${f.label}</label>${f.tag ? `<span class="tag ${f.tag === 'private' ? 'private' : ''}">${f.tag}</span>` : ''}<span class="digits" id="dg-${f.id}"></span></div>
+        <textarea class="numin" id="in-${f.id}" rows="${f.rows || 1}" spellcheck="false" autocomplete="off" inputmode="numeric" aria-describedby="${f.help ? 'hp-' + f.id + ' ' : ''}ck-${f.id}"></textarea>
+        ${f.help ? `<p class="help" id="hp-${f.id}">${f.help}</p>` : ''}
+        <ul class="checks" id="ck-${f.id}" aria-live="polite"></ul>
+      </div>`).join('');
+  }
+  function li(level, html){
+    const ic = { ok:'✓', info:'i', warn:'!', bad:'✕' }[level], lbl = { ok:'Looks right', info:'Note', warn:'Check this', bad:'Problem' }[level];
+    return `<li class="${level}"><span class="ic" aria-hidden="true">${ic}</span><span><span class="sr">${lbl}: </span>${html}</span></li>`;
+  }
+  function setChecks(id, items){ const el = $(id); if (el) el.innerHTML = items.map(([l, h]) => li(l, h)).join(''); }
+  /* standard notes for a parsed box, added to that box's own checks */
+  function common(parsed, items){
+    if (parsed.error) items.unshift(['bad', parsed.error]);
+    else if (parsed.stripped) items.push(['info', 'Spaces and line breaks removed.']);
+    if (parsed.leadingZeros) items.push(['info', 'The leading zeros don’t change the number and are ignored here.']);
+    return items;
+  }
+  function valBox(sym, formula, value, opts = {}){
+    const v = value.toString();
+    return `<div class="val${opts.big ? ' big' : ''}"><div class="vh"><span class="sym">${sym}</span><span class="formula">${formula}</span><span class="digits">${plural(v.length, 'digit')}</span></div>
+      <output class="num">${v}</output><div class="vfoot"><button class="btn small" type="button" data-copy="${v}">Copy</button>${opts.extra || ''}</div></div>`;
+  }
+  function waiting(panelSel, msg){ const p = $(panelSel); p.classList.add('waiting'); p.querySelector('.wait').textContent = msg; }
+  function ready(panelSel){ $(panelSel).classList.remove('waiting'); }
+  let toastTimer;
+  function toast(msg){ const t = $('#toast'); t.textContent = msg; t.classList.add('show'); clearTimeout(toastTimer); toastTimer = setTimeout(() => t.classList.remove('show'), 1600); }
+  async function copy(text){ try { await navigator.clipboard.writeText(text); toast('Copied'); } catch (e) { toast('Copy failed: select and copy by hand'); } }
+  document.addEventListener('click', (ev) => { const b = ev.target.closest('[data-copy]'); if (b) copy(b.getAttribute('data-copy')); });
+
+  /* ---------- saved work ---------- */
+  function store(key, defaults){
+    let state = JSON.parse(JSON.stringify(defaults));
+    try { const s = JSON.parse(localStorage.getItem(key) || 'null'); if (s && typeof s === 'object') { state = Object.assign(state, s); state.loaded = true; } } catch (e) {}
+    return { state, save(){ try { localStorage.setItem(key, JSON.stringify(state)); } catch (e) {} } };
+  }
+
+  /* ---------- background work ---------- */
+  const WORKER_SRC = `const NT=(${ntModule.toString()})();
+const big=(o)=>{for(const k in o){if(typeof o[k]==='string'&&/^\\d+$/.test(o[k]))o[k]=BigInt(o[k]);}return o;};
+onmessage=function(ev){const m=ev.data;try{
+ if(m.cmd==='factor'){const r=NT.factor(BigInt(m.n),function(p){postMessage({type:'progress',p:p})});postMessage({type:'done',factors:r.factors.map(String),notes:r.notes,ms:r.ms});}
+ else if(m.cmd==='rho'){const pl=big(m.plan);pl.table=m.plan.table.map(big);const w=NT.rhoWalker(pl);
+  for(;;){const r=w.run(1<<20);postMessage({type:'dps',steps:r.steps,fast:w.fast,dps:r.dps.map(function(d){return{key:d.key,a:String(d.a),b:String(d.b)}})});}}
+}catch(err){postMessage({type:'error',message:String(err&&err.message||err)});}};`;
+  let workerURL = null;
+  function newWorker(){
+    if (!workerURL) workerURL = URL.createObjectURL(new Blob([WORKER_SRC], { type: 'text/javascript' }));
+    return new Worker(workerURL);
+  }
+  const cores = () => Math.max(1, Math.min(8, (navigator.hardwareConcurrency || 2)));
+
+  /* factor n in a worker. Returns { promise, cancel }. */
+  function factorJob(n, onProgress){
+    let w = null, cancelled = false, rejectFn;
+    const promise = new Promise((resolve, reject) => {
+      rejectFn = reject;
+      const inline = () => setTimeout(() => { if (cancelled) return; try { const r = NT.factor(n); resolve(r); } catch (e) { reject(e); } }, 30);
+      try {
+        w = newWorker();
+        w.onmessage = (ev) => {
+          const m = ev.data;
+          if (m.type === 'progress') onProgress && onProgress(m.p);
+          else if (m.type === 'done') { w.terminate(); resolve({ factors: m.factors.map((x) => BigInt(x)), notes: m.notes, ms: m.ms }); }
+          else { w.terminate(); reject(new Error(m.message)); }
+        };
+        w.onerror = (ev) => { ev.preventDefault(); w = null; inline(); };
+        w.postMessage({ cmd: 'factor', n: n.toString() });
+      } catch (e) { inline(); }
+    });
+    return { promise, cancel(){ cancelled = true; if (w) w.terminate(); rejectFn(new Error('cancelled')); } };
+  }
+
+  /* discrete log g^x = h (mod p) with Pohlig-Hellman; big prime parts run a parallel rho walk on every core. */
+  function dlogJob(g, h, p, pm1, onProgress){
+    let cancelled = false, live = [], rejectOuter;
+    const stopAll = () => { live.forEach((w) => w.terminate()); live = []; };
+    function solvePrime(gq, hq, q){
+      if (cancelled) return Promise.reject(new Error('cancelled'));
+      if (q <= 10000000000n) return Promise.resolve(NT.bsgs(gq, hq, p, q));
+      return new Promise((resolve, reject) => {
+        const plan = NT.rhoPlan(gq, hq, p, q);
+        const wire = { g: String(gq), h: String(hq), p: String(p), q: String(q), dbits: plan.dbits, expected: plan.expected,
+          table: plan.table.map((t) => ({ a: String(t.a), b: String(t.b), M: String(t.M) })) };
+        const seen = new Map(); let steps = 0, fast = true, done = false;
+        const finish = (x) => { if (done) return; done = true; stopAll(); resolve(x); };
+        const take = (dps) => {
+          for (const d of dps) {
+            const prev = seen.get(d.key);
+            if (prev) { const x = NT.rhoSolve(plan, prev, d); if (x !== null) return finish(x); }
+            else seen.set(d.key, d);
+          }
+        };
+        try {
+          const k = cores();
+          for (let i = 0; i < k; i++) {
+            const w = newWorker(); live.push(w);
+            w.onmessage = (ev) => {
+              const m = ev.data;
+              if (m.type === 'error') { done = true; stopAll(); return reject(new Error(m.message)); }
+              steps += m.steps; fast = fast && m.fast;
+              take(m.dps.map((d) => ({ key: d.key, a: BigInt(d.a), b: BigInt(d.b) })));
+              onProgress && onProgress({ phase: 'rho', q, steps, expected: plan.expected, workers: k, fast });
+            };
+            w.onerror = (ev) => { ev.preventDefault(); };
+            w.postMessage({ cmd: 'rho', plan: wire });
+          }
+        } catch (e) { // no workers: same walk on the page itself
+          stopAll();
+          setTimeout(() => { try { resolve(NT.rhoSync(gq, hq, p, q)); } catch (err) { reject(err); } }, 30);
+        }
+      });
+    }
+    const promise = new Promise((resolve, reject) => {
+      rejectOuter = reject;
+      NT.dlog(g, h, p, pm1, solvePrime).then(resolve, reject);
+    });
+    return { promise, cancel(){ cancelled = true; stopAll(); rejectOuter(new Error('cancelled')); } };
+  }
+  /* rough time for the hardest prime part, so a page can warn before starting something hopeless */
+  function dlogEstimate(order, pm1, p){
+    let worst = 1n;
+    for (const [q] of NT.countFactors(pm1)) if (order % q === 0n && q > worst) worst = q;
+    const steps = Math.sqrt(Math.PI * Number(worst) / 2);
+    if (p === undefined) p = pm1.reduce((a, b) => a * b, 1n) + 1n;
+    const fast = NT.hasFastWalk() && Math.ceil(NT.bitLength(p) / 32) <= 8; // the WebAssembly walk only takes p up to 256 bits (as in rhoWalker)
+    const rate = (fast ? 2e7 : 4e6) * cores() * 0.5; // assume a phone-ish half speed
+    return { worst, steps, seconds: worst <= 10000000000n ? 0.1 : steps / rate };
+  }
+  function fmtTime(s){
+    if (s < 1) return 'under a second';
+    if (s < 90) return 'about ' + Math.round(s) + ' seconds';
+    if (s < 5400) return 'about ' + Math.round(s / 60) + ' minutes';
+    if (s < 86400 * 2) return 'about ' + Math.round(s / 3600) + ' hours';
+    if (s < 86400 * 365 * 2) return 'about ' + Math.round(s / 86400) + ' days';
+    return 'more than ' + Math.round(s / 86400 / 365).toLocaleString() + ' years';
+  }
+  function factorList(fs){ return NT.countFactors(fs).map(([q, e]) => q.toString() + (e > 1 ? `<sup>${e}</sup>` : '')).join(' × '); }
+
+  /* ---------- one background job at a time per slot (restarts when its inputs change) ---------- */
+  function jobSlot(run, onChange, onProgress){
+    let cur = { key: null, status: 'idle' }, timer = null;
+    function start(key, args){
+      const job = run(args, (p) => { if (cur.job === job) { cur.progress = p; onProgress(); } });
+      cur = { key, status: 'running', job, t0: Date.now() };
+      job.promise.then(
+        (r) => { if (cur.job === job) { cur = { key, status: 'done', result: r, ms: Date.now() - cur.t0 }; onChange(); } },
+        (e) => { if (cur.job === job) { cur = { key, status: e.message === 'cancelled' ? 'stopped' : 'error', message: e.message }; onChange(); } });
+      onChange();
+    }
+    return {
+      get state(){ return cur; },
+      want(key, args, delay = 300){
+        if (cur.key === key && cur.status !== 'idle') return cur;
+        clearTimeout(timer); if (cur.job) cur.job.cancel();
+        cur = { key, status: 'pending' };
+        timer = setTimeout(() => start(key, args), delay);
+        return cur;
+      },
+      clear(){ clearTimeout(timer); const j = cur.job; cur = { key: null, status: 'idle' }; if (j) j.cancel(); },
+      stop(){ if (cur.job) cur.job.cancel(); },
+      retry(){ cur = { key: null, status: 'idle' }; }
+    };
+  }
+  const fmtCount = (x) => x >= 1e13 ? '10^' + Math.round(Math.log10(x)) : x >= 1e12 ? (x / 1e12).toFixed(1) + ' trillion' : x >= 1e9 ? (x / 1e9).toFixed(1) + ' billion' : x >= 1e6 ? (x / 1e6).toFixed(1) + ' million' : x >= 1e4 ? Math.round(x / 1e3) + ' thousand' : String(Math.round(x));
+  function progressBoxHTML(id){
+    return `<div class="prog" id="${id}" hidden><progress max="1" value="0"></progress><span class="status" role="status"></span><button class="btn small" type="button" data-stop="${id}">Stop</button></div>`;
+  }
+  function showProgress(id, st, startText){
+    const box = $('#' + id); if (!box) return;
+    if (st.status !== 'running' && st.status !== 'pending') { box.hidden = true; return; }
+    box.hidden = false;
+    const bar = box.querySelector('progress'), s = box.querySelector('.status'), p = st.progress;
+    if (!p) { bar.removeAttribute('value'); s.textContent = startText; return; }
+    if (p.phase === 'sieve') { bar.value = Math.min(1, p.found / p.needed); s.textContent = `Quadratic sieve: ${p.found} of ${p.needed} relations · ${(p.ms / 1000).toFixed(1)} s`; }
+    else if (p.phase === 'algebra') { bar.value = 1; s.textContent = 'Combining the pieces into a factor…'; }
+    else if (p.phase === 'rho') {
+      bar.value = Math.min(0.97, p.steps / (p.expected * 1.25));
+      s.textContent = `Searching the part of size ${p.q.toString().length} digits: ${fmtCount(p.steps)} steps, about ${fmtCount(p.expected)} expected · ${plural(p.workers, 'core')}${p.fast ? '' : ' (slow mode)'}`;
+    }
+  }
+
+  /* ---------- Steps 3 and 4 shared by the discrete-log worksheets ----------
+     run({ p, g, h, ok, why, sym, hSym, lead, known, knownLabel }) renders #s3 and #s4 and returns the exponent (or null). */
+  function dlogFlow(rerender){
+    const fs = jobSlot((n, onP) => factorJob(n, onP), rerender, () => showProgress('prog-pm1', fs.state, 'Trying small primes and quick methods…'));
+    const ds = jobSlot((a, onP) => dlogJob(a.g, a.h, a.p, a.pm1, onP), rerender, () => showProgress('prog-dl', ds.state, 'Setting up the search…'));
+    let forced = '';
+    document.addEventListener('click', (ev) => {
+      const t = ev.target;
+      if (t.closest('[data-stop="prog-pm1"]')) fs.stop();
+      if (t.closest('[data-stop="prog-dl"]')) ds.stop();
+      if (t.id === 'retry-pm1') { fs.retry(); rerender(); }
+      if (t.id === 'retry-dl') { ds.retry(); rerender(); }
+      if (t.id === 'force-dl') { forced = t.getAttribute('data-key'); rerender(); }
+    });
+    return function run(o){
+      const { p, g, h, sym, hSym } = o; const G = o.gSym || 'g';
+      $('#h4-s').innerHTML = `Find <var>${sym}</var> from <var>${hSym} = ${G}<sup>${sym}</sup> mod p</var>`;
+      $('#lead4').innerHTML = o.lead;
+      /* Step 3 */
+      const c3 = []; let pm1 = null, order = null;
+      if (!o.pOk) { fs.clear(); waiting('#s3', o.pWhy); $('#pm1-out').innerHTML = ''; }
+      else {
+        ready('#s3');
+        const s = fs.want((p - 1n).toString(), p - 1n, 150);
+        if (s.status === 'done') pm1 = s.result.factors;
+        else if (s.status === 'error') c3.push(['bad', 'Factoring stopped: ' + esc(s.message)]);
+        else if (s.status === 'stopped') c3.push(['info', 'Stopped. <button class="btn small" type="button" id="retry-pm1">Start again</button>']);
+        if (!pm1) $('#pm1-out').innerHTML = '';
+        else {
+          const parts = NT.countFactors(pm1), big = parts[parts.length - 1][0];
+          $('#pm1-out').innerHTML = `<div class="val"><div class="vh"><span class="sym">p − 1</span><span class="formula">=</span></div><output class="num">${factorList(pm1)}</output></div>`;
+          c3.push(['info', `The biggest prime factor of <var>p − 1</var> has ${plural(D(big), 'digit')}.`]);
+          if (o.gOk) {
+            order = NT.orderOf(g, p, pm1);
+            if (order === p - 1n) c3.push(['ok', `<var>${G}</var> is a <b>generator</b>: its powers run through every number from 1 to <var>p − 1</var> before repeating, so every value has a discrete log.`]);
+            else c3.push(['info', `<var>${G}</var> isn’t a generator: its powers repeat after ${order} steps (its <b>order</b>), so only some numbers are powers of <var>${G}</var>. That’s allowed, but the answer is only fixed up to multiples of the order.`]);
+            const est = dlogEstimate(order, pm1, p);
+            if (est.worst > 10000000000n) c3.push([est.seconds > 600 ? 'warn' : 'info', `The hardest piece is a search through a group whose size has ${plural(D(est.worst), 'digit')}: about ${fmtCount(est.steps)} steps, so expect ${fmtTime(est.seconds)} on a phone (less on a computer). This page uses ${plural(cores(), 'processor core')}.`]);
+          }
+        }
+        showProgress('prog-pm1', fs.state, 'Trying small primes and quick methods…');
+      }
+      setChecks('#ck-pm1', c3);
+      /* Step 4 */
+      const c4 = []; let x = null;
+      if (!o.pOk || !o.gOk || !o.hOk) {
+        ds.clear(); $('#dl-out').innerHTML = ''; $('#ph-table').innerHTML = ''; $('#ph-more').hidden = true;
+        waiting('#s4', !o.pOk ? o.pWhy : !o.gOk ? o.gWhy : o.hWhy);
+      } else if (o.known !== undefined) { // checking a known exponent needs one power, not the factors of p − 1
+        ready('#s4'); ds.clear(); $('#ph-more').hidden = true; $('#ph-table').innerHTML = '';
+        $('#dl-out').innerHTML = valBox(sym, o.knownLabel, o.known);
+        if (NT.modPow(g, o.known, p) === h) { c4.push(['ok', `Check: <var>${G}<sup>${sym}</sup> mod p</var> gives back <var>${hSym}</var>, so the <var>${sym}</var> you entered fits.`]); x = o.known; }
+        else c4.push(['bad', `The <var>${sym}</var> you entered doesn’t fit: <var>${G}<sup>${sym}</sup> mod p</var> isn’t <var>${hSym}</var>. Check its digits, or clear it and let the page search.`]);
+        if (order === null) order = p - 1n; // until p − 1 is factored, use p − 1 itself: the order divides it, so inverses mod p − 1 still undo a power
+      } else if (!pm1) {
+        ds.clear(); $('#dl-out').innerHTML = ''; $('#ph-table').innerHTML = ''; $('#ph-more').hidden = true;
+        waiting('#s4', 'Needs the factors of p − 1 from Step 3.');
+      } else {
+        ready('#s4');
+        const key = [p, g, h].join(':');
+        const est = dlogEstimate(order, pm1, p);
+        if (est.seconds > 600 && forced !== key && ds.state.key !== key) {
+          ds.clear(); $('#dl-out').innerHTML = ''; $('#ph-more').hidden = true;
+          c4.push(['warn', `<b>This search would take ${fmtTime(est.seconds)}.</b> <var>p − 1</var> has a big prime factor, so Pohlig–Hellman can’t break it into small enough pieces. Puzzles are built to avoid this, so first check <var>p</var> and <var>${G}</var> for a wrong digit. <button class="btn small" type="button" id="force-dl" data-key="${esc(key)}">Run it anyway</button>`]);
+        } else {
+          const s = ds.want(key, { g, h, p, pm1 }, 150);
+          showProgress('prog-dl', ds.state, 'Setting up the search…');
+          if (s.status === 'done' && s.result.noSolution) {
+            $('#dl-out').innerHTML = ''; $('#ph-more').hidden = true;
+            c4.push(['bad', `<b>No answer exists:</b> <var>${hSym}</var> is not a power of <var>${G}</var> modulo <var>p</var>, so no <var>${sym}</var> gives it. One of <var>p</var>, <var>${G}</var>, or <var>${hSym}</var> has a wrong digit, or two numbers are in each other’s boxes.`]);
+          } else if (s.status === 'done') {
+            const r = s.result; x = r.x;
+            $('#dl-out').innerHTML = valBox(sym, `= log<sub>${G}</sub> ${hSym} (mod ${r.order === p - 1n ? 'p − 1' : 'the order of ' + G})`, r.x, { big: true }) +
+              `<p class="explain">Found in ${(s.ms / 1000).toFixed(2)} s.</p>`;
+            c4.push(['ok', `Check: <var>${G}<sup>${sym}</sup> mod p</var> gives back <var>${hSym}</var> exactly.`]);
+            if (r.order !== p - 1n) c4.push(['info', `Because <var>${G}</var>’s order is smaller than <var>p − 1</var>, adding any multiple of ${r.order} to <var>${sym}</var> also works. Every one of them works equally well.`]);
+            $('#ph-more').hidden = false;
+            $('#ph-table').innerHTML = '<thead><tr><th>Piece</th><th>Size</th><th>Method</th><th>' + sym + ' modulo the piece</th></tr></thead><tbody>' +
+              r.parts.map((t) => `<tr><td class="num">${t.q}${t.e > 1 ? '<sup>' + t.e + '</sup>' : ''}</td><td>${plural(D(t.mod), 'digit')}</td><td>${t.q <= 10000000000n ? 'baby-step giant-step' : 'Pollard’s rho'}</td><td class="num">${t.residue}</td></tr>`).join('') +
+              `<tr><td colspan="3"><b>Glued together with the CRT</b></td><td class="num"><b>${r.x}</b></td></tr></tbody>`;
+          } else {
+            $('#ph-more').hidden = true;
+            $('#dl-out').innerHTML = s.status === 'running' || s.status === 'pending' ? `<p class="explain">Searching for <var>${sym}</var>…</p>` : '';
+            if (s.status === 'error') c4.push(['bad', 'The search stopped: ' + esc(s.message)]);
+            if (s.status === 'stopped') c4.push(['info', 'Stopped. <button class="btn small" type="button" id="retry-dl">Start again</button>']);
+          }
+        }
+      }
+      setChecks('#ck-dl', c4);
+      return { x, order, pm1 };
+    };
+  }
+
+  /* a list of numbers separated by spaces, commas, semicolons or line breaks */
+  function parseList(raw){
+    const t = String(raw || '').trim();
+    if (!t) return { empty: true, items: [] };
+    const parts = t.split(/[\s,;]+/).filter(Boolean), items = [], errors = [];
+    parts.forEach((w, i) => { const r = parseNum(w); if (r.error) errors.push({ i, w, msg: r.error }); else items.push(r.value); });
+    return { items, errors, count: parts.length };
+  }
+  /* bits -> text, for systems that encrypt one bit at a time */
+  function bitReader(root, st, onChange){
+    root.innerHTML = `
+      <div class="conv-opts">
+        <label>Reading
+          <select data-r="mode">
+            <option value="b8">8 bits per character (ASCII)</option>
+            <option value="b7">7 bits per character (ASCII)</option>
+            <option value="b5">5 bits per letter (00001 = A … 11010 = Z)</option>
+            <option value="num">All the bits as one binary number</option>
+          </select>
+        </label>
+      </div>
+      <ul class="checks" data-r="checks" aria-live="polite"></ul>
+      <div class="chips" data-r="chips"></div>
+      <div class="reading" data-r="text" aria-live="polite"></div>
+      <div class="vfoot" style="margin-top:8px"><button class="btn small" type="button" data-r="copy">Copy reading</button></div>`;
+    const q = (k) => root.querySelector(`[data-r="${k}"]`);
+    q('mode').addEventListener('change', (e) => { st.bm = e.target.value; onChange(); });
+    q('copy').addEventListener('click', () => copy(q('text').textContent));
+    return function render(bits){
+      const mode = st.bm || 'b8'; q('mode').value = mode;
+      const checks = [], chips = []; let text = '';
+      if (mode === 'num') {
+        const gaps = bits.filter((b) => b === null).length;
+        const v = bits.length ? BigInt('0b' + bits.map((b) => b ?? 0).join('')) : 0n;
+        text = v.toString();
+        if (gaps) checks.push(['warn', `${plural(gaps, 'bit')} couldn’t be read, so ${gaps === 1 ? 'it was' : 'they were'} counted as 0 here. Fix ${gaps === 1 ? 'that entry' : 'those entries'} first, or this number will be wrong.`]);
+        checks.push(['info', `${plural(bits.length, 'bit')}, read as one binary number. That number may itself need a reading (for example in blocks of 3 digits as ASCII).`]);
+      } else {
+        const size = +mode.slice(1);
+        if (bits.length % size) checks.push(['warn', `${plural(bits.length, 'bit')} isn’t a multiple of ${size}, so the last group is short. Check that every ciphertext number was copied, or try a different group size.`]);
+        for (let i = 0; i < bits.length; i += size) {
+          const grp = bits.slice(i, i + size).map((b) => (b === null ? '?' : b)).join(''); const v = parseInt(grp, 2); let t, odd = false;
+          if (grp.length < size) { t = '…'; odd = true; }
+          else if (grp.includes('?')) { t = '?'; odd = true; }
+          else if (size === 5) { if (v >= 1 && v <= 26) t = String.fromCharCode(64 + v); else if (v === 0) { t = '␣'; odd = true; } else { t = '·'; odd = true; } }
+          else if (v >= 32 && v < 127) t = String.fromCharCode(v); else { t = '·'; odd = true; }
+          chips.push({ d: grp, t, odd }); text += odd ? (t === '␣' ? ' ' : t === '?' ? '?' : '·') : t;
+        }
+        const oddCount = chips.filter((c) => c.odd).length;
+        if (oddCount > chips.length / 3) checks.push(['warn', `${oddCount} of ${chips.length} groups don’t turn into a ${size === 5 ? 'letter' : 'printable character'}. Try another group size.`]);
+      }
+      q('checks').innerHTML = checks.map(([l, h]) => li(l, h)).join('');
+      q('chips').innerHTML = chips.map((c) => `<span class="chip${c.odd ? ' odd' : ''}"><span class="d">${esc(c.d)}</span><span class="t">${esc(c.t)}</span></span>`).join('');
+      q('text').textContent = text;
+    };
+  }
+
+  /* ---------- the modulus and Step 2 for the factoring-based worksheets ---------- */
+  function modulusChecks(n, P, o){ // o: { name, shape: 'pq'|'ppq', others: [[value, nameHTML]] }
+    const items = []; let ok = false;
+    const nm = o.name || 'n';
+    if (n !== undefined) {
+      if (n < 4n) items.push(['bad', 'That’s too small to be a product of primes.']);
+      else if (n % 2n === 0n) items.push(['bad', `<b>${nm} is even</b>, so 2 divides it. This key is built from odd primes, so it’s always odd. Check the last digit.`]);
+      else if (NT.isProbablePrime(n)) items.push(['bad', `<b>${nm} is prime</b>, so it can’t be the product of secret primes. That almost always means a digit was dropped, added, or changed while copying. Compare the digit count with the puzzle.`]);
+      else {
+        ok = true;
+        const sf = NT.smallestFactorBelow(n, 1000);
+        if (sf) items.push(['warn', `<b>${nm} is divisible by ${sf}.</b> A real key has only big prime factors, so a small one like this usually means a mistyped or missing digit. Double-check it against the puzzle.`]);
+        for (const [v, vn] of o.others || []) if (v !== undefined && v === n) items.push(['bad', `<var>${nm}</var> and ${vn} are the same number. One of them was pasted into the wrong box.`]);
+      }
+    } else if (!P.error) items.push(['info', `Waiting for <var>${nm}</var>. It’s usually the longest number in the public key.`]);
+    return { items: common(P, items), ok };
+  }
+  function factorFlow(rerender){
+    const fs = jobSlot((n, onP) => factorJob(n, onP), rerender, () => showProgress('prog-f', fs.state, 'Trying small primes and quick methods…'));
+    document.addEventListener('click', (ev) => {
+      if (ev.target.closest('[data-stop="prog-f"]')) fs.stop();
+      if (ev.target.id === 'retry-f') { fs.retry(); rerender(); }
+    });
+    /* run({ n, ok, why, known: [p, q], name }) -> { factors, fromUser } ; renders the progress and status, not the result */
+    return function run(o){
+      const { n } = o; let factors = null, fromUser = false; const c = [];
+      if (!o.ok) { fs.clear(); waiting('#s2', o.why); showProgress('prog-f', fs.state, ''); return { factors, fromUser, checks: c }; }
+      ready('#s2');
+      let rest = n; const fl = [];
+      for (const k of new Set((o.known || []).filter((k) => k !== undefined && k > 1n && NT.isProbablePrime(k) && n % k === 0n).map(String))) {
+        const K = BigInt(k); while (rest % K === 0n) { fl.push(K); rest /= K; }
+      }
+      if (fl.length && (rest === 1n || NT.isProbablePrime(rest))) { if (rest > 1n) fl.push(rest); factors = fl.sort(cmp); fromUser = true; }
+      if (factors) fs.clear();
+      else {
+        const s = fs.want(n.toString(), n);
+        if (s.status === 'done') factors = s.result.factors;
+        else if (s.status === 'error') c.push(['bad', 'Factoring stopped: ' + esc(s.message)]);
+        else if (s.status === 'stopped') c.push(['info', 'Stopped. <button class="btn small" type="button" id="retry-f">Start again</button>']);
+      }
+      showProgress('prog-f', fs.state, 'Trying small primes and quick methods…');
+      const how = factors ? (fromUser ? 'Built from the prime you entered.' : `Found in ${(fs.state.result.ms / 1000).toFixed(2)} s using ${esc(fs.state.result.notes.join(' and ') || 'trial division')}.`) : '';
+      return { factors, fromUser, how, checks: c, running: fs.state.status === 'running' || fs.state.status === 'pending' };
+    };
+  }
+  function knownPrimeChecks(v, P, n, sym){
+    const items = [];
+    if (v !== undefined) {
+      if (!NT.isProbablePrime(v)) items.push(['bad', `This <var>${sym}</var> isn’t prime. Check for a wrong or missing digit.`]);
+      else if (n !== undefined && n % v !== 0n) items.push(['bad', `This <var>${sym}</var> is prime but doesn’t divide the public key. One of them has a wrong digit.`]);
+      else if (n !== undefined) items.push(['ok', 'Prime, and divides the public key.']);
+    }
+    return common(P, items);
+  }
+
+  /* ---------- message reader: renders into a container, keeps its options in state.cv ---------- */
+  // 3-digit blocks: ASCII and Latin-1 (ß is 223). 4-digit blocks: any Unicode character (Cyrillic, Greek, …).
+  const printable = (v, size) => size === 3 ? (v >= 32 && v <= 126) || (v >= 160 && v <= 255) : v >= 32 && v <= 0x10FFFF && !(v >= 127 && v < 160) && !(v >= 0xD800 && v <= 0xDFFF);
+  function coordsFrom(s){ // two common layouts of coordinates written as plain digits
+    const out = [];
+    const fit = (lat, lm, lon, om) => lat <= 90 && lm < 60 && lon <= 180 && om < 60;
+    if (s.length >= 15) { const lat = +s.slice(0, 2), lm = +s.slice(2, 7) / 1000, lon = +s.slice(7, 10), om = +s.slice(10, 15) / 1000;
+      out.push({ n: 15, text: `${s.slice(0, 2)}° ${s.slice(2, 4)}.${s.slice(4, 7)}′  ${s.slice(7, 10)}° ${s.slice(10, 12)}.${s.slice(12, 15)}′`, ok: fit(lat, lm, lon, om), rest: s.slice(15), how: '2 + 5 digits, then 3 + 5 digits (longitude written with 3 degree digits, like 077°)' }); }
+    if (s.length >= 14) { const lat = +s.slice(0, 2), lm = +s.slice(2, 7) / 1000, lon = +s.slice(7, 9), om = +s.slice(9, 14) / 1000;
+      out.push({ n: 14, text: `${s.slice(0, 2)}° ${s.slice(2, 4)}.${s.slice(4, 7)}′  ${s.slice(7, 9)}° ${s.slice(9, 11)}.${s.slice(11, 14)}′`, ok: fit(lat, lm, lon, om), rest: s.slice(14), how: '2 + 5 digits, then 2 + 5 digits (longitude written with 2 degree digits, like 77°)' }); }
+    return out;
+  }
+  function reader(root, st, onChange){
+    if (typeof st.cv.skip !== 'number') st.cv.skip = 0;
+    root.innerHTML = `
+      <div class="conv-opts">
+        <label>Reading
+          <select data-r="mode">
+            <option value="digits">Digits as they are</option>
+            <option value="coords">Digits as coordinates</option>
+            <option value="ascii3">Blocks of 3 digits → character codes (072 = H)</option>
+            <option value="ascii4">Blocks of 4 digits → character codes (0072 = H)</option>
+            <option value="az2">Blocks of 2 digits → letters (01 = A … 26 = Z)</option>
+            <option value="hex">Hexadecimal bytes → text</option>
+          </select>
+        </label>
+        <label>Skip the first <input type="number" data-r="skip" min="0" max="999" value="0" inputmode="numeric"> digits</label>
+        <label>Line blocks up from
+          <select data-r="align"><option value="left">The start</option><option value="right">The end</option></select>
+        </label>
+        <label class="inline"><input type="checkbox" data-r="pad"> Put back a missing leading zero</label>
+      </div>
+      <ul class="checks" data-r="checks" aria-live="polite"></ul>
+      <div class="chips" data-r="chips"></div>
+      <div class="reading" data-r="text" aria-live="polite"></div>
+      <div class="vfoot" style="margin-top:8px"><button class="btn small" type="button" data-r="copy">Copy reading</button></div>`;
+    const q = (k) => root.querySelector(`[data-r="${k}"]`);
+    q('mode').addEventListener('change', (e) => { st.cv.mode = e.target.value; onChange(); });
+    q('align').addEventListener('change', (e) => { st.cv.align = e.target.value; onChange(); });
+    q('pad').addEventListener('change', (e) => { st.cv.pad = e.target.checked; onChange(); });
+    q('skip').addEventListener('input', (e) => { const v = parseInt(e.target.value, 10); st.cv.skip = Number.isFinite(v) && v > 0 ? Math.min(v, 999) : 0; onChange(); });
+    q('copy').addEventListener('click', () => copy(q('text').textContent));
+    return function render(m){
+      const { mode, align, pad } = st.cv, skip = st.cv.skip || 0;
+      q('mode').value = mode; q('align').value = align; q('pad').checked = pad;
+      if (document.activeElement !== q('skip')) q('skip').value = skip;
+      const checks = [], chips = []; let text = '';
+      const blocky = mode === 'ascii3' || mode === 'ascii4' || mode === 'az2';
+      q('pad').disabled = !blocky || skip > 0; q('align').disabled = !blocky || skip > 0; q('skip').disabled = !(blocky || mode === 'coords');
+      const all = m.toString();
+      const skipped = (blocky || mode === 'coords') && skip ? all.slice(0, skip) : '';
+      const body = (blocky || mode === 'coords') && skip ? all.slice(skip) : all;
+      if (skipped) chips.push({ d: skipped.length > 12 ? skipped.slice(0, 6) + '…' + skipped.slice(-3) : skipped, t: 'skipped', odd: true });
+      if (skip && skip >= all.length) checks.push(['warn', `There are only ${plural(all.length, 'digit')}, so skipping ${skip} leaves nothing to read.`]);
+      if (mode === 'digits') {
+        for (let i = 0; i < all.length; i += 3) chips.push({ d: all.slice(i, i + 3), t: '' }); text = all;
+      } else if (mode === 'coords') {
+        const opts = coordsFrom(body);
+        if (!opts.length) checks.push(['warn', `Coordinates need at least 14 digits, and there ${body.length === 1 ? 'is' : 'are'} only ${body.length}.`]);
+        for (const o of opts) checks.push([o.ok ? 'ok' : 'info', `<b>${o.n}-digit layout:</b> <span class="num">${esc(o.text)}</span>. ${o.how}. ${o.ok ? 'The degrees and minutes are in range.' : 'Some part is out of range (minutes must be under 60, latitude at most 90°), so this layout probably isn’t it.'}${o.rest ? ` The ${plural(o.rest.length, 'digit')} after it may be a message: try a block reading with “skip the first ${skip + o.n} digits”.` : ''}`]);
+        if (opts.length) checks.push(['info', 'Add the hemispheres (N or S, E or W) from where the cache is. If no layout fits, the coordinates may start later in the number, or this may be the wrong reading.']);
+        const best = opts.find((o) => o.ok) || opts[0];
+        text = best ? best.text : body;
+        for (let i = 0; i < body.length; i += 3) chips.push({ d: body.slice(i, i + 3), t: '' });
+      } else if (mode === 'hex') {
+        let h = m.toString(16); if (h.length % 2) h = '0' + h;
+        const bytes = new Uint8Array(h.length / 2);
+        for (let i = 0; i < bytes.length; i++) bytes[i] = parseInt(h.slice(2 * i, 2 * i + 2), 16);
+        // bytes 128 and up: UTF-8 if they form valid UTF-8 (° is c2 b0), otherwise Latin-1 (° is b0)
+        let utf8 = null;
+        if (bytes.some((b) => b >= 128) && typeof TextDecoder !== 'undefined') { try { utf8 = new TextDecoder('utf-8', { fatal: true }).decode(bytes); } catch (e) { utf8 = null; } }
+        const add = (d, cp) => { const pr = printable(cp, 4), t = pr ? String.fromCodePoint(cp) : '·'; chips.push({ d, t, odd: !pr }); text += t; };
+        if (utf8 !== null) {
+          let i = 0;
+          for (const ch of utf8) { const cp = ch.codePointAt(0), len = cp < 0x80 ? 1 : cp < 0x800 ? 2 : cp < 0x10000 ? 3 : 4; add(h.slice(2 * i, 2 * (i + len)), cp); i += len; }
+        } else for (let i = 0; i < bytes.length; i++) add(h.slice(2 * i, 2 * i + 2), bytes[i]);
+        checks.push(['info', 'This is how real systems store text: the number is written in base 16 and each pair of hex digits is one byte.']);
+        if (utf8 !== null) checks.push(['info', 'Some characters here take more than one byte, so their bytes share a box. That’s <b>UTF-8</b>, the usual way text is stored today: ° is <b>c2 b0</b> and ß is <b>c3 9f</b>.']);
+        else if (bytes.some((b) => b >= 128)) checks.push(['info', 'The bytes from 80 up don’t make valid UTF-8 (the usual way text is stored today), so they’re read as <b>Latin-1</b>, one byte per character: ° is <b>b0</b> and ß is <b>df</b>.']);
+      } else {
+        const size = mode === 'ascii3' ? 3 : mode === 'ascii4' ? 4 : 2;
+        let s = body; const rem = s.length % size; let padded = 0;
+        if (rem && !skip) {
+          if (pad && align === 'left') { padded = size - rem; s = '0'.repeat(padded) + s; checks.push(['info', `The number has ${plural(all.length, 'digit')}, not a multiple of ${size}, so ${padded === 1 ? 'a zero has' : padded + ' zeros have'} been put back on the front. A number can’t start with 0, so if the message began with a block like <b>${mode === 'ascii3' ? '072' : mode === 'ascii4' ? '0072' : '08'}</b>, that zero vanished when the message was turned into a number. Untick the box to see it without.`]); }
+          else if (align === 'left') checks.push(['warn', `The number has ${plural(all.length, 'digit')}, not a multiple of ${size}, so the last block is short. If the reading looks off, tick “put back a missing leading zero”.`]);
+        }
+        const blocks = [];
+        if (align === 'right' && !skip && s.length % size) { blocks.push({ d: s.slice(0, s.length % size), lead: true }); s = s.slice(s.length % size); }
+        for (let i = 0; i < s.length; i += size) blocks.push({ d: s.slice(i, i + size) });
+        if (blocks[0] && blocks[0].lead) checks.push(['info', `Blocks are lined up from the end, which leaves <b>${blocks[0].d}</b> on its own at the front.`]);
+        let high = false, shortLast = null;
+        blocks.forEach((b, i) => {
+          const v = parseInt(b.d, 10); let t, odd = false;
+          if (b.lead) { t = '…'; odd = true; }
+          else if (b.d.length < size) { odd = true; t = mode !== 'az2' && printable(v, size) ? String.fromCodePoint(v) : mode === 'az2' && v >= 1 && v <= 26 ? String.fromCharCode(64 + v) : '…'; if (t !== '…') shortLast = t; }
+          else if (mode !== 'az2') { if (printable(v, size)) { t = String.fromCodePoint(v); if (v > 126) high = true; } else { t = '·'; odd = true; } }
+          else if (v >= 1 && v <= 26) t = String.fromCharCode(64 + v); else if (v === 0) { t = '␣'; odd = true; } else { t = '·'; odd = true; }
+          chips.push({ d: b.d, t, odd, pad: i === 0 && padded > 0 });
+          text += odd ? (t === '␣' ? ' ' : t === shortLast ? t : '·') : t;
+        });
+        if (shortLast) checks.push(['info', `The last block is short (fewer than ${size} digits). Read as it is, it’s “${esc(shortLast)}”; some puzzles end that way on purpose.`]);
+        if (mode !== 'az2') checks.push(['info', `Codes 32 to 126 are ordinary ASCII (letters, digits, punctuation). ${size === 3 ? 'Codes 160 to 255 add accented letters such as ß (223). Other alphabets need 4-digit blocks.' : 'Higher codes are other Unicode characters, such as the Cyrillic М (1052) or the Greek Ω (937).'}${high ? ' This reading uses some of them.' : ''}`]);
+        const blockChips = chips.filter((c) => c.t !== 'skipped'), oddCount = blockChips.filter((c) => c.odd).length;
+        if (oddCount > blockChips.length / 3) checks.push(['warn', `${oddCount} of ${blockChips.length} blocks don’t turn into a ${mode === 'az2' ? 'letter' : 'character'}. If part of the number is plain digits (coordinates, say), only the rest will read as text: try “Digits as coordinates”, or skip the digits before the text. Otherwise try another reading, or line the blocks up from the other end.`]);
+      }
+      q('checks').innerHTML = checks.map(([l, h]) => li(l, h)).join('');
+      q('chips').innerHTML = chips.map((c) => `<span class="chip${c.odd ? ' odd' : ''}${c.pad ? ' pad' : ''}"><span class="d">${esc(c.d)}</span>${c.t !== '' ? `<span class="t">${esc(c.t)}</span>` : ''}</span>`).join('');
+      q('text').textContent = text;
+    };
+  }
+
+  return { $, esc, D, plural, cmp, parseNum, fieldsHTML, li, setChecks, common, valBox, waiting, ready, toast, copy, store,
+    factorJob, dlogJob, dlogEstimate, fmtTime, factorList, reader, cores, jobSlot, progressBoxHTML, showProgress, fmtCount, dlogFlow, parseList, bitReader, modulusChecks, factorFlow, knownPrimeChecks };
+}
+</script>
+<script>
+(function(){
+  'use strict';
+  const NT = ntModule(), K = asymKit(NT), $ = K.$, D = K.D;
+  const MAIN = [
+    { id:'p', sym:'p', label:'The prime modulus', tag:'public', rows:2, help:'Every calculation is done modulo this prime. It’s usually the longest number in the public key.' },
+    { id:'g', sym:'g', label:'The base', tag:'public', help:'Often called <var>g</var>, <var>α</var> (alpha), or <var>a</var>. It’s usually small: 2, 3, or a number with two or three digits.' },
+    { id:'y', sym:'y', label:'The receiver’s public key', tag:'public', rows:2, help:'The base raised to the receiver’s secret number. Often called <var>y</var>, <var>h</var>, <var>β</var> (beta), <var>b</var>, or <var>B</var>. It’s about as long as <var>p</var>.' },
+    { id:'c1', sym:'c<sub>1</sub>', label:'Ciphertext, first number', tag:'public', rows:2, help:'The base raised to a random number the sender picked for this one message. Often called <var>c<sub>1</sub></var>, <var>r</var>, <var>γ</var> (gamma), or <var>K</var>.' },
+    { id:'c2', sym:'c<sub>2</sub>', label:'Ciphertext, second number', tag:'public', rows:2, help:'The message multiplied by the shared secret. Often called <var>c<sub>2</sub></var>, <var>t</var>, <var>δ</var> (delta), or <var>c</var>.' }
+  ];
+  const KNOWN = [
+    { id:'x', sym:'x', label:'Receiver’s private key', tag:'private' },
+    { id:'k', sym:'k', label:'Sender’s random number', tag:'private' }
+  ];
+  const IDS = ['p','g','y','c1','c2','x','k'];
+  const NAMES = { p:'p', g:'g', y:'y', c1:'c<sub>1</sub>', c2:'c<sub>2</sub>' };
+  const EXAMPLE = { p:'1610054876952710105071082364540841355771', g:'6', y:'1520639880528911192138656218507932923663', c1:'1512058823700333055803587436584228531328', c2:'763061380607849754652073160390912512368', x:'', k:'' };
+  const DEF = { p:'', g:'', y:'', c1:'', c2:'', x:'', k:'', route:'x', cv:{ mode:'ascii3', align:'left', pad:true } };
+  const S = K.store('asym-elgamal:v1', DEF), st = S.state;
+  $('#fields-main').innerHTML = K.fieldsHTML(MAIN);
+  $('#fields-known').innerHTML = K.fieldsHTML(KNOWN);
+  const flow = K.dlogFlow(() => render());
+  const readMsg = K.reader($('#reader'), st, () => { S.save(); render(); });
+
+  function render(){
+    const P = {}; for (const id of IDS) { P[id] = K.parseNum(st[id]); $('#dg-' + id).textContent = P[id].value !== undefined ? K.plural(P[id].digits, 'digit') : ''; }
+    const v = (id) => P[id].value;
+    const p = v('p'), g = v('g');
+
+    /* p */
+    const pC = []; let pOk = false;
+    if (p !== undefined) {
+      if (p < 5n) pC.push(['bad', 'That’s too small to be the prime modulus.']);
+      else if (!NT.isProbablePrime(p)) {
+        const sf = NT.smallestFactorBelow(p, 100000);
+        pC.push(['bad', `<b>p isn’t prime</b>${sf ? ` (it’s divisible by ${sf})` : ''}, and this system needs a prime modulus. A digit was probably dropped, added, or changed while copying. Compare the digit count with the puzzle.`]);
+      } else { pOk = true; pC.push(['ok', '<var>p</var> is prime.']); }
+    } else if (!P.p.error) pC.push(['info', 'Waiting for <var>p</var>.']);
+    K.setChecks('#ck-p', K.common(P.p, pC));
+
+    /* values that must sit between 1 and p - 1 */
+    const inRange = (id, items) => {
+      const x = v(id); if (x === undefined || p === undefined) return true;
+      if (x >= p) { items.push(['bad', `<b>${NAMES[id]} is not smaller than p.</b> Every number in this system is a remainder after dividing by <var>p</var>, so it must be smaller. Usually that means an extra digit, or two numbers in each other’s boxes.`]); return false; }
+      if (x === 0n) { items.push(['bad', 'Zero can’t appear here: no power of the base is ever 0 modulo a prime.']); return false; }
+      return true;
+    };
+    const gC = []; let gOk = g !== undefined && pOk && inRange('g', gC);
+    if (g !== undefined && pOk && gOk) {
+      if (g === 1n || g === p - 1n) { gC.push(['bad', `<var>g = ${g === 1n ? '1' : 'p − 1'}</var> can’t be the base: its powers only ever give ${g === 1n ? '1' : '1 and p − 1'}.`]); gOk = false; }
+      else if (D(p) >= 6 && D(g) >= D(p) - 2) gC.push(['info', 'That’s a long base. It’s allowed, but the base is usually short, so make sure this isn’t <var>y</var> or <var>c<sub>1</sub></var> in the wrong box.']);
+    } else if (g === undefined && !P.g.error) gC.push(['info', 'Waiting for the base <var>g</var>.']);
+    K.setChecks('#ck-g', K.common(P.g, gC));
+
+    const yC = [], c1C = [], c2C = [];
+    const yOk = v('y') !== undefined && inRange('y', yC), c1Ok = v('c1') !== undefined && inRange('c1', c1C), c2Ok = v('c2') !== undefined && inRange('c2', c2C);
+    if (v('y') === undefined && !P.y.error) yC.push(['info', 'Waiting for the public key <var>y</var>.']);
+    if (v('c1') === undefined && !P.c1.error) c1C.push(['info', 'Waiting for <var>c<sub>1</sub></var>. The ciphertext in this system is always <i>two</i> numbers.']);
+    if (v('c2') === undefined && !P.c2.error) c2C.push(['info', 'Waiting for <var>c<sub>2</sub></var>.']);
+    const same = [['y','c1'],['y','c2'],['c1','c2'],['g','y'],['g','c1']].filter(([a, b]) => v(a) !== undefined && v(a) === v(b));
+    for (const [a, b] of same) (a === 'g' ? gC : a === 'y' ? yC : c1C).push(['warn', `${NAMES[a]} and ${NAMES[b]} are the same number. That’s almost never right, so one was probably pasted twice.`]);
+    if (v('y') !== undefined && p !== undefined && v('y') < p && D(p) - D(v('y')) >= 4) yC.push(['info', `<var>y</var> is ${D(p) - D(v('y'))} digits shorter than <var>p</var>. That can happen, but it’s rare, so check for dropped digits.`]);
+    if (v('c1') !== undefined && p !== undefined && v('c1') < p && D(p) - D(v('c1')) >= 4) c1C.push(['info', `<var>c<sub>1</sub></var> is ${D(p) - D(v('c1'))} digits shorter than <var>p</var>. That can happen, but it’s rare, so check for dropped digits.`]);
+    K.setChecks('#ck-y', K.common(P.y, yC)); K.setChecks('#ck-c1', K.common(P.c1, c1C)); K.setChecks('#ck-c2', K.common(P.c2, c2C));
+    for (const id of ['x','k']) K.setChecks('#ck-' + id, K.common(P[id], []));
+
+    /* route */
+    for (const r of document.querySelectorAll('#route input')) r.checked = r.value === st.route;
+    const byX = st.route !== 'k';
+    const target = byX ? v('y') : v('c1'), targetOk = byX ? yOk : c1Ok;
+    const res = flow({
+      p, g, h: target, sym: byX ? 'x' : 'k', hSym: byX ? 'y' : 'c<sub>1</sub>',
+      lead: byX ? 'Find the receiver’s secret <var>x</var>: the power that turns <var>g</var> into <var>y</var>. Raising to a power is quick; this backwards step is the hard part, and it’s what Steps 3 and 4 are for.'
+                : 'Find the sender’s secret <var>k</var>: the power that turns <var>g</var> into <var>c<sub>1</sub></var>. Raising to a power is quick; this backwards step is the hard part, and it’s what Steps 3 and 4 are for.',
+      pOk, pWhy: p === undefined ? 'Needs p from Step 1.' : 'Needs a usable p: see the note under p in Step 1.',
+      gOk, gWhy: 'Needs a usable g from Step 1.',
+      hOk: targetOk, hWhy: byX ? 'Needs y from Step 1.' : 'Needs c₁ from Step 1.',
+      known: byX ? v('x') : v('k'), knownLabel: byX ? 'the x you entered' : 'the k you entered'
+    });
+
+    /* Step 5: shared secret and m */
+    const sC = []; let m = null;
+    if (res.x !== null && (byX ? c1Ok : yOk) && c2Ok) {
+      K.ready('#s5');
+      const s = byX ? NT.modPow(v('c1'), res.x, p) : NT.modPow(v('y'), res.x, p);
+      const sInv = NT.modInv(s, p);
+      m = v('c2') * sInv % p;
+      $('#s-out').innerHTML =
+        K.valBox('s', byX ? '= c<sub>1</sub><sup>x</sup> mod p' : '= y<sup>k</sup> mod p', s) +
+        K.valBox('s<sup>−1</sup>', '= the inverse of s mod p (s × s<sup>−1</sup> leaves remainder 1)', sInv) +
+        K.valBox('m', '= c<sub>2</sub> × s<sup>−1</sup> mod p', m, { big: true });
+      sC.push(['ok', 'Check: <var>m × s mod p</var> gives back <var>c<sub>2</sub></var>.']);
+      if (!byX && NT.modPow(g, res.x, p) === v('c1')) sC.push(['info', 'Going via <var>k</var> means you could also re-encrypt: <var>g<sup>k</sup></var> is <var>c<sub>1</sub></var> and <var>m × y<sup>k</sup></var> is <var>c<sub>2</sub></var>.']);
+      sC.push(['info', 'If this <var>m</var> reads as noise, the usual culprit is a wrong digit in <var>c<sub>1</sub></var> or <var>c<sub>2</sub></var>: the search can still succeed with a bad ciphertext, it just unlocks the wrong number.']);
+    } else {
+      K.waiting('#s5', res.x === null ? 'Needs the secret from Step 4.' : !c2Ok ? 'Needs c₂ from Step 1.' : byX ? 'Needs c₁ from Step 1.' : 'Needs y from Step 1.');
+      $('#s-out').innerHTML = '';
+    }
+    K.setChecks('#ck-s', sC);
+
+    if (m !== null) { K.ready('#s6'); readMsg(m); } else K.waiting('#s6', 'Needs m from Step 5.');
+  }
+
+  for (const id of IDS) $('#in-' + id).addEventListener('input', (ev) => { st[id] = ev.target.value; S.save(); render(); });
+  $('#route').addEventListener('change', (ev) => { st.route = ev.target.value; S.save(); render(); });
+  const fill = () => { for (const id of IDS) $('#in-' + id).value = st[id]; if (st.x || st.k) $('#more-known').open = true; };
+  $('#btn-example').addEventListener('click', () => { Object.assign(st, EXAMPLE, { route:'x', cv:{ mode:'az2', align:'left', pad:true } }); fill(); S.save(); render(); K.toast('Example loaded'); });
+  $('#btn-clear').addEventListener('click', () => {
+    if (IDS.some((id) => st[id]) && !confirm('Clear every box on this page?')) return;
+    Object.assign(st, JSON.parse(JSON.stringify(DEF))); fill(); S.save(); render();
+  });
+  if (!st.loaded) $('#howto').open = true;
+  fill(); render();
+})();
+</script>
+</body>
+</html>
+

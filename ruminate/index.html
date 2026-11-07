@@ -9371,7 +9371,9 @@ function shapeProblem(g) {
   if (!g) return '';
   if (g.type === 'GeometryCollection') { for (const x of g.geometries || []) { const w = shapeProblem(x); if (w) return w; } return ''; }
   const c = g.coordinates || [];
-  const same = (p, q) => p.length === q.length && p.every((v, i) => v === q[i] || (v !== v && q[i] !== q[i])); // NaN M or Z values match too
+  // a measure (M, the last ordinate of a WKB position with M) isn't part of where a point is, so closure ignores it
+  const at = g.hasM ? (p) => p.slice(0, -1) : (p) => p;
+  const same = (p, q) => { p = at(p); q = at(q); return p.length === q.length && p.every((v, i) => v === q[i] || (v !== v && q[i] !== q[i])); }; // NaN Z values match too
   const line = (l) => (l.length === 1 ? `a line with only one position; a line needs two or more.` : '');
   const ring = (r) => (!r.length ? '' : r.length < 4 ? `a polygon ring with ${r.length} position${r.length === 1 ? '' : 's'}; a ring needs four or more, ending where it starts.`
     : !same(r[0], r[r.length - 1]) ? 'a polygon ring that doesn’t end where it starts, so it isn’t closed.' : '');

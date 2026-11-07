@@ -612,7 +612,7 @@ footer .k{font-family:"IBM Plex Mono",monospace;font-size:12px}
   }
   function wordsOf(line, o){
     let toks = line.trim().split(/\s+/).filter(Boolean);
-    if(o.hyphen === 'split') toks = toks.flatMap(t => { const parts = t.split(/[-\u2010-\u2015]+/).filter(Boolean); return parts.length ? parts : [t]; });
+    if(o.hyphen === 'split') toks = toks.flatMap(t => { if(!/[\p{L}\p{N}]/u.test(t)) return [t]; const parts = t.split(/[-\u2010-\u2015]+/).filter(Boolean); return parts.length ? parts : [t]; });   // a symbol-only token like (—) stays one symbol
     return toks.map(text => {
       const hasL = /\p{L}/u.test(text), hasD = /\p{N}/u.test(text);
       let counted = true;
@@ -788,7 +788,9 @@ footer .k{font-family:"IBM Plex Mono",monospace;font-size:12px}
 
   /* ---------- output rendering ---------- */
   let lastText = '', lastCompact = '';
-  function showCase(s){ return state.opts.caseMode === 'upper' ? s.toUpperCase() : s; }
+  function showCase(s){   // one character stays one character: ß and ﬃ keep their own form
+    return state.opts.caseMode === 'upper' ? Array.from(s, c => { const u = c.toUpperCase(); return Array.from(u).length === 1 ? u : c; }).join('') : s;
+  }
 
   function update(){
     save();
@@ -903,11 +905,14 @@ footer .k{font-family:"IBM Plex Mono",monospace;font-size:12px}
   /* ---------- copy / toast ---------- */
   function copy(text, msg){
     const done = () => toast(msg);
-    if(navigator.clipboard && navigator.clipboard.writeText){ navigator.clipboard.writeText(text).then(done, () => fallback()); }
+    if(navigator.clipboard && navigator.clipboard.writeText){ try{ navigator.clipboard.writeText(text).then(done, () => fallback()); }catch(e){ fallback(); } }
     else fallback();
     function fallback(){
       const ta = document.createElement('textarea'); ta.value = text; ta.style.position='fixed'; ta.style.opacity='0';
-      document.body.appendChild(ta); ta.select(); let ok = false; try{ ok = document.execCommand('copy'); }catch(e){} if(ok) done(); else toast('Copy failed — select the text and copy it yourself'); document.body.removeChild(ta);
+      const back = document.activeElement;
+      document.body.appendChild(ta); ta.select(); let ok = false; try{ ok = document.execCommand('copy'); }catch(e){} document.body.removeChild(ta);
+      if(back && back.focus) back.focus();
+      if(ok) done(); else toast('Copy failed — select the text and copy it yourself');
     }
   }
   $('#btn-copy').addEventListener('click', () => copy(lastText, 'Copied'));

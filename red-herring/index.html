@@ -701,6 +701,7 @@ function geoInverse(lat1, lon1, lat2, lon2) {
 
 /* Parse coordinates: "N 45° 12.345 W 093° 54.321", "45.20575, -93.90535", "N 45 12 20.7 W 93 54 19.3".
    Returns { lat, lon } or { err }. */
+const COMMA_ERR = 'I can’t tell which commas are decimal commas. Put a space after the comma between the latitude and longitude, or use decimal points.';
 function parseCoords(t) {
   t = String(t || '').trim().replace(/[−‒–—]/g, '-'); // typographic minus signs and dashes
   if (!t) return { err: '' };
@@ -708,11 +709,25 @@ function parseCoords(t) {
   const hs = T.match(/[NSEW]/g) || [];
   if (hs.length > 2 || /[A-DF-MO-RT-VX-Z]/.test(T.replace(/[NSEW]/g, ''))) return { err: 'Use numbers and N, S, E or W only.' };
   T = T.replace(/(^|[^\d.])\.(?=\d)/g, (m, a) => a + '0.'); // .5 is 0.5
+  // and ,5 is 0,5, a decimal comma read below; but in "45 ,93" (one comma, no N/S/E/W) the comma separates the pair
+  const oneComma = (T.match(/,/g) || []).length === 1 && !hs.length;
+  T = T.replace(/(^|[^\d.,]),(?=\d)/g, (m, a) => (oneComma && /\s/.test(a) ? m : a + '0,'));
+  if (/^[-\d,]+$/.test(T) && (T.match(/,/g) || []).length > 1) {
+    // only digits and commas (-33,8568,151,2153): try each comma as the one between latitude and longitude
+    const half = (h, max) => /^-?\d+(,\d+)?$/.test(h) && Math.abs(+h.replace(',', '.')) <= max;
+    const fits = [];
+    for (let i = T.indexOf(','); i >= 0; i = T.indexOf(',', i + 1)) {
+      const a = T.slice(0, i), b = T.slice(i + 1);
+      if (half(a, 90) && half(b, 180)) fits.push(a.replace(',', '.') + ' ' + b.replace(',', '.'));
+    }
+    if (fits.length > 1) return { err: COMMA_ERR };
+    if (fits.length === 1) T = fits[0];
+  }
   // With no decimal points anywhere, a comma between digits is a decimal comma (45,2 or 12,345), unless the
   // whole entry is two whole numbers joined by one comma (45,93 or 0,0), which can only be a pair.
   if (!/\d\.\d/.test(T) && /\d,\d/.test(T)) {
     const dec = T.replace(/(\d),(?=\d)/g, '$1.'), nums = dec.match(/\d+(?:\.\d+)*/g) || [];
-    if (nums.some((x) => x.split('.').length > 2)) return { err: 'I can’t tell which commas are decimal commas. Put a space after the comma between the latitude and longitude, or use decimal points.' };
+    if (nums.some((x) => x.split('.').length > 2)) return { err: COMMA_ERR };
     if (!(nums.length === 1 && (T.match(/\d,\d/g) || []).length === 1)) T = dec;
   }
   let parts;
@@ -815,8 +830,8 @@ $('rh-flap').addEventListener('click', flap);
 const UNITS = { m: 1, km: 1000, ft: 0.3048, yd: 0.9144, mi: 1609.344 };
 const num = (t) => {
   let v = String(t).trim().replace(/\s/g, '').replace(/[\u2212\u2012\u2013\u2014]/g, '-');
-  if (/^-?\d{1,3}(,\d{3})+(\.\d+)?$/.test(v)) v = v.replace(/,/g, ''); // 1,200 or 12,345.6: thousands separators
-  else v = v.replace(',', '.'); // 1,5: a decimal comma
+  if (/^-?[1-9]\d{0,2}(,\d{3})+(\.\d+)?$/.test(v)) v = v.replace(/,/g, ''); // 1,200 or 12,345.6: thousands separators (the result shows how it was read)
+  else v = v.replace(',', '.'); // 1,5 or 0,250: a decimal comma (a first group of 0 can't be thousands)
   return v === '' || isNaN(+v) ? null : +v;
 };
 const fmtDist = (m) => {

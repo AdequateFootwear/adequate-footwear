@@ -1,0 +1,879 @@
+<!-- Review copy: lines 691-1568 of zeta-garden/index.html, split so Copilot can review it. Not served. -->
+    <div class="zg-checks" role="group" aria-label="Curves to show">
+      <label><input type="checkbox" id="pl-z" checked> <span class="zg-key k-z"></span><span>Z(<var>t</var>)</span></label>
+      <label><input type="checkbox" id="pl-re"> <span class="zg-key k-re"></span><span>Re ζ(½ + <var>i</var><var>t</var>)</span></label>
+      <label><input type="checkbox" id="pl-im"> <span class="zg-key k-im"></span><span>Im ζ(½ + <var>i</var><var>t</var>)</span></label>
+    </div>
+    <p class="why" id="pl-why" role="alert"></p>
+    <div class="zg-plot" id="pl-wrap">
+      <svg id="pl-svg" tabindex="0" role="img" aria-label="Plot along the critical line" aria-describedby="pl-read"></svg>
+    </div>
+    <p class="zg-read" id="pl-read" aria-live="polite"></p>
+    <p class="help">Point at the plot, or tap it, to read the values. With the keyboard, focus the plot and use ← and → to move (hold Shift for bigger steps), Page Up and Page Down to jump between zeros, and Home and End for the ends.</p>
+
+    <h3>The same stretch in the complex plane</h3>
+    <p class="help">As <var>t</var> climbs, the point ζ(½ + <var>i</var><var>t</var>) traces this curve. It passes through the origin, where the flower is, at every zero. The open circle is the start of the stretch and the open square its end; the filled dot follows the point you are reading.</p>
+    <div class="zg-plane" id="cp-wrap">
+      <svg id="cp-svg" role="img" aria-label="The curve of zeta of one half plus i t in the complex plane" aria-describedby="pl-read"></svg>
+    </div>
+  </section>
+
+  <section class="panel" id="domain" aria-labelledby="h-domain">
+    <div class="panel-head"><span class="step">3</span><h2 id="h-domain">Domain colouring</h2></div>
+    <p class="help">A picture of ζ(<var>s</var>) over a rectangle of the complex plane. The <b>hue</b> is the argument of ζ(<var>s</var>): red where it is a positive real number (0°), then green at 120° and blue at 240°. The <b>brightness</b> comes from the size: dark near 0, full colour where |ζ(<var>s</var>)| = 1, and pale toward white where it is large. Each zero is a dark point where all the colours meet, and the pole at <var>s</var> = 1 is a white one.</p>
+    <div class="zg-grid">
+      <label><span>Re(<var>s</var>) from</span> <input type="text" id="dc-x0" inputmode="decimal" autocomplete="off" spellcheck="false" value="-10"></label>
+      <label><span>Re(<var>s</var>) to</span> <input type="text" id="dc-x1" inputmode="decimal" autocomplete="off" spellcheck="false" value="6"></label>
+      <label><span>Im(<var>s</var>) from</span> <input type="text" id="dc-y0" inputmode="decimal" autocomplete="off" spellcheck="false" value="-2"></label>
+      <label><span>Im(<var>s</var>) to</span> <input type="text" id="dc-y1" inputmode="decimal" autocomplete="off" spellcheck="false" value="34"></label>
+      <label><span>Start from</span> <select id="dc-preset">
+        <option value="">(choose a view)</option>
+        <option value="-10,6,-2,34">The strip and the first zeros</option>
+        <option value="-0.5,1.5,0,60">Close up on the line</option>
+        <option value="-15,2,-4,4">The trivial zeros</option>
+        <option value="-1,3,-2,2">Around the pole at s = 1</option>
+        <option value="-20,20,-40,40">A wide view</option>
+      </select></label>
+      <label><span>Detail</span> <select id="dc-detail"><option value="220">Quick</option><option value="400" selected>Normal</option><option value="640">Fine</option></select></label>
+    </div>
+    <div class="zg-checks" role="group" aria-label="What to draw on the picture">
+      <label><input type="checkbox" id="dc-strip" checked> <span>Critical strip</span></label>
+      <label><input type="checkbox" id="dc-path" checked> <span>Critical line (the garden path)</span></label>
+      <label><input type="checkbox" id="dc-zeros" checked> <span>Zeros</span></label>
+      <label><input type="checkbox" id="dc-rings"> <span>Rings for |ζ(<var>s</var>)|</span></label>
+    </div>
+    <div class="btnrow">
+      <button type="button" class="btn primary" id="dc-go">Draw</button>
+      <button type="button" class="btn" id="dc-in">Zoom in</button>
+      <button type="button" class="btn" id="dc-out">Zoom out</button>
+    </div>
+    <p class="why" id="dc-why" role="alert"></p>
+    <p class="zg-status" id="dc-status" role="status"></p>
+    <div class="zg-dcwrap" id="dc-wrap">
+      <div class="zg-dcbox" id="dc-box" tabindex="0" role="img" aria-label="Domain colouring of zeta" aria-describedby="dc-read">
+        <canvas id="dc-cv" width="10" height="10"></canvas>
+        <svg id="dc-svg" aria-hidden="true"></svg>
+      </div>
+      <div class="zg-legend" aria-hidden="true">
+        <canvas id="dc-wheel" width="120" height="120"></canvas>
+        <div class="zg-legend-text">
+          <p><b>Hue</b>: the argument</p>
+          <p class="mono">0° red · 120° green · 240° blue</p>
+          <div class="zg-lbar"><canvas id="dc-bar" width="160" height="12"></canvas></div>
+          <p class="mono zg-lbar-l"><span>0</span><span>1</span><span>large</span></p>
+          <p><b>Brightness</b>: the size |ζ(<var>s</var>)|</p>
+        </div>
+      </div>
+    </div>
+    <p class="zg-read" id="dc-read" aria-live="polite"></p>
+    <p class="help">Point at the picture, or tap it, to read ζ(<var>s</var>) there. With the keyboard, focus the picture and use the arrow keys to move the marker (hold Shift for bigger steps). Zoom in and Zoom out work around the marker.</p>
+  </section>
+
+  <section class="panel" id="calc" aria-labelledby="h-calc">
+    <div class="panel-head"><span class="step">4</span><h2 id="h-calc">A <span class="zg-nc">ζ(<var>s</var>)</span> calculator</h2></div>
+    <p class="help">Any complex <var>s</var> = <var>σ</var> + <var>i</var><var>t</var>. You can type decimals or fractions such as 1/2.</p>
+    <div class="zg-row">
+      <label><span>Re(<var>s</var>) = <var>σ</var></span> <input type="text" id="cz-re" inputmode="decimal" autocomplete="off" spellcheck="false" value="2"></label>
+      <label><span>Im(<var>s</var>) = <var>t</var></span> <input type="text" id="cz-im" inputmode="decimal" autocomplete="off" spellcheck="false" value="0"></label>
+      <button type="button" class="btn primary" id="cz-go">Work it out</button>
+    </div>
+    <p class="why" id="cz-why" role="alert"></p>
+    <div class="zg-out" id="cz-out" aria-live="polite"></div>
+  </section>
+
+  <section class="panel" id="about" aria-labelledby="h-about">
+    <div class="panel-head"><span class="step">5</span><h2 id="h-about">About the numbers</h2></div>
+    <div class="explain">
+      <p><b>ζ(s) anywhere.</b> For Re(<var>s</var>) ≥ 0, and just left of 0, the page uses Euler–Maclaurin summation: the first <var>N</var> terms of the series, then a correction built from Bernoulli numbers, with <var>N</var> and the number of corrections chosen from |<var>s</var>| so the leftover is below double precision. For Re(<var>s</var>) &lt; 0 it uses the functional equation ζ(<var>s</var>) = 2<sup><var>s</var></sup>π<sup><var>s</var>−1</sup> sin(π<var>s</var>/2) Γ(1 − <var>s</var>) ζ(1 − <var>s</var>), worked in logarithms so very large values don’t overflow (high up the plane, a little left of 0, the summation is used directly because it is more accurate there). Γ comes from Stirling’s series. Checked against an independent high-precision library at a few hundred points, values agree to about 14 significant digits on the right half of the plane, and to 10 or more far to the left and high up. Close to a zero, the error is a tiny absolute amount (about 10<sup>−15</sup>), not a fraction of the value; next to the pole at <var>s</var> = 1 it is a tiny fraction of |ζ(<var>s</var>)|, so a small real part there is shown with fewer digits. Next to the pole, Re(<var>s</var>) − 1 is worked out from the decimal you type, before any rounding.</p>
+      <p><b>On the critical line.</b> ζ(½ + <var>it</var>) = Z(<var>t</var>) e<sup>−<var>i</var>θ(<var>t</var>)</sup>, where θ is the Riemann–Siegel theta function. Above <var>t</var> = 200 the page computes Z(<var>t</var>) with the Riemann–Siegel formula and its first five correction terms, C<sub>0</sub> to C<sub>4</sub>; Gabcke’s bound for what is left is 0.017 (<var>t</var>/2π)<sup>−11/4</sup>. Where that isn’t small enough for a zero’s last digits, it uses Euler–Maclaurin instead. Phases such as <var>t</var> ln <var>n</var> and θ(<var>t</var>) are carried in double-double arithmetic (about 32 digits), because at large <var>t</var> ordinary double precision would lose the digits that matter.</p>
+      <p><b>Finding zero number <var>n</var>.</b> The Gram points <var>g</var><sub><var>k</var></sub> solve θ(<var>g</var><sub><var>k</var></sub>) = <var>k</var>π. Gram’s law says zero number <var>n</var> usually lies between <var>g</var><sub><var>n</var>−2</sub> and <var>g</var><sub><var>n</var>−1</sub>; it first fails at <var>g</var><sub>126</sub>. So the page groups the Gram intervals into Gram blocks (between “good” Gram points, where (−1)<sup><var>k</var></sup>Z(<var>g</var><sub><var>k</var></sub>) &gt; 0) and looks inside each block, sampling more and more finely, until it has found as many sign changes of Z as the block has intervals (Rosser’s rule). That finds close pairs such as Lehmer’s near <var>t</var> ≈ 7005. The count is then confirmed: above <var>t</var> = 800 with Turing’s method in Brent’s form (enough Gram blocks on each side that obey Rosser’s rule pin down how many zeros lie below a Gram point exactly), and below that with Backlund’s test (Re ζ(<var>σ</var> + <var>ig</var>) &gt; 0 for every <var>σ</var> ≥ ½, checked at closely spaced points). If a block won’t give up its zeros, the search widens to its neighbours. Each zero is then pinned down by a bracketing root finder that can’t leave its sign change, and polished in double-double.</p>
+      <p><b>How accurate.</b> Checked against an independent high-precision library for zeros 1 to 2,000 and a few hundred more up to 10,000,000, including Gram’s first failure and Lehmer’s pair. The largest difference found was about 10<sup>−14</sup>, far below the decimals shown. Each zero is shown with as many decimals as its own error estimate supports, never fewer than 10.</p>
+      <p><b>The pictures.</b> The plots sample Z(<var>t</var>) closely enough to follow every wiggle; the values you read off when you point are recomputed at full accuracy. The domain colouring uses a quicker, lower-accuracy evaluation per pixel (good to about 9 digits, far more than a colour can show) and is drawn a little at a time, coarse first, so the page stays responsive.</p>
+      <p>Nothing you type leaves this device. The page remembers your last inputs in this browser only.</p>
+    </div>
+  </section>
+
+  <footer>
+    <span>The Zeta Garden · <a href="../">all AdequateFootwear tools</a></span>
+    <span class="mono">ζ(½ + it) = 0</span>
+  </footer>
+</main>
+
+<script>
+(() => {
+'use strict';
+/* Generated by zeta-garden/make-coefficients.py (mpmath, build time only). Pure mathematics. */
+// Riemann-Siegel corrections C0..C4 as Taylor series in x = p - 1/2 (Edwards, ch. 7; Psi(p) = cos 2pi(p^2 - p - 1/16) / cos 2pi p).
+const RS_C = [
+  [0.3826834323650898,0.0,1.7489618723100817,0.0,2.118025207685496,0.0,-0.8707216670511481,0.0,-3.4733112243465167,0.0,-1.6626947308999325,0.0,1.216731288919232,0.0,1.3014304161007977,0.0,0.03051102182736167,0.0,-0.3755803051545095,0.0,-0.1085784416564066,0.0,0.051832902999549624,0.0,0.029999480619902277,0.0,-0.0022759396706125644,0.0,-0.004382647416580339,0.0,-0.0004064230183729847,0.0,0.0004006097785422114,0.0,8.971057991388841e-05,0.0,-2.3025650027239108e-05,0.0,-9.380006601906792e-06,0.0,6.323514947609108e-07,0.0,6.551022819231502e-07],
+  [0.0,-0.053650205256750697,0.0,0.11027818741081483,0.0,1.2317200154315227,0.0,1.2634964862799458,0.0,-1.695108997559503,0.0,-2.9998711967650102,0.0,-0.10819944959899208,0.0,1.9407662946212714,0.0,0.7838423561500687,0.0,-0.5054829667900366,0.0,-0.38450723496057976,0.0,0.03747264646531532,0.0,0.09092026610973176,0.0,0.01044923755006451,0.0,-0.012582979651583417,0.0,-0.003399503721151274,0.0,0.0010410950537714891,0.0,0.0005010949051118486,0.0,-3.956359669003182e-05,0.0,-4.7624592453571896e-05,0.0,-1.8539355338085133e-06,0.0,3.1936918080068973e-06],
+  [0.005188542830293168,0.0,0.0012378633552253898,0.0,-0.18137505725166997,0.0,0.14291492748532125,0.0,1.3303391766687565,0.0,0.3522472353403734,0.0,-2.421001595891951,0.0,-1.6760787022538108,0.0,1.3689416723328371,0.0,1.5539019430222982,0.0,-0.1722164273472998,0.0,-0.6359068055045431,0.0,-0.09911649873041208,0.0,0.14033480067387008,0.0,0.04782352019827292,0.0,-0.017356040641479782,0.0,-0.010225012534028593,0.0,0.0009274149159794888,0.0,0.0013572194372373386,0.0,6.41369012029388e-05,0.0,-0.0001230080569819663,0.0,-1.83135074047892e-05,0.0,7.821628604322627e-06],
+  [0.0,-0.0026794321814389136,0.0,0.02995372109103515,0.0,-0.042570172541828696,0.0,-0.28997965779803886,0.0,0.4888831999235446,0.0,1.230855876395746,0.0,-0.8297560708527408,0.0,-2.249763536666567,0.0,0.07845139961005472,0.0,1.7467492800868893,0.0,0.45968080979749937,0.0,-0.6619353471039775,0.0,-0.31590441036173633,0.0,0.12844792545207495,0.0,0.10073382716626152,0.0,-0.009530183848825268,0.0,-0.019264421687514088,0.0,-0.001246463715876929,0.0,0.0024243969641103086,0.0,0.000437647697741857,0.0,-0.00020714032687001792,0.0,-6.274344504186516e-05,0.0,1.157534381459567e-05],
+  [0.00046483389361763383,0.0,-0.004022642946136188,0.0,0.003847177051796127,0.0,0.06581175135809486,0.0,-0.19604124343694448,0.0,-0.20854053686358853,0.0,0.9507754185141751,0.0,0.5341535312914873,0.0,-1.67634944117634,0.0,-1.076747157875129,0.0,1.235339301656597,0.0,1.0257825340057276,0.0,-0.40124095793988546,0.0,-0.5036663995108304,0.0,0.03573487795502745,0.0,0.14431763086785418,0.0,0.01509152741790347,0.0,-0.026098874779194363,0.0,-0.006126628379519262,0.0,0.003077503129870841,0.0,0.0011562478934088753,0.0,-0.00022775966758472127,0.0,-0.00014189637118181445,0.0,7.4648603079559195e-06],
+];
+// B_{2j}/(2j)! for j = 1..120 (Euler-Maclaurin).
+const BR = [0,0.08333333333333333,-0.001388888888888889,3.306878306878307e-05,-8.267195767195768e-07,2.08767569878681e-08,-5.284190138687493e-10,1.3382536530684679e-11,-3.3896802963225827e-13,8.586062056277845e-15,-2.174868698558062e-16,5.5090028283602295e-18,-1.3954464685812522e-19,3.534707039629467e-21,-8.953517427037546e-23,2.267952452337683e-24,-5.744790668872202e-26,1.455172475614865e-27,-3.6859949406653103e-29,9.336734257095045e-31,-2.36502241570063e-32,5.990671762482134e-34,-1.5174548844682903e-35,3.843758125454189e-37,-9.736353072646691e-39,2.466247044200681e-40,-6.247076741820743e-42,1.5824030244644914e-43,-4.008273685948936e-45,1.0153075855569557e-46,-2.5718041582418717e-48,6.514456035233815e-50,-1.6501309906896525e-51,4.179830628539476e-53,-1.058763466770291e-54,2.6818791912607708e-56,-6.793279351107421e-58,1.7207577616681404e-59,-4.358730329348894e-61,1.1040792903684666e-62,-2.7966655133781345e-64,7.084036501679471e-66,-1.794407408289224e-67,4.545287063611096e-69,-1.1513346631982051e-70,2.9163647710923614e-72,-7.387238263497337e-74,1.8712093117637953e-75,-4.739828557761799e-77,1.2006125993354507e-78,-3.0411872415142924e-80,7.703417274705106e-82,-1.951298390909883e-83,4.942696565159462e-85,-1.2519996659171848e-86,3.1713522017635153e-88,-8.033128970735334e-90,2.0348153391661465e-91,-5.154247466447474e-93,1.3055861352149468e-94,-3.307088314175091e-96,8.376952560049092e-98,-2.1219068717497136e-99,5.37485289561228e-101,-1.3614661432172069e-102,3.448634027993399e-104,-8.735492041638356e-106,2.2127259833925496e-107,-5.604900392837224e-109,1.419737854999179e-110,-3.596237998258763e-112,9.109377266078232e-114,-2.307432217109123e-115,5.844794085299002e-117,-1.4805036371705745e-118,3.7501595226227194e-120,-9.499265041992958e-122,2.40619194446752e-123,-6.094955397102685e-125,1.5438702377042473e-126,-3.9106689968592925e-128,9.90584028987943e-130,-2.5091786578563554e-131,6.35582378960246e-133,-1.609948973461625e-134,4.0780483898724625e-136,-1.032981724531519e-137,2.6165732752609202e-139,-6.627857533408623e-141,1.6788559257443675e-142,-4.2525917390343004e-144,1.0771940713664573e-145,-2.728564458083958e-147,6.911534513437014e-149,-1.7507121442157682e-150,4.43460566672392e-152,-1.123298737848715e-153,2.8453489425693972e-155,-7.207353068415137e-157,1.8256438595501416e-158,-4.624409918974655e-160,1.1713767165946985e-161,-2.9671318854112526e-163,7.515832866319735e-165,-1.9037827051837493e-166,4.822337927175732e-168,-1.221512466761957e-169,3.094127224154831e-171,-7.837515817283712e-173,1.9852659485568248e-174,-5.0287373938151485e-176,1.2737940624195893e-177,-3.226558053023367e-179,8.172967025576109e-181,-2.0702367322529202e-182,5.243970903292784e-184,-1.3283133472690102e-185,3.364657014830294e-187,-8.522775782327507e-189,2.1588443254591854e-190,-5.468416558876724e-192];
+// Stirling series for ln Gamma: B_{2k}/(2k(2k-1)), k = 1..16.
+const ST = [0.08333333333333333,-0.002777777777777778,0.0007936507936507937,-0.0005952380952380953,0.0008417508417508417,-0.0019175269175269176,0.00641025641025641,-0.029550653594771242,0.17964437236883057,-1.3924322169059011,13.402864044168393,-156.84828462600203,2193.1033333333335,-36108.77125372499,691472.268851313,-15238221.539407415];
+// Asymptotic series for theta(t): (1 - 2^{1-2k}) |B_{2k}| / (4k(2k-1)), the coefficient of t^{1-2k}.
+const TH = [0.020833333333333332,0.0012152777777777778,0.00038442460317460316,0.0002952938988095238,0.0004200533985690236,0.0009582953125433594,0.0032047369541266025,0.014774875890195759,0.08982150089551923,0.696214780526108,6.7014288265923945,78.42413296411472];
+// Double-double constants [hi, lo].
+const DD_PI = [3.141592653589793, 1.2246467991473532e-16];
+const DD_TWOPI = [6.283185307179586, 2.4492935982947064e-16];
+const DD_LN2 = [0.6931471805599453, 2.3190468138462996e-17];
+const DD_LNPI = [1.1447298858494002, 1.0265951162707826e-17];
+const DD_LN2PI = [1.8378770664093456, -7.756588316134483e-17];
+const DD_PI8 = [0.39269908169872414, 1.5308084989341915e-17];
+const DD_INV2PI = [0.15915494309189535, -9.839338337591243e-18];
+/* ---------- The Zeta Garden: number core (pure functions, no DOM) ----------
+   Needs the tables from zetagarden.coef.js (RS_C, BR, ST, TH, DD_*).
+   t values that must be exact past double precision are carried as double-doubles: hi + lo. */
+const ZG = (() => {
+'use strict';
+const PI = Math.PI, TWO_PI = 2 * Math.PI, INV_2PI = 1 / (2 * Math.PI), LN_2PI = DD_LN2PI[0];
+const SPLIT = 134217729; // 2^27 + 1, Dekker's splitter
+
+/* ---- double-double arithmetic ---- */
+function twoSum(a, b) { const s = a + b, bb = s - a; return [s, (a - (s - bb)) + (b - bb)]; }
+function twoProd(a, b) {
+  const p = a * b;
+  let c = SPLIT * a; const ah = c - (c - a), al = a - ah;
+  c = SPLIT * b; const bh = c - (c - b), bl = b - bh;
+  return [p, ((ah * bh - p) + ah * bl + al * bh) + al * bl];
+}
+function ddAdd(x, y) { const [s, e] = twoSum(x[0], y[0]); const f = e + x[1] + y[1]; const h = s + f; return [h, f - (h - s)]; }
+function ddSub(x, y) { return ddAdd(x, [-y[0], -y[1]]); }
+function ddMul(x, y) { const [p, e] = twoProd(x[0], y[0]); const f = e + (x[0] * y[1] + x[1] * y[0]); const h = p + f; return [h, f - (h - p)]; }
+function ddMulD(x, d) { const [p, e] = twoProd(x[0], d); const f = e + x[1] * d; const h = p + f; return [h, f - (h - p)]; }
+function ddDivD(x, d) { const q = x[0] / d; const [p, e] = twoProd(q, d); const r = ((x[0] - p) - e + x[1]) / d; const h = q + r; return [h, r - (h - q)]; }
+// e^y for a double y, as a double-double
+function expDD(y) {
+  const k = Math.round(y / DD_LN2[0]);
+  let r = ddSub([y, 0], ddMulD(DD_LN2, k));
+  r = [r[0] / 1024, r[1] / 1024]; // e^r = (e^(r/1024))^1024
+  let s = [1, 0];
+  for (let i = 14; i >= 1; i--) s = ddAdd([1, 0], ddDivD(ddMul(s, r), i));
+  for (let i = 0; i < 10; i++) s = ddMul(s, s);
+  const sc = Math.pow(2, k);
+  return [s[0] * sc, s[1] * sc];
+}
+// ln x for a double x > 0, as a double-double (one Newton step from Math.log)
+function lnDD(x) {
+  const y = Math.log(x), e = expDD(y);
+  const [d, de] = twoSum(x, -e[0]);
+  return twoSum(y, (d + de - e[1]) / e[0]);
+}
+// reduce a double-double angle to a double in about [-pi, pi]
+function reduceDD(h, l) {
+  const k = Math.round(h * INV_2PI);
+  if (k === 0) return h + l;
+  const [p, e] = twoProd(k, DD_TWOPI[0]);
+  return (h - p) + (l - e - k * DD_TWOPI[1]);
+}
+
+/* ---- tables of ln n (double-double) and n^(-1/2) ---- */
+let LNH = new Float64Array(1), LNL = new Float64Array(1), LNS1 = new Float64Array(1), LNS2 = new Float64Array(1), ISQ = new Float64Array(1);
+let lnTop = 0;
+function ensureLn(n) {
+  if (n <= lnTop) return;
+  const size = Math.max(n + 1, Math.min(lnTop * 2 + 1, 4e6), 64);
+  const grow = (a) => { const b = new Float64Array(size); b.set(a); return b; };
+  LNH = grow(LNH); LNL = grow(LNL); LNS1 = grow(LNS1); LNS2 = grow(LNS2); ISQ = grow(ISQ);
+  for (let k = lnTop + 1; k < size; k++) {
+    const L = k === 1 ? [0, 0] : lnDD(k);
+    LNH[k] = L[0]; LNL[k] = L[1];
+    const c = SPLIT * L[0]; LNS1[k] = c - (c - L[0]); LNS2[k] = L[0] - LNS1[k];
+    ISQ[k] = 1 / Math.sqrt(k);
+  }
+  lnTop = size - 1;
+}
+
+/* ---- complex helpers ---- */
+const cmul = (a, b, c, d) => [a * c - b * d, a * d + b * c];
+function cdiv(a, b, c, d) {
+  if (Math.abs(c) >= Math.abs(d)) { const r = d / c, den = c + d * r; return [(a + b * r) / den, (b - a * r) / den]; }
+  const r = c / d, den = c * r + d; return [(a * r + b) / den, (b * r - a) / den];
+}
+const clog = (a, b) => [Math.log(Math.hypot(a, b)), Math.atan2(b, a)];
+// ln Gamma(z) for Re z > 0, continuous branch (Stirling's series after shifting |z| past 15)
+function lnGamma(x, y) {
+  let sr = 0, si = 0;
+  while (Math.hypot(x, y) < 15) { const l = clog(x, y); sr += l[0]; si += l[1]; x += 1; }
+  const lz = clog(x, y);
+  // (z - 1/2) ln z - z + ln(2 pi)/2 + sum ST[k] / z^(2k+1)
+  let re = (x - 0.5) * lz[0] - y * lz[1] - x + 0.5 * LN_2PI;
+  let im = (x - 0.5) * lz[1] + y * lz[0] - y;
+  const iz = cdiv(1, 0, x, y), iz2 = cmul(iz[0], iz[1], iz[0], iz[1]);
+  let pr = iz[0], pi = iz[1];
+  for (let k = 0; k < ST.length; k++) {
+    const tr = ST[k] * pr, ti = ST[k] * pi;
+    re += tr; im += ti;
+    if (Math.abs(tr) + Math.abs(ti) < 1e-18 * (Math.abs(re) + Math.abs(im))) break;
+    const q = cmul(pr, pi, iz2[0], iz2[1]); pr = q[0]; pi = q[1];
+  }
+  return [re - sr, im - si];
+}
+// sin(pi x) and cos(pi x) for real x, exact at integers and half-integers
+function sinpi(x) {
+  let r = x - 2 * Math.round(x / 2); // now in [-1, 1]
+  if (r > 0.5) r = 1 - r; else if (r < -0.5) r = -1 - r;
+  return Math.sin(PI * r);
+}
+const cospi = (x) => sinpi(x + 0.5);
+// ln sin(pi z / 2) for complex z = x + iy (branch: any; only the exponential is used)
+function lnSinHalfPi(x, y) {
+  const a = x / 2, b = PI * y / 2; // sin(pi a + i b)
+  if (Math.abs(b) < 30) {
+    const sr = sinpi(a) * Math.cosh(b), si = cospi(a) * Math.sinh(b);
+    return clog(sr, si);
+  }
+  // |b| large: sin(w) = -(1/2i) e^{-iw} (1 - e^{2iw}) for b > 0, mirrored for b < 0
+  const sg = b > 0 ? 1 : -1, ab = Math.abs(b);
+  // e^{-i w} with w = pi a + i b: e^{b} e^{-i pi a}; sin w = (e^{iw} - e^{-iw})/(2i)
+  // for b > 0: sin w ~ -e^{-iw}/(2i) = (i/2) e^{b} e^{-i pi a}; log = b - ln 2 + i(pi/2 - pi a)
+  const corr = Math.exp(-2 * ab); // |e^{2iw}| tiny; include its first-order effect
+  const ca = cospi(2 * a), sa = sinpi(2 * a);
+  // log(1 - e^{2 i w}) ~ -e^{2iw}; e^{2iw} = e^{-2b} e^{2 i pi a} (b>0) ; mirrored for b<0
+  const er = -corr * ca, ei = -corr * sa * sg;
+  return [ab - Math.LN2 + er, sg * (PI / 2 - PI * a) + ei];
+}
+
+/* ---- theta(t), the Riemann-Siegel theta function ---- */
+function thetaSmall(t) { // any t, via ln Gamma
+  const g = lnGamma(0.25, t / 2);
+  return g[1] - (t / 2) * DD_LNPI[0];
+}
+function thetaDD(a, b) { // t = a + b, returns [hi, lo]
+  if (a < 30) return [thetaSmall(a + b), 0];
+  const L0 = lnDD(a);
+  const L = ddSub([L0[0], L0[1] + b / a], DD_LN2PI); // ln(t / 2 pi)
+  let th = ddMul([a / 2, b / 2], L);
+  th = ddSub(th, [a / 2, b / 2]);
+  th = ddSub(th, DD_PI8);
+  const t = a + b, it2 = 1 / (t * t);
+  let s = 0, p = 1 / t;
+  for (let k = 0; k < TH.length; k++) { const term = TH[k] * p; s += term; if (Math.abs(term) < 1e-20) break; p *= it2; }
+  return ddAdd(th, [s, 0]);
+}
+const theta = (t) => (t < 0 ? -thetaDD(-t, 0)[0] : thetaDD(t, 0)[0]);
+function thetaPrime(t) { return 0.5 * Math.log(t * INV_2PI) + 1 / (48 * t * t); }
+
+/* ---- Z(t) by the Riemann-Siegel formula with corrections C0..C4 ---- */
+function rsZ(a, b) {
+  const th = thetaDD(a, b), thh = th[0], thl = th[1];
+  const tau = a * INV_2PI, sq = Math.sqrt(tau), N = Math.floor(sq), p = sq - N;
+  ensureLn(N);
+  let c = SPLIT * a; const a1 = c - (c - a), a2 = a - a1;
+  let sum = 0, comp = 0;
+  for (let n = 1; n <= N; n++) {
+    const lh = LNH[n];
+    // a * lh exactly (Dekker), then the small parts
+    const pp = a * lh, e = ((a1 * LNS1[n] - pp) + a1 * LNS2[n] + a2 * LNS1[n]) + a2 * LNS2[n];
+    const q = a * LNL[n] + b * lh;
+    const x = thh - pp, bb = x - thh, xe = (thh - (x - bb)) + (-pp - bb);
+    const low = xe + thl - e - q;
+    const k = Math.round(x * INV_2PI);
+    let r;
+    if (k === 0) r = x + low;
+    else {
+      const kp = k * 6.283185307179586;
+      const cc = SPLIT * k, k1 = cc - (cc - k), k2 = k - k1;
+      // exact product k * 2pi_hi with precomputed split of 2pi_hi
+      const ek = ((k1 * TP1 - kp) + k1 * TP2 + k2 * TP1) + k2 * TP2;
+      r = (x - kp) + (low - ek - k * DD_TWOPI[1]);
+    }
+    const term = Math.cos(r) * ISQ[n];
+    const s2 = sum + term;
+    comp += Math.abs(sum) >= Math.abs(term) ? (sum - s2) + term : (term - s2) + sum;
+    sum = s2;
+  }
+  const x = p - 0.5;
+  const it = 1 / Math.sqrt(sq); // tau^{-1/4}
+  const w = 1 / sq;             // tau^{-1/2}
+  let R = 0, wp = 1;
+  for (let kk = 0; kk < 5; kk++) {
+    const cs = RS_C[kk]; let v = 0;
+    for (let j = cs.length - 1; j >= 0; j--) v = v * x + cs[j];
+    R += v * wp; wp *= w;
+  }
+  const sign = (N - 1) % 2 === 0 ? 1 : -1;
+  return 2 * (sum + comp) + sign * it * R;
+}
+const TP1 = (() => { const c = SPLIT * 6.283185307179586; return c - (c - 6.283185307179586); })();
+const TP2 = 6.283185307179586 - TP1;
+// a bound for the Riemann-Siegel remainder after C4 (Gabcke's 0.017 tau^(-11/4) for t >= 200, with a margin),
+// plus rounding in the main sum
+function rsBound(t) {
+  const tau = t * INV_2PI;
+  return 0.025 * Math.pow(tau, -2.75) + 4e-16 * Math.sqrt(Math.sqrt(tau));
+}
+
+/* ---- zeta(s) by Euler-Maclaurin summation ----
+   s = sr + i(th + tl). With dd, the phases t ln k are carried in double-double. tol: relative. */
+function emZeta(sr, th, tl, tol, dd, sm1) { // sm1: Re(s) − 1 when known more closely than sr − 1 (next to the pole)
+  const t = th + tl;
+  const absS = Math.hypot(sr, t);
+  const big = absS > 1500;
+  const rr = big ? 0.85 : 0.6;
+  let M = Math.ceil(Math.log(tol) / (2 * Math.log(rr))) + 2;
+  if (M > 118) M = 118;
+  const N = Math.max(4, Math.ceil((absS + 2 * M + 2) / (TWO_PI * rr)) + 1);
+  if (dd) ensureLn(N);
+  let c = SPLIT * th; const a1 = c - (c - th), a2 = th - a1;
+  const half = sr === 0.5;
+  let re = 0, im = 0, cre = 0, cim = 0;
+  const phase = (k) => {
+    if (!dd) return -t * Math.log(k);
+    // -(th + tl) ln k, reduced
+    const lh = LNH[k];
+    const pp = th * lh, e = ((a1 * LNS1[k] - pp) + a1 * LNS2[k] + a2 * LNS1[k]) + a2 * LNS2[k];
+    const q = th * LNL[k] + tl * lh;
+    return reduceDD(-pp, -e - q);
+  };
+  for (let k = 1; k < N; k++) {
+    const amp = half ? (dd ? ISQ[k] : 1 / Math.sqrt(k)) : Math.exp(-sr * (dd ? LNH[k] : Math.log(k)));
+    const ph = k === 1 ? 0 : phase(k);
+    const xr = amp * Math.cos(ph), xi = amp * Math.sin(ph);
+    let s2 = re + xr; cre += Math.abs(re) >= Math.abs(xr) ? (re - s2) + xr : (xr - s2) + re; re = s2;
+    s2 = im + xi; cim += Math.abs(im) >= Math.abs(xi) ? (im - s2) + xi : (xi - s2) + im; im = s2;
+  }
+  re += cre; im += cim;
+  const lnN = Math.log(N), ampN = Math.exp(-sr * lnN), phN = phase(N);
+  const nr = ampN * Math.cos(phN), ni = ampN * Math.sin(phN); // N^{-s}
+  const q1 = cdiv(N * nr, N * ni, sm1 === undefined ? sr - 1 : sm1, t); // N^{1-s}/(s-1)
+  re += q1[0] + nr / 2; im += q1[1] + ni / 2;
+  let A = cmul(sr, t, nr / N, ni / N); // s N^{-s-1}
+  const iN2 = 1 / (N * N);
+  for (let j = 1; j <= M; j++) {
+    const Tr = BR[j] * A[0], Ti = BR[j] * A[1];
+    re += Tr; im += Ti;
+    if (Math.abs(Tr) + Math.abs(Ti) <= tol * 0.1 * (Math.abs(re) + Math.abs(im) + 1e-300)) break;
+    const f = cmul(sr + 2 * j - 1, t, sr + 2 * j, t);
+    A = cmul(A[0], A[1], f[0] * iN2, f[1] * iN2);
+  }
+  return [re, im];
+}
+
+/* ---- zeta(s) for any complex s ----
+   returns {re, im} or, when the value is beyond double range, {lnAbs, arg}; {pole: true} at s = 1.
+   sm1, if given, is Re(s) − 1 worked out more closely than sr − 1 can be (for s typed next to the pole). */
+function zeta(sr, si, tol, sm1) {
+  tol = tol || 1e-15;
+  if (sm1 !== undefined && !(Math.abs(sr - 1) < 1e-3)) sm1 = undefined;
+  if (si === 0 && (sm1 === undefined ? sr === 1 : sm1 === 0)) return { pole: true };
+  if (si === 0 && sr < 0 && sr === Math.round(sr) && sr % 2 === 0) return { re: 0, im: 0, trivial: true };
+  const dd = Math.abs(si) > 200 && tol < 1e-10;
+  // Euler-Maclaurin directly: also just left of 0, where 1 − s would sit next to the pole and lose digits,
+  // and a little left of 0 when high up (there it beats the functional equation)
+  if (sr >= 0 || (sr > -0.01 && Math.hypot(sr, si) < 0.1) || (Math.abs(si) >= 1000 && Math.abs(si) >= 300 * -sr)) { const v = emZeta(sr, si, 0, tol, dd, sm1); return { re: v[0], im: v[1] }; }
+  // functional equation: zeta(s) = 2^s pi^(s-1) sin(pi s/2) Gamma(1-s) zeta(1-s)
+  const w = emZeta(1 - sr, -si, 0, tol, dd);
+  const lw = clog(w[0], w[1]);
+  const lg = lnGamma(1 - sr, -si);
+  const ls = lnSinHalfPi(sr, si);
+  const lr = sr * Math.LN2 + (sr - 1) * DD_LNPI[0] + ls[0] + lg[0] + lw[0];
+  const li = si * Math.LN2 + si * DD_LNPI[0] + ls[1] + lg[1] + lw[1];
+  // on the real axis ζ is real: li is then a whole number of π plus rounding, so keep only its sign
+  if (lr > 700) return { lnAbs: lr, arg: si === 0 ? (Math.cos(li) < 0 ? Math.PI : 0) : Math.atan2(Math.sin(li), Math.cos(li)) };
+  const m = Math.exp(lr);
+  if (si === 0) return { re: Math.cos(li) < 0 ? -m : m, im: 0 };
+  return { re: m * Math.cos(li), im: m * Math.sin(li) };
+}
+// a quicker, lower-accuracy zeta for pictures: returns [re, im] (Infinity at the pole)
+function zetaQuick(sr, si) {
+  if (sr === 1 && si === 0) return [Infinity, 0];
+  if (sr >= 0 || (sr > -0.01 && Math.hypot(sr, si) < 0.1)) return emZeta(sr, si, 0, 1e-9, false);
+  const w = emZeta(1 - sr, -si, 0, 1e-9, false);
+  const lw = clog(w[0], w[1]);
+  const lg = lnGamma(1 - sr, -si);
+  const ls = lnSinHalfPi(sr, si);
+  const lr = sr * Math.LN2 + (sr - 1) * DD_LNPI[0] + ls[0] + lg[0] + lw[0];
+  const li = si * Math.LN2 + si * DD_LNPI[0] + ls[1] + lg[1] + lw[1];
+  if (lr > 700) return [Infinity, 0];
+  const m = Math.exp(lr);
+  return [m * Math.cos(li), m * Math.sin(li)];
+}
+
+/* ---- Z(t) and zeta(1/2 + it) on the critical line ---- */
+const RS_FROM = 200;
+// fast: Riemann-Siegel from t = 200 (error below rsBound), Euler-Maclaurin below
+function Zfast(a, b) {
+  b = b || 0;
+  if (a < 0) return Zfast(-a, -b); // Z is even
+  if (a >= RS_FROM) return rsZ(a, b);
+  return ZfromZeta(a, b, 1e-15);
+}
+function ZfromZeta(a, b, tol) {
+  const th = thetaDD(a, b);
+  const z = emZeta(0.5, a, b, tol, a > 50);
+  const ph = reduceDD(th[0], th[1]);
+  return z[0] * Math.cos(ph) - z[1] * Math.sin(ph); // Re(e^{i theta} zeta)
+}
+// accurate to about `want` (absolute): Riemann-Siegel where its bound allows, else Euler-Maclaurin
+function Zacc(a, b, want) {
+  b = b || 0; want = want || 1e-13;
+  if (a < 0) return Zacc(-a, -b, want);
+  // Riemann-Siegel when its bound is good enough, and always high up, where summation would be slow and no better
+  if (a >= RS_FROM && (rsBound(a) <= want || a > 2e5)) return { z: rsZ(a, b), err: rsBound(a) };
+  return { z: ZfromZeta(a, b, 1e-16), err: 4e-15 * (Math.log(a + 3) + 1) };
+}
+// zeta(1/2 + it) for plotting and read-outs: Z(t) e^{-i theta(t)}
+function zetaHalf(t, accurate) {
+  const at = Math.abs(t);
+  const z = accurate ? Zacc(at, 0).z : Zfast(at, 0);
+  const th = reduceDD(...thetaDD(at, 0));
+  const re = z * Math.cos(th), im = -z * Math.sin(th);
+  return t < 0 ? [re, -im] : [re, im];
+}
+// sign of Z(t) that can be trusted: from the fast value when it is clearly away from 0
+function Zsign(t) {
+  const z = Zfast(t, 0);
+  const bound = t >= RS_FROM ? rsBound(t) : 1e-14;
+  if (Math.abs(z) > 4 * bound) return z > 0 ? 1 : -1;
+  const v = Zacc(t, 0, 1e-15).z;
+  return v > 0 ? 1 : v < 0 ? -1 : 0;
+}
+
+/* ---- Gram points: theta(g_k) = k pi ---- */
+function lambertW(x) { // principal branch, x >= -1/e
+  let w = x < 1 ? Math.log1p(x) * 0.9 : Math.log(x) - Math.log(Math.log(x) + 1e-300);
+  if (x < 1 && x > -0.3) w = x / (1 + x);
+  for (let i = 0; i < 60; i++) {
+    const ew = Math.exp(w), f = w * ew - x;
+    const d = ew * (w + 1) - (w + 2) * f / (2 * w + 2);
+    const nw = w - f / d;
+    if (Math.abs(nw - w) <= 1e-16 * Math.max(1, Math.abs(nw))) { w = nw; break; }
+    w = nw;
+  }
+  return w;
+}
+const gramMemo = new Map();
+function gram(k) {
+  if (gramMemo.has(k)) return gramMemo.get(k);
+  let t = TWO_PI * Math.exp(1 + lambertW((8 * k + 1) / (8 * Math.E)));
+  if (!(t > 7)) t = 9.6;
+  const kp = ddMulD(DD_PI, k);
+  for (let i = 0; i < 60; i++) {
+    const th = thetaDD(t, 0);
+    const f = (th[0] - kp[0]) + (th[1] - kp[1]);
+    const dt = f / thetaPrime(t);
+    t -= dt;
+    if (Math.abs(dt) <= 2e-16 * t) break;
+  }
+  if (gramMemo.size > 50000) gramMemo.clear();
+  gramMemo.set(k, t);
+  return t;
+}
+// the Gram index j with g_j <= t < g_{j+1} (t > g_-1)
+function gramIndex(t) {
+  let j = Math.floor(theta(t) / PI);
+  while (j > -1 && gram(j) > t) j--;
+  while (gram(j + 1) <= t) j++;
+  return j;
+}
+
+/* ---- certified zeros by number ---- */
+const signMemo = new Map();
+function gramSign(k) { // sign of Z(g_k)
+  if (signMemo.has(k)) return signMemo.get(k);
+  let s = Zsign(gram(k));
+  if (s === 0) s = Zsign(gram(k) * (1 + 1e-15));
+  if (signMemo.size > 50000) signMemo.clear();
+  signMemo.set(k, s);
+  return s;
+}
+const isGood = (k) => (k === -1 ? true : ((k % 2 === 0) ? 1 : -1) * gramSign(k) > 0);
+const MAXLEVEL = 12;
+// sign changes of Z in the Gram block [g_j, g_{j+m}): returns {found, brackets: [[l, r, zl, zr], ...]}
+const blockMemo = new Map();
+function scanBlock(j, m) {
+  const key = j + ':' + m;
+  if (blockMemo.has(key)) return blockMemo.get(key);
+  let pts = [];
+  for (let i = 0; i <= m; i++) { const g = gram(j + i); pts.push([g, gramSign(j + i)]); }
+  const count = (P) => { let c = 0; for (let i = 1; i < P.length; i++) if (P[i][1] !== P[i - 1][1]) c++; return c; };
+  let level = 0;
+  while (count(pts) < m && level < MAXLEVEL) {
+    level++;
+    const np = [pts[0]];
+    for (let i = 1; i < pts.length; i++) {
+      const tm = (pts[i - 1][0] + pts[i][0]) / 2;
+      let s = Zsign(tm); if (s === 0) s = Zsign(tm * (1 + 1e-15));
+      np.push([tm, s]); np.push(pts[i]);
+    }
+    pts = np;
+  }
+  const brackets = [];
+  for (let i = 1; i < pts.length; i++) if (pts[i][1] !== pts[i - 1][1]) brackets.push([pts[i - 1][0], pts[i][0], pts[i - 1][1], pts[i][1]]);
+  const out = { j, m, found: brackets.length, brackets, level, gramLaw: true };
+  // Gram's law inside: every interior Gram point good
+  for (let i = 1; i < m; i++) if (!isGood(j + i)) out.gramLaw = false;
+  if (blockMemo.size > 20000) blockMemo.clear();
+  blockMemo.set(key, out);
+  return out;
+}
+const prevGood = (k) => { let j = k - 1; while (j > -1 && !isGood(j)) j--; return Math.max(j, -1); };
+const nextGood = (k) => { let j = k + 1; while (!isGood(j)) j++; return j; };
+function blocksIn(lo, hi) { // the Gram blocks between good points lo < hi
+  const out = []; let j = lo;
+  while (j < hi) { const e = nextGood(j); out.push(scanBlock(j, e - j)); j = e; }
+  return out;
+}
+const LOW = 800; // below this height the count is checked with Backlund's test, above it with Turing's method
+// Backlund's test at a good Gram point: Re zeta(sigma + i g) > 0 for all sigma >= 1/2 means N(g) = k + 1
+const backlundMemo = new Map();
+function backlund(k) {
+  if (k === -1) return true;
+  if (backlundMemo.has(k)) return backlundMemo.get(k);
+  const g = gram(k);
+  let ok = true;
+  // sample sigma from 1/2 to 1.75 every 0.004; past sigma = 1.73, Re zeta >= 2 - zeta(sigma) > 0 anyway
+  for (let i = 0; i <= 313 && ok; i++) { const v = emZeta(0.5 + i * 0.004, g, 0, 1e-12, false)[0]; if (v <= 0.02) ok = false; }
+  backlundMemo.set(k, ok);
+  return ok;
+}
+const brentK = (g) => Math.max(1, Math.ceil(0.0061 * Math.log(g) ** 2 + 0.08 * Math.log(g)));
+// Certify the zeros numbered from Gram index range: returns {lo, hi, blocks, zerosCount, method}
+function certify(nFrom, nTo) {
+  let lo = isGood(nFrom - 2) ? nFrom - 2 : prevGood(nFrom - 2);
+  let hi = isGood(nTo - 1) ? nTo - 1 : nextGood(nTo - 1);
+  if (hi <= lo) hi = nextGood(lo);
+  const notes = [];
+  for (let round = 0; round < 40; round++) {
+    const blocks = blocksIn(lo, hi);
+    const F = blocks.reduce((s, b) => s + b.found, 0);
+    if (F < hi - lo) { // a block with fewer sign changes than Gram intervals: widen and look again
+      if (lo > -1) lo = prevGood(lo);
+      hi = nextGood(hi);
+      notes.push('widened');
+      continue;
+    }
+    if (F > hi - lo) return { error: 'more sign changes than the count allows' };
+    // lower end: N(g_lo) >= lo + 1
+    let lowOK = false, lowHow = '';
+    if (lo === -1) { lowOK = true; lowHow = 'start'; }
+    else if (gram(lo) < LOW) {
+      if (backlund(lo)) { lowOK = true; lowHow = 'backlund'; } else { lo = prevGood(lo); continue; }
+    } else {
+      const K = brentK(gram(lo));
+      let j = lo, ok = true, cnt = 0;
+      while (cnt < K) { const a = prevGood(j); if (a < -1 || gram(a) < LOW) { ok = false; break; } const b = scanBlock(a, j - a); if (b.found < b.m) { ok = false; break; } j = a; cnt++; }
+      if (ok) { lowOK = true; lowHow = 'turing'; }
+      else { lo = prevGood(lo); if (gram(lo) < LOW + 400) { /* drop to Backlund's test */ } continue; }
+    }
+    // upper end: N(g_hi) <= hi + 1
+    let highOK = false, highHow = '';
+    if (gram(hi) < LOW) {
+      if (backlund(hi)) { highOK = true; highHow = 'backlund'; } else { hi = nextGood(hi); continue; }
+    } else {
+      let j = hi, cnt = 0, ok = true, endG = gram(hi);
+      while (cnt < brentK(endG)) { const e = nextGood(j); const b = scanBlock(j, e - j); if (b.found < b.m) { ok = false; break; } j = e; endG = gram(e); cnt++; }
+      if (ok) { highOK = true; highHow = 'turing'; } else { hi = nextGood(hi); continue; }
+    }
+    if (lowOK && highOK) return { lo, hi, blocks, count: F, lowHow, highHow, notes };
+  }
+  return { error: 'could not confirm the count here' };
+}
+// Refine one zero inside [l, r] where Z changes sign (zl, zr are the signs)
+function refine(l, r, sl) {
+  // Illinois on the fast Z in double precision
+  let fl = Zfast(l), fr = Zfast(r);
+  if (Math.sign(fl) !== sl) fl = sl * Math.max(Math.abs(fl), 1e-300);
+  let side = 0;
+  for (let i = 0; i < 200; i++) {
+    let m = (l * fr - r * fl) / (fr - fl);
+    if (!(m > l && m < r)) m = (l + r) / 2;
+    if (r - l <= 4e-16 * r) break;
+    const fm = Zfast(m);
+    if (fm === 0) { l = r = m; break; }
+    if ((fm > 0) === (fl > 0)) { l = m; fl = fm; if (side === -1) fr /= 2; side = -1; }
+    else { r = m; fr = fm; if (side === 1) fl /= 2; side = 1; }
+    if (r - l <= 4e-16 * r) break;
+  }
+  return (l + r) / 2;
+}
+// polish a zero to double-double with the accurate Z; returns {hi, lo, err, slope}
+function polish(t0, want) {
+  const h = Math.max(1e-7, t0 * 1e-12);
+  const A = Zacc(t0, 0, want), B = Zacc(t0 + h, 0, want), C0 = Zacc(t0 - h, 0, want);
+  const slope = (B.z - C0.z) / (2 * h);
+  let d = -A.z / slope;
+  // a second step in double-double
+  const A2 = Zacc(t0, d, want);
+  d = d - A2.z / slope;
+  const s = twoSum(t0, d);
+  // error: what Z's own error moves the zero by, plus the slope estimate's effect on the last step
+  const err = (Math.max(A.err, A2.err) + 1e-16) / Math.abs(slope) + Math.abs(A2.z / slope) * 1e-6;
+  return { hi: s[0], lo: s[1], err, slope };
+}
+// zeros numbered nFrom..nTo (inclusive), certified; opts.want: target accuracy of Z when polishing
+function zerosByIndex(nFrom, nTo, opts) {
+  opts = opts || {};
+  const cert = certify(nFrom, nTo);
+  if (cert.error) return cert;
+  const zeros = [];
+  let n = cert.lo + 2;
+  for (const b of cert.blocks) {
+    for (const br of b.brackets) {
+      if (n >= nFrom && n <= nTo) {
+        const t0 = refine(br[0], br[1], br[2]);
+        const z = polish(t0, opts.want || 1e-13);
+        zeros.push({ n, hi: z.hi, lo: z.lo, err: z.err, slope: z.slope, block: b });
+      }
+      n++;
+    }
+  }
+  return { zeros, cert };
+}
+// approximate number of zeros up to height t: theta(t)/pi + 1
+const approxIndex = (t) => Math.max(1, Math.round(theta(t) / PI + 1));
+// zeros with heights in [t1, t2]
+function zerosBetween(t1, t2, opts) {
+  t1 = Math.max(t1, 0);
+  if (t2 < 14) return { zeros: [], cert: null };
+  const n1 = t1 < 14 ? 1 : Math.max(1, gramIndex(Math.max(t1, 9.7)) + 1);
+  const n2 = Math.max(n1, gramIndex(Math.max(t2, 9.7)) + 2);
+  const r = zerosByIndex(Math.max(1, n1 - 1), n2 + 1, opts);
+  if (r.error) return r;
+  r.zeros = r.zeros.filter((z) => z.hi >= t1 && z.hi <= t2);
+  return r;
+}
+
+return { twoSum, ddAdd, ddMul, lnDD, expDD, reduceDD, lnGamma, theta, thetaDD, rsZ, rsBound, emZeta, zeta, zetaQuick, Zfast, Zacc, zetaHalf, Zsign,
+  gram, gramIndex, isGood, scanBlock, certify, zerosByIndex, zerosBetween, approxIndex, backlund, brentK, sinpi, LOW, RS_FROM };
+})();
+
+const $ = (id) => document.getElementById(id);
+const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+const reduced = () => !!(window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches);
+const SVGNS = 'http://www.w3.org/2000/svg';
+const NMAX = 10000000, TMAX = 5000000;
+const MINUS = '−';
+
+/* ---------- reading and writing numbers ---------- */
+// a plain number: digits, a decimal point or comma, thousands separators, an exponent, or a fraction a/b
+function parseNum(text) {
+  let v = String(text).trim().replace(/[−‒–—]/g, '-').replace(/[\s  _']/g, '');
+  if (v === '') return null;
+  const fr = v.match(/^([+-]?[\d.,]+(?:e[+-]?\d+)?)\/([+-]?[\d.,]+(?:e[+-]?\d+)?)$/i);
+  if (fr) { const a = parseNum(fr[1]), b = parseNum(fr[2]); return a === null || b === null || b === 0 ? null : a / b; }
+  if (/^[+-]?\d{1,3}(,\d{3})+(\.\d+)?(e[+-]?\d+)?$/i.test(v)) v = v.replace(/,/g, '');
+  else if (/^[+-]?\d*,\d+(e[+-]?\d+)?$/i.test(v)) v = v.replace(',', '.');
+  if (!/^[+-]?(\d+\.?\d*|\.\d+)(e[+-]?\d+)?$/i.test(v)) return null;
+  const x = Number(v);
+  return Number.isFinite(x) ? x : null;
+}
+// Re(s) − 1 worked out from the typed decimal itself, before it is rounded to a double (next to the pole,
+// 1.0000000001 as a double is 1 + 1.00000008e-10); undefined for a fraction or when it isn't needed
+function minusOne(text) {
+  let v = String(text).trim().replace(/[−‒–—]/g, '-').replace(/[\s  _']/g, '');
+  if (/^[+-]?\d{1,3}(,\d{3})+(\.\d+)?(e[+-]?\d+)?$/i.test(v)) v = v.replace(/,/g, '');
+  else if (/^[+-]?\d*,\d+(e[+-]?\d+)?$/i.test(v)) v = v.replace(',', '.');
+  const m = /^([+-]?)(\d+\.?\d*|\.\d+)(?:e([+-]?\d+))?$/i.exec(v);
+  if (!m) return undefined;
+  const [ip, fp = ''] = m[2].split('.'), ex = (m[3] ? Number(m[3]) : 0) - fp.length;
+  if (Math.abs(ex) > 400) return undefined;
+  let n = BigInt((ip || '0') + fp) * (m[1] === '-' ? -1n : 1n), one = 1n;
+  if (ex >= 0) n *= 10n ** BigInt(ex); else one = 10n ** BigInt(-ex);
+  const d = n - one, x = Number(`${d}e${Math.min(ex, 0)}`); // (value − 1), rounded once
+  return Math.abs(x) < 1e-3 ? x : undefined;
+}
+function parseIndex(text) {
+  const v = String(text).trim().replace(/[\s  _',]/g, '');
+  if (!/^\+?\d+$/.test(v)) return null;
+  const n = Number(v);
+  return Number.isSafeInteger(n) ? n : null;
+}
+const neg = (s) => s.replace(/-/g, MINUS);
+const group = (n) => String(n).replace(/\B(?=(\d{3})+(?!\d))/g, ',');
+// a double-double t with d decimals
+function fmtDD(hi, lo, d) {
+  let I = Math.floor(hi), f = (hi - I) + lo;
+  if (f < 0) { f += 1; I -= 1; } else if (f >= 1) { f -= 1; I += 1; }
+  const S = Math.pow(10, d);
+  let fs = Math.round(f * S);
+  if (fs >= S) { fs -= S; I += 1; }
+  return (I < 0 ? MINUS : '') + Math.abs(I) + (d > 0 ? '.' + String(fs).padStart(d, '0') : '');
+}
+// a real number to `sig` significant digits, without exponents for ordinary sizes
+function fmtSig(x, sig) {
+  if (x === 0) return '0';
+  if (!Number.isFinite(x)) return x > 0 ? '∞' : MINUS + '∞';
+  const a = Math.abs(x);
+  if (a >= 1e-5 && a < 1e15 && Math.floor(Math.log10(a)) < sig) { // whole-number digits past sig would claim too much
+    const e = Math.floor(Math.log10(a));
+    const d = Math.max(0, Math.min(20, sig - 1 - e));
+    let s = x.toFixed(d);
+    if (s.includes('.')) s = s.replace(/0+$/, '').replace(/\.$/, '');
+    return neg(s);
+  }
+  const [m, ex] = x.toExponential(sig - 1).split('e');
+  return neg(m.includes('.') ? m.replace(/0+$/, '').replace(/\.$/, '') : m) + ' × 10' + sup(ex.replace('+', ''));
+}
+const SUPS = { '-': '⁻', '0': '⁰', '1': '¹', '2': '²', '3': '³', '4': '⁴', '5': '⁵', '6': '⁶', '7': '⁷', '8': '⁸', '9': '⁹' };
+const sup = (s) => String(s).split('').map((c) => SUPS[c] || c).join('');
+function fmtC(re, im, sig) {
+  const r = fmtSig(re, sig), i = fmtSig(Math.abs(im), sig);
+  if (im === 0) return r;
+  return `${r} ${im < 0 || Object.is(im, -0) ? MINUS : '+'} ${i}i`;
+}
+// a value known only to an absolute error eabs: no digits past that error, and 0 when it is smaller
+function fmtA(x, sig, eabs) {
+  if (Math.abs(x) < eabs) return '0';
+  return fmtSig(x, Math.min(sig, Math.max(1, Math.floor(Math.log10(Math.abs(x) / eabs)))));
+}
+function fmtCA(re, im, sig, eabs) {
+  const r = fmtA(re, sig, eabs), i = fmtA(Math.abs(im), sig, eabs);
+  if (i === '0') return r;
+  if (r === '0') return (im < 0 ? MINUS : '') + i + 'i';
+  return `${r} ${im < 0 ? MINUS : '+'} ${i}i`;
+}
+// a size like 3e-14 written as "3 × 10⁻¹⁴"
+function fmtErr(e) {
+  if (!(e > 0)) return '0';
+  const ex = Math.floor(Math.log10(e)), m = Math.ceil(e / Math.pow(10, ex));
+  return (m >= 10 ? '1 × 10' + sup(ex + 1) : m + ' × 10' + sup(ex));
+}
+const dpFor = (err) => Math.max(10, Math.min(12, Math.floor(-Math.log10(2 * Math.max(err, 1e-16)))));
+const tStr = (z, d) => fmtDD(z.hi, z.lo, d === undefined ? dpFor(z.err) : d);
+
+/* ---------- small helpers ---------- */
+const later = (fn) => setTimeout(fn, 16);
+let toastT = 0;
+function toast(msg) {
+  let el = document.querySelector('.toast');
+  if (!el) { el = document.createElement('div'); el.className = 'toast'; el.setAttribute('role', 'status'); document.body.appendChild(el); }
+  el.textContent = msg; el.classList.add('show');
+  clearTimeout(toastT); toastT = setTimeout(() => el.classList.remove('show'), 1600);
+}
+async function copyText(text) {
+  try { await navigator.clipboard.writeText(text); toast('Copied'); return; } catch (e) { /* fall back below */ }
+  const ta = document.createElement('textarea'); ta.value = text; ta.setAttribute('readonly', ''); ta.style.position = 'fixed'; ta.style.opacity = '0';
+  document.body.appendChild(ta); ta.select();
+  try { document.execCommand('copy'); toast('Copied'); } catch (e) { toast('Copying isn’t allowed here; select the text instead'); }
+  ta.remove();
+}
+document.addEventListener('click', (e) => {
+  const b = e.target.closest('[data-copy]');
+  if (b) copyText(b.getAttribute('data-copy'));
+});
+
+/* ---------- remembering inputs (this browser only) ---------- */
+const KEY = 'zeta-garden';
+const FIELDS = ['zn-n', 'zh-t', 'zh-k', 'zl-from', 'zl-to', 'pl-from', 'pl-to', 'pl-z', 'pl-re', 'pl-im', 'dc-x0', 'dc-x1', 'dc-y0', 'dc-y1', 'dc-detail', 'dc-strip', 'dc-path', 'dc-zeros', 'dc-rings', 'cz-re', 'cz-im'];
+function save() {
+  try {
+    const o = {};
+    for (const id of FIELDS) { const el = $(id); o[id] = el.type === 'checkbox' ? el.checked : el.value; }
+    localStorage.setItem(KEY, JSON.stringify(o));
+  } catch (e) { /* storage unavailable */ }
+}
+function load() {
+  try {
+    const o = JSON.parse(localStorage.getItem(KEY) || '{}');
+    if (!o || typeof o !== 'object') return;
+    for (const id of FIELDS) {
+      const el = $(id), v = o[id];
+      if (el.type === 'checkbox') { if (typeof v === 'boolean') el.checked = v; }
+      else if (typeof v === 'string' && v.length < 60) {
+        if (el.tagName === 'SELECT') { if ([...el.options].some((op) => op.value === v)) el.value = v; }
+        else el.value = v;
+      }
+    }
+  } catch (e) { /* storage unavailable */ }
+}
+
+/* ---------- the daisy ---------- */
+const FACTS = [
+  'The first zero on the critical line is at t ≈ 14.134725, so ζ(½ + 14.134725…i) = 0.',
+  'The trivial zeros sit at s = −2, −4, −6, and so on, one at every negative even number.',
+  'Every non-trivial zero ever computed lies on the critical line Re(s) = ½. The Riemann hypothesis says they all do.',
+  'Euler showed in the 1730s that ζ(2) = 1 + 1/4 + 1/9 + … = π²/6 ≈ 1.6449.',
+  'ζ(0) = −½ and ζ(−1) = −1/12.',
+  'Up to height T there are about (T/2π)·ln(T/2πe) + 7/8 zeros, so they crowd closer together the higher you climb.',
+  'Gram’s law first fails at the Gram point g₁₂₆ ≈ 282.45: zeros 127 and 128 both lie between g₁₂₆ and g₁₂₇.',
+  'Lehmer’s pair: zeros 6709 and 6710, near t ≈ 7005.06 and 7005.10, are only about 0.038 apart.',
+  'Riemann’s 1859 paper on counting the primes is where these zeros first appear.',
+  'On the critical line ζ(½) ≈ −1.4603545, and the pole at s = 1 is the only place ζ has no value.',
+];
+let factI = -1;
+$('zg-daisy').addEventListener('click', () => {
+  factI = (factI + 1) % FACTS.length;
+  $('zg-says').textContent = FACTS[factI];
+  const d = $('zg-daisy');
+  if (!reduced()) { d.classList.remove('bloom'); void d.getBoundingClientRect(); d.classList.add('bloom'); }
+});
+
+/* ---------- 1. zeros on the critical line ---------- */
+function whyOut(id, msg) { $(id).textContent = msg || ''; }
+function gramLawLine(z) {
+  const n = z.n, ga = ZG.gram(n - 2), gb = ZG.gram(n - 1);
+  const inside = z.hi >= ga && z.hi < gb;
+  const ga_s = n - 2 === -1 ? 'g<sub>−1</sub>' : `g<sub>${group(n - 2)}</sub>`;
+  return `<li>Gram interval: ${ga_s} = <span class="mono">${esc(fmtSig(ga, 12))}</span> to g<sub>${group(n - 1)}</sub> = <span class="mono">${esc(fmtSig(gb, 12))}</span>. ${inside ? 'The zero lies inside it, as Gram’s law expects.' : '<b>The zero lies outside it</b>: Gram’s law fails here.'}</li>`;
+}
+function blockLine(z) {
+  const b = z.block;
+  const where = b.j === -1 ? 'g<sub>−1</sub>' : `g<sub>${group(b.j)}</sub>`;
+  if (b.m === 1) return `<li>Gram block: the single interval from ${where} (both ends are good Gram points).</li>`;
+  return `<li>Gram block: ${b.m} intervals from ${where} to g<sub>${group(b.j + b.m)}</sub>, with ${b.m} zeros in it, as Rosser’s rule expects${b.gramLaw ? '' : ' (a bad Gram point sits inside)'}${b.level > 0 ? `; finding them all took ${b.level} rounds of finer sampling` : ''}.</li>`;
+}
+function certLine(cert) {
+  const how = (h) => (h === 'turing' ? 'Turing’s method' : h === 'backlund' ? 'Backlund’s test' : 'the start of the line');
+  const lo = cert.lo === -1 ? 'g<sub>−1</sub>' : `g<sub>${group(cert.lo)}</sub>`;
+  return `<li>Count confirmed: exactly ${group(cert.hi - cert.lo)} zero${cert.hi - cert.lo === 1 ? '' : 's'} between ${lo} and g<sub>${group(cert.hi)}</sub>, and ${group(cert.lo + 1)} below ${lo}, by ${how(cert.lowHow)}${cert.lowHow === cert.highHow ? '' : ' and ' + how(cert.highHow)}. So the numbering is exact.</li>`;
+}
+function findZero() {
+  whyOut('zn-why');
+  const n = parseIndex($('zn-n').value);
+  if (n === null || n < 1) { whyOut('zn-why', 'Type a whole number from 1 up.'); $('zn-out').innerHTML = ''; return; }
+  if (n > NMAX) { whyOut('zn-why', `This page goes up to zero number ${group(NMAX)}.`); $('zn-out').innerHTML = ''; return; }
+  save();
+  $('zn-out').innerHTML = '<p class="zg-status">Finding it…</p>';
+  later(() => {
+    const r = ZG.zerosByIndex(Math.max(1, n - 1), n + 1, { want: 1e-14 });
+    if (r.error) { $('zn-out').innerHTML = ''; whyOut('zn-why', 'Something went wrong: ' + r.error + '.'); return; }
+    const z = r.zeros.find((q) => q.n === n), prev = r.zeros.find((q) => q.n === n - 1), next = r.zeros.find((q) => q.n === n + 1);
+    const d = dpFor(z.err), txt = tStr(z, d);
+    const gap = (a, b) => fmtSig((b.hi - a.hi) + (b.lo - a.lo), 6);
+    $('zn-out').innerHTML =
+      `<div class="zg-val"><span class="lbl">t<sub>${esc(group(n))}</sub></span><output>${esc(txt)}</output><button type="button" class="btn small" data-copy="${esc(txt)}">Copy</button></div>` +
+      `<p>Zero number ${esc(group(n))} is <var>s</var> = ½ + ${esc(txt)}<var>i</var>. Shown to ${d} decimals; its error estimate is about ${fmtErr(z.err)}.</p>` +
+      '<ul class="zg-facts">' +
+      (prev ? `<li>The zero below it, number ${esc(group(n - 1))}, is at <span class="mono">${esc(tStr(prev, 10))}</span>, ${esc(gap(prev, z))} lower.</li>` : '<li>It is the lowest zero on the line.</li>') +
+      (next ? `<li>The zero above it, number ${esc(group(n + 1))}, is at <span class="mono">${esc(tStr(next, 10))}</span>, ${esc(gap(z, next))} higher.</li>` : '') +
+      gramLawLine(z) + blockLine(z) + certLine(r.cert) + '</ul>';
+  });
+}
+$('zn-go').addEventListener('click', findZero);
+$('zn-n').addEventListener('keydown', (e) => { if (e.key === 'Enter') findZero(); });
+
+function zerosNear() {
+  whyOut('zh-why');
+  const t = parseNum($('zh-t').value), k = +$('zh-k').value || 3;
+  if (t === null) { whyOut('zh-why', 'Type a height such as 100 or 7005.08.'); $('zh-out').innerHTML = ''; return; }
+  if (t < 0) { whyOut('zh-why', 'Type a height of 0 or more. (The zeros below the real axis mirror the ones above it.)'); $('zh-out').innerHTML = ''; return; }
+  if (t > TMAX) { whyOut('zh-why', `This page goes up to height ${group(TMAX)}.`); $('zh-out').innerHTML = ''; return; }
+  save();
+  $('zh-out').innerHTML = '<p class="zg-status">Looking around…</p>';
+  later(() => {
+    // the number of zeros up to t: zeros near the Gram index, then count exactly
+    const n0 = t < 14 ? 1 : ZG.gramIndex(Math.max(t, 9.67)) + 2;
+    const r = ZG.zerosByIndex(Math.max(1, n0 - k - 3), n0 + k + 3, { want: 1e-13 });
+    if (r.error) { $('zh-out').innerHTML = ''; whyOut('zh-why', 'Something went wrong: ' + r.error + '.'); return; }
+    const zs = r.zeros;
+    const below = zs.filter((z) => z.hi + z.lo <= t), above = zs.filter((z) => z.hi + z.lo > t);
+    const count = below.length ? below[below.length - 1].n : 0;
+    const show = below.slice(-k).concat(above.slice(0, k));
+    let best = null, bd = Infinity;
+    for (const z of show) { const d = Math.abs((z.hi - t) + z.lo); if (d < bd) { bd = d; best = z; } }
+    const rows = show.map((z) => {
+      const d = (z.hi - t) + z.lo, near = z === best;
+      return `<tr${near ? ' class="near"' : ''}><td>${esc(group(z.n))}</td><td>${esc(tStr(z, 10))}</td><td>${d >= 0 ? '+' : MINUS}${esc(fmtSig(Math.abs(d), 6).replace(MINUS, ''))}${near ? '<span class="tag">nearest</span>' : ''}</td></tr>`;
+    }).join('');
+    $('zh-out').innerHTML =
+      `<p>${count === 0 ? 'No zeros lie at or below this height; the lowest is number 1.' : `${esc(group(count))} zero${count === 1 ? '' : 's'} lie${count === 1 ? 's' : ''} between height 0 and ${esc(fmtSig(t, 12))}.`} The nearest is number <b>${esc(group(best.n))}</b>, at <span class="mono">${esc(tStr(best, 10))}</span>, ${esc(fmtSig(bd, 6))} ${(best.hi - t) + best.lo >= 0 ? 'above' : 'below'}.</p>` +
+      `<div class="scroll"><table class="zg-t"><thead><tr><th scope="col">Number</th><th scope="col">Height t</th><th scope="col">t − ${esc(fmtSig(t, 10))}</th></tr></thead><tbody>${rows}</tbody></table></div>`;
+  });
+}
+$('zh-go').addEventListener('click', zerosNear);

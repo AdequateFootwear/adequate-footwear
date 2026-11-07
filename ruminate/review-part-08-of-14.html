@@ -1,0 +1,778 @@
+<!-- Review copy: lines 5085-5861 of ruminate/index.html, split so Copilot can review it. Not served. -->
+  const queue = [{ off: first, name: 'IFD 0', set: 'tiff', chain: 0, from: firstAt }];
+  let stopped = null;
+  const geo = []; // GeoTIFF key directories to read once everything else is known
+  let ifdCount = 0;
+  while (queue.length && !stopped) {
+    const { off, name, set, chain, from } = queue.shift();
+    if (off === 0) continue;
+    // a stop that comes from a bad offset is shown on the field that holds the offset
+    if (typeof off !== 'number' || base + off + cntSize > limit) { stopped = `${name} would start at offset ${rsNum(off)}, past the end.`; items.push(rsI(cx, 'Reading stopped here', from[0], from[1], stopped)); break; }
+    if (seen.has(off)) { stopped = `${name} is at offset ${rsNum(off)}, where an IFD has already been read.`; items.push(rsI(cx, 'Reading stopped here', from[0], from[1], stopped)); break; }
+    seen.add(off);
+    if (++ifdCount > 10000) { stopped = 'There are more IFDs than this page will follow.'; break; }
+    const p0 = base + off;
+    const count = big ? (le ? rsLE64(u8, p0) : rsBE64(u8, p0)) : dv.getUint16(p0, le);
+    const end = typeof count === 'number' ? p0 + cntSize + count * entSize + offSize : Infinity;
+    if (end > limit) { stopped = `${name} says it has ${rsNum(count)} entries, which runs past the end.`; items.push(rsI(cx, 'Reading stopped here', p0, p0 + cntSize, stopped)); break; }
+    const kids = [rsI(cx, 'Number of entries', p0, p0 + cntSize, rsNum(count))];
+    const tags = new Map();
+    let valsElsewhere = 0; // past the item limit, where values lie elsewhere isn't listed
+    for (let i = 0; i < count; i++) {
+      const e = p0 + cntSize + i * entSize;
+      const tag = dv.getUint16(e, le), type = dv.getUint16(e + 2, le);
+      const n = big ? (le ? rsLE64(u8, e + 4) : rsBE64(u8, e + 4)) : dv.getUint32(e + 4, le);
+      const vf = e + 4 + (big ? 8 : 4);
+      if (!rsRoom(cx)) { // past the item limit, an entry is only counted, and read only when later steps use it
+        if (!rsUnlisted(cx, kids, e, e + entSize, 'entry', 'entries')) { stopped = 'There are more entries than this page will follow.'; break; }
+        const ty = RS_TIFF_TYPES[type];
+        if (!ty) continue;
+        const bytes = typeof n === 'number' ? n * ty[1] : Infinity;
+        let at = null;
+        if (bytes <= offSize) at = vf;
+        else { const vo = readOff(vf); if (typeof vo === 'number' && bytes !== Infinity && base + vo + bytes <= limit) { at = base + vo; valsElsewhere++; } }
+        if (!RS_TIFF_USED.has(tag)) continue;
+        let vals = null;
+        if (at !== null) { if (!rsWalk(cx, Math.ceil(n / 64))) { stopped = 'There are more values than this page will read.'; break; } vals = rsTiffValues(u8, at, type, n, le); }
+        tags.set(tag, { type, n, vals, at, entry: [e, e + entSize] });
+        continue;
+      }
+      const tname = set === 'gps' ? (RS_GPS_TAGS[tag] || 'Unknown tag') : set === 'interop' ? ({ 1: 'InteroperabilityIndex', 2: 'InteroperabilityVersion' }[tag] || 'Unknown tag') : (RS_TIFF_TAGS.get(tag) || 'Unknown tag');
+      const ty = RS_TIFF_TYPES[type];
+      const ek = rsRoom(cx) ? [rsI(cx, 'Tag', e, e + 2, `${tag} (${tname})`), rsI(cx, 'Type', e + 2, e + 4, ty ? `${type} (${ty[0]})` : `${type}`),
+        rsI(cx, 'Count', e + 4, vf, rsNum(n))] : null;
+      let value, vals = null, at = null;
+      if (!ty) value = `type ${type} isn’t one the format defines`;
+      else {
+        const bytes = typeof n === 'number' ? n * ty[1] : Infinity;
+        if (bytes <= offSize) { at = vf; if (ek) ek.push(rsI(cx, 'Value (stored in the entry)', vf, vf + offSize, rsHex(u8, vf, vf + offSize))); }
+        else {
+          const vo = readOff(vf);
+          if (ek) ek.push(rsI(cx, 'Offset of the values', vf, vf + offSize, rsNum(vo)));
+          if (typeof vo === 'number' && bytes !== Infinity && base + vo + bytes <= limit) {
+            at = base + vo;
+          } else value = `its ${rsNum(n)} values would lie at offset ${rsNum(vo)}, past the end`;
+        }
+        if (at !== null) {
+          const cnt = Math.min(n, tag === 273 || tag === 279 || tag === 324 || tag === 325 || tag === 330 || tag === 288 || tag === 289 ? n : 4096);
+          if (!rsWalk(cx, Math.ceil(cnt / 64))) { stopped = 'There are more values than this page will read.'; kids.push(rsI(cx, 'Reading stopped here', e, e + entSize, stopped)); break; }
+          vals = rsTiffValues(u8, at, type, cnt, le);
+          value = rsTiffShow(tag, type, vals, u8, at, n * ty[1]);
+          if (cnt < n) value = value.replace(/, … \(.*\)$/, '') + `, … (${rsNum(n)} values in all)`;
+          if (at !== vf) items.push(rsI(cx, `Values of ${tname} (${name})`, at, at + n * ty[1], `${rsNum(n)} × ${ty[0]}`));
+        }
+      }
+      tags.set(tag, { type, n, vals: RS_TIFF_USED.has(tag) ? vals : null, at, entry: [e, e + entSize] });
+      kids.push(rsI(cx, `${tname} (${tag})`, e, e + entSize, value, null, ek));
+    }
+    if (stopped) {
+      if (kids[kids.length - 1].label !== 'Reading stopped here') {
+        const at = kids[kids.length - 1].end;
+        kids.push(rsI(cx, 'Reading stopped here', at < end - offSize ? at : end - offSize, at < end - offSize ? end - offSize : end, stopped));
+      }
+      items.push(rsI(cx, name, p0, end, `${rsNum(count)} entr${count === 1 ? 'y' : 'ies'}`, null, kids));
+      break;
+    }
+    const nx = readOff(end - offSize);
+    kids.push(rsI(cx, 'Next IFD offset', end - offSize, end, nx ? rsNum(nx) : '0 (none)'));
+    items.push(rsI(cx, name, p0, end, `${rsNum(count)} entr${count === 1 ? 'y' : 'ies'}`, valsElsewhere ? `The values of ${rsNum(valsElsewhere)} of its entries lie elsewhere in the file and aren’t listed, so their bytes show as not described.` : null, kids));
+    // further IFDs
+    if (chain >= 0 && nx) queue.push({ off: nx, name: `IFD ${chain + 1}`, set: 'tiff', chain: chain + 1, from: [end - offSize, end] });
+    const sub = (tag, nm, st) => {
+      const t = tags.get(tag);
+      if (t && t.vals) t.vals.forEach((v, i) => queue.push({ off: v, name: t.vals.length > 1 ? `${nm} ${i + 1} (from ${name})` : `${nm} (from ${name})`, set: st, chain: -1, from: t.entry }));
+    };
+    sub(330, 'Sub-IFD', 'tiff'); sub(34665, 'Exif IFD', 'exif'); sub(34853, 'GPS IFD', 'gps'); sub(40965, 'Interoperability IFD', 'interop');
+    // where the image data lies
+    const ranges = (oTag, cTag, word, one, many) => {
+      const o = tags.get(oTag), c = tags.get(cTag);
+      if (!o || !c || !o.vals || !c.vals) return;
+      const k = Math.min(o.vals.length, c.vals.length);
+      let run = null, skipped = 0, last = -1;
+      for (let i = 0; i < k; i++) {
+        const s = o.vals[i], len = c.vals[i];
+        if (typeof s !== 'number' || typeof len !== 'number' || !len) continue;
+        const e = Math.min(base + s + len, limit);
+        if (base + s >= limit) continue;
+        if (rsRoom(cx)) {
+          if (base + s !== last) cx.count++; // the gap before it will be an item too
+          last = e;
+          items.push(rsI(cx, `${word} ${rsNum(i)} of ${name}`, base + s, e, rsBytesWord(len), base + s + len > limit ? `It should hold ${rsBytesWord(len)}, but the data ends first.` : null));
+          continue;
+        }
+        // past the item limit, ranges that follow on from each other are listed as one
+        if (run && run.end === base + s) { run.end = e; cx.runs.get(run).k++; }
+        else if (cx.count < cx.limit + RS_SCATTERED) { cx.count++; run = rsI(cx, `${many[0].toUpperCase()}${many.slice(1)} of ${name} not listed one by one`, base + s, e); cx.runs.set(run, { k: 1, one, many }); items.push(run); }
+        else skipped++;
+        if (!rsWalk(cx, 1)) break;
+      }
+      if (skipped) { const it = items.find((x) => x.label === name && x.start === p0); if (it) it.note = (it.note ? it.note + ' ' : '') + `${rsNum(skipped)} more ${skipped === 1 ? one : many} of it ${skipped === 1 ? 'isn’t' : 'aren’t'} listed, so ${skipped === 1 ? 'its' : 'their'} bytes show as not described.`; }
+    };
+    ranges(273, 279, 'Strip', 'strip', 'strips'); ranges(324, 325, 'Tile', 'tile', 'tiles'); ranges(288, 289, 'Range listed as free in', 'free range', 'free ranges');
+    const jo = tags.get(513), jl = tags.get(514);
+    if (jo && jl && jo.vals && jl.vals && jl.vals[0] && base + jo.vals[0] < limit) {
+      items.push(rsI(cx, `JPEG data (from ${name})`, base + jo.vals[0], Math.min(limit, base + jo.vals[0] + jl.vals[0]), rsBytesWord(jl.vals[0])));
+    }
+    if (tags.has(34735)) geo.push({ name, tags });
+  }
+  // GeoTIFF keys, decoded by name, as children of the key directory's values
+  for (const { name, tags } of geo) {
+    const d = tags.get(34735);
+    if (!d.vals || d.type !== 3 || d.vals.length < 4) continue;
+    const v = d.vals, nk = v[3];
+    const dbl = tags.get(34736), asc = tags.get(34737);
+    const kids = [rsI(cx, 'Directory header', d.at, d.at + 8, `version ${v[0]}, revision ${v[1]}.${v[2]}, ${nk} key${nk === 1 ? '' : 's'}`)];
+    for (let k = 0; k < nk && 4 + 4 * k + 3 < v.length; k++) {
+      if (!rsRoom(cx)) { const last = Math.min(nk, Math.floor((v.length - 4) / 4)); kids.push(rsUnlistedRange(cx, d.at + 8 + 8 * k, d.at + 8 + 8 * last, last - k, 'key', 'keys')); break; }
+      const [id, loc, cnt, vo] = v.slice(4 + 4 * k, 8 + 4 * k);
+      let val;
+      if (loc === 0) {
+        val = String(vo);
+        const m = RS_GEO_MEANS.get(id);
+        if (m && m[vo]) val += ` (${m[vo]})`;
+        else if ([2052, 2054, 2060, 3076, 4099].includes(id) && RS_GEO_UNITS[vo]) val += ` (${RS_GEO_UNITS[vo]})`;
+        else if (vo === 32767) val += ' (user-defined)';
+      } else if (loc === 34736 && dbl && dbl.vals) val = dbl.vals.slice(vo, vo + cnt).join(', ') || `values ${vo} to ${vo + cnt - 1} of GeoDoubleParamsTag, which it doesn’t have`;
+      else if (loc === 34737 && asc && asc.at !== null) {
+        const t = rsLatin1(u8, asc.at, asc.at + asc.n);
+        val = rsQuote(t.slice(vo, vo + cnt).replace(/\|$/, ''));
+      } else if (loc === 34735) val = v.slice(vo, vo + cnt).join(', ');
+      else val = `stored in tag ${loc}, at ${vo}`;
+      const p = d.at + 8 + 8 * k;
+      kids.push(rsI(cx, `${RS_GEOKEYS.get(id) || 'Unknown key'} (${id})`, p, p + 8, val));
+    }
+    const it = items.find((x) => x.start === d.at && x.label.startsWith('Values of GeoKeyDirectoryTag'));
+    if (it) { it.children = kids; it.label = `GeoTIFF keys (${name})`; }
+  }
+  return { items, title: big ? 'BigTIFF' : 'TIFF', stopped, ifds: ifdCount };
+}
+
+function rsTiff(cx) {
+  const r = rsTiffWalk(cx, 0, cx.n, 'The file');
+  if (r.stopped) cx.stopped = r.stopped;
+  return { title: `${r.title} image, ${rsNum(r.ifds)} IFD${r.ifds === 1 ? '' : 's'}`, items: r.items };
+}
+
+// An Exif or other TIFF block inside another file, as children covering [s, e).
+function rsTiffInside(cx, s, e, what) {
+  try {
+    const r = rsTiffWalk(cx, s, e, what);
+    rsRunsDone(cx);
+    return rsCover(r.items, s, e);
+  } catch (err) {
+    return [rsI(cx, 'Not read', s, e, err.message)];
+  }
+}
+
+/* ---------- PNG images ---------- */
+
+let rsCrcTable = null;
+function rsCrc32(u8, s, e) {
+  if (!rsCrcTable) {
+    rsCrcTable = new Uint32Array(256);
+    for (let i = 0; i < 256; i++) { let c = i; for (let k = 0; k < 8; k++) c = c & 1 ? 0xedb88320 ^ (c >>> 1) : c >>> 1; rsCrcTable[i] = c >>> 0; }
+  }
+  let c = 0xffffffff;
+  for (let i = s; i < e; i++) c = rsCrcTable[(c ^ u8[i]) & 255] ^ (c >>> 8);
+  return (c ^ 0xffffffff) >>> 0;
+}
+
+const RS_PNG_CHUNKS = {
+  IHDR: 'Image header', PLTE: 'Palette', IDAT: 'Image data', IEND: 'Image end', tRNS: 'Transparency', cHRM: 'Primary chromaticities',
+  gAMA: 'Image gamma', iCCP: 'Embedded colour profile', sBIT: 'Significant bits', sRGB: 'Standard colour space', cICP: 'Coding-independent code points',
+  mDCV: 'Mastering display colour volume', cLLI: 'Content light level', tEXt: 'Text', zTXt: 'Compressed text', iTXt: 'International text',
+  bKGD: 'Background colour', hIST: 'Palette histogram', pHYs: 'Physical pixel dimensions', sPLT: 'Suggested palette', eXIf: 'Exif data',
+  tIME: 'Last-modification time', acTL: 'Animation control', fcTL: 'Frame control', fdAT: 'Frame data',
+};
+
+// Finds the zero byte that ends a keyword or name, at most `max` bytes on.
+function rsZero(u8, s, e, max = 80) { for (let i = s; i < e && i <= s + max; i++) if (u8[i] === 0) return i; return -1; }
+
+async function rsPngData(cx, type, s, e) {
+  const { u8 } = cx, len = e - s, k = [];
+  const f = (label, a, b, v, note) => { if (b <= e) k.push(rsI(cx, label, a, b, v, note)); };
+  const u32 = (p) => rsBE(u8, p, 4), u16 = (p) => rsBE(u8, p, 2);
+  const text = async (zs, isZ, utf8, labelText) => { // the text part of a text chunk
+    if (!isZ) { f(labelText, zs, e, rsQuoteBytes(u8, zs, e, utf8)); return; }
+    if (cx.inflate <= 0) { f(labelText + ' (compressed)', zs, e, rsBytesWord(e - zs), 'Not decompressed: the compressed text before it in this file already comes to more than this page will decompress.'); return; }
+    try {
+      const r = await rsInflate(u8.subarray(zs, e), RS_TEXT_KEEP, Math.min(RS_INFLATE_ONE, cx.inflate));
+      cx.inflate -= r.total;
+      const t = utf8 ? new TextDecoder('utf-8').decode(r.bytes) : rsLatin1(r.bytes, 0, r.bytes.length);
+      const all = r.whole ? null : `${r.ended ? '' : 'more than '}${utf8 ? rsBytesWord(r.total) : `${rsNum(r.total)} characters`}`;
+      f(labelText + ' (compressed)', zs, e, rsQuote(t, 2000, all), r.ended ? `${rsBytesWord(e - zs)} that decompress to ${rsBytesWord(r.total)}.` : `More than ${rsBytesWord(r.total)} once decompressed; the start is shown.`);
+    } catch (err) { f(labelText + ' (compressed)', zs, e, `can’t be decompressed: ${err.message}`); }
+  };
+  switch (type) {
+    case 'IHDR':
+      if (len < 13) return k;
+      f('Width', s, s + 4, `${rsNum(u32(s))} pixels`); f('Height', s + 4, s + 8, `${rsNum(u32(s + 4))} pixels`);
+      f('Bit depth', s + 8, s + 9, `${u8[s + 8]}`);
+      f('Colour type', s + 9, s + 10, `${u8[s + 9]}` + ({ 0: ' (greyscale)', 2: ' (truecolour)', 3: ' (indexed colour)', 4: ' (greyscale with alpha)', 6: ' (truecolour with alpha)' }[u8[s + 9]] || ''));
+      f('Compression method', s + 10, s + 11, `${u8[s + 10]}` + (u8[s + 10] === 0 ? ' (deflate)' : ''));
+      f('Filter method', s + 11, s + 12, `${u8[s + 11]}` + (u8[s + 11] === 0 ? ' (adaptive)' : ''));
+      f('Interlace method', s + 12, s + 13, `${u8[s + 12]}` + ({ 0: ' (none)', 1: ' (Adam7)' }[u8[s + 12]] || ''));
+      break;
+    case 'PLTE': f('Palette entries', s, e, `${rsNum(Math.floor(len / 3))} colour${len === 3 ? '' : 's'}, 3 bytes each`); break;
+    case 'gAMA': if (len >= 4) f('Gamma', s, s + 4, `${u32(s)} (${u32(s) / 100000})`); break;
+    case 'cHRM': {
+      const names = ['White point x', 'White point y', 'Red x', 'Red y', 'Green x', 'Green y', 'Blue x', 'Blue y'];
+      names.forEach((nm, i) => { if (s + 4 * i + 4 <= e) f(nm, s + 4 * i, s + 4 * i + 4, `${u32(s + 4 * i) / 100000}`); });
+      break;
+    }
+    case 'sRGB': if (len >= 1) f('Rendering intent', s, s + 1, `${u8[s]}` + ({ 0: ' (perceptual)', 1: ' (relative colorimetric)', 2: ' (saturation)', 3: ' (absolute colorimetric)' }[u8[s]] || '')); break;
+    case 'pHYs':
+      if (len >= 9) { f('Pixels per unit, x', s, s + 4, rsNum(u32(s))); f('Pixels per unit, y', s + 4, s + 8, rsNum(u32(s + 4))); f('Unit', s + 8, s + 9, `${u8[s + 8]}` + ({ 0: ' (unknown; gives the aspect ratio only)', 1: ' (metre)' }[u8[s + 8]] || '')); }
+      break;
+    case 'tIME':
+      if (len >= 7) {
+        f('Year', s, s + 2, `${u16(s)}`); ['Month', 'Day', 'Hour', 'Minute', 'Second'].forEach((nm, i) => f(nm, s + 2 + i, s + 3 + i, `${u8[s + 2 + i]}`));
+      }
+      break;
+    case 'tRNS': f('Transparency values', s, e, rsBytesWord(len)); break;
+    case 'bKGD': f('Background colour', s, e, len === 1 ? `palette index ${u8[s]}` : len === 2 ? `grey ${u16(s)}` : len === 6 ? `red ${u16(s)}, green ${u16(s + 2)}, blue ${u16(s + 4)}` : rsHex(u8, s, e)); break;
+    case 'sBIT': f('Significant bits', s, e, [...u8.subarray(s, e)].join(', ')); break;
+    case 'hIST': f('Frequencies', s, e, `${rsNum(Math.floor(len / 2))} values`); break;
+    case 'cICP': if (len >= 4) ['Colour primaries', 'Transfer function', 'Matrix coefficients', 'Video full range flag'].forEach((nm, i) => f(nm, s + i, s + i + 1, `${u8[s + i]}`)); break;
+    case 'cLLI': if (len >= 8) { f('Maximum content light level', s, s + 4, `${u32(s) / 10000} cd/m²`); f('Maximum frame-average light level', s + 4, s + 8, `${u32(s + 4) / 10000} cd/m²`); } break;
+    case 'acTL': if (len >= 8) { f('Number of frames', s, s + 4, rsNum(u32(s))); f('Number of plays', s + 4, s + 8, u32(s + 4) ? rsNum(u32(s + 4)) : '0 (repeats forever)'); } break;
+    case 'fcTL':
+      if (len >= 26) {
+        f('Sequence number', s, s + 4, rsNum(u32(s))); f('Width', s + 4, s + 8, rsNum(u32(s + 4))); f('Height', s + 8, s + 12, rsNum(u32(s + 8)));
+        f('X offset', s + 12, s + 16, rsNum(u32(s + 12))); f('Y offset', s + 16, s + 20, rsNum(u32(s + 16)));
+        f('Delay numerator', s + 20, s + 22, `${u16(s + 20)}`); f('Delay denominator', s + 22, s + 24, `${u16(s + 22)}`);
+        f('Disposal', s + 24, s + 25, `${u8[s + 24]}` + ({ 0: ' (none)', 1: ' (background)', 2: ' (previous)' }[u8[s + 24]] || ''));
+        f('Blending', s + 25, s + 26, `${u8[s + 25]}` + ({ 0: ' (source)', 1: ' (over)' }[u8[s + 25]] || ''));
+      }
+      break;
+    case 'fdAT': if (len >= 4) { f('Sequence number', s, s + 4, rsNum(u32(s))); f('Frame image data', s + 4, e, rsBytesWord(len - 4)); } break;
+    case 'IDAT': f('Compressed image data', s, e, rsBytesWord(len)); break;
+    case 'eXIf': if (len) k.push(rsI(cx, 'Exif data', s, e, rsBytesWord(len), null, rsTiffInside(cx, s, e, 'The Exif data'))); break;
+    case 'tEXt': case 'zTXt': case 'iTXt': case 'iCCP': case 'sPLT': {
+      const z = rsZero(u8, s, e);
+      if (z < 0) { f('Contents', s, e, rsBytesWord(len), 'There’s no zero byte ending the keyword in its first 80 bytes.'); break; }
+      f(type === 'iCCP' || type === 'sPLT' ? 'Name' : 'Keyword', s, z, rsQuote(rsLatin1(u8, s, z)));
+      f('Separator', z, z + 1, '0');
+      if (type === 'tEXt') await text(z + 1, false, false, 'Text');
+      else if (type === 'zTXt' || type === 'iCCP') {
+        if (z + 2 > e) break;
+        f('Compression method', z + 1, z + 2, `${u8[z + 1]}` + (u8[z + 1] === 0 ? ' (deflate)' : ''));
+        if (type === 'zTXt') await text(z + 2, true, false, 'Text');
+        else f('Compressed profile', z + 2, e, rsBytesWord(e - z - 2));
+      } else if (type === 'sPLT') {
+        if (z + 2 > e) break;
+        f('Sample depth', z + 1, z + 2, `${u8[z + 1]} bits`);
+        const per = u8[z + 1] === 16 ? 10 : 6;
+        f('Entries', z + 2, e, `${rsNum(Math.floor((e - z - 2) / per))} entries`);
+      } else { // iTXt
+        if (z + 3 > e) break;
+        const comp = u8[z + 1];
+        f('Compression flag', z + 1, z + 2, comp ? '1 (compressed)' : '0 (not compressed)');
+        f('Compression method', z + 2, z + 3, `${u8[z + 2]}`);
+        const z2 = rsZero(u8, z + 3, e, e - z);
+        if (z2 < 0) { f('Rest', z + 3, e, rsBytesWord(e - z - 3), 'There’s no zero byte ending the language tag.'); break; }
+        f('Language tag', z + 3, z2, rsQuoteBytes(u8, z + 3, z2, false)); f('Separator', z2, z2 + 1, '0');
+        const z3 = rsZero(u8, z2 + 1, e, e - z2);
+        if (z3 < 0) { f('Rest', z2 + 1, e, rsBytesWord(e - z2 - 1), 'There’s no zero byte ending the translated keyword.'); break; }
+        f('Translated keyword', z2 + 1, z3, rsQuoteBytes(u8, z2 + 1, z3, true)); f('Separator', z3, z3 + 1, '0');
+        await text(z3 + 1, !!comp, true, 'Text');
+      }
+      break;
+    }
+  }
+  return k;
+}
+
+async function rsPng(cx) {
+  const { u8, n } = cx;
+  const SIG = [137, 80, 78, 71, 13, 10, 26, 10];
+  if (n < 8 || SIG.some((b, i) => u8[i] !== b)) throw new Error('It doesn’t begin with the eight-byte signature the format starts with (89 50 4E 47 0D 0A 1A 0A).');
+  const items = [rsI(cx, 'Signature', 0, 8, '89 50 4E 47 0D 0A 1A 0A')];
+  let p = 8, chunks = 0;
+  while (p < n) {
+    if (n - p < 12) { items.push(rsStopItem(cx, p, n, `Only ${rsBytesWord(n - p)} remain, too few for a chunk’s length, type and CRC.`)); break; }
+    const len = rsBE(u8, p, 4);
+    const type = rsLatin1(u8, p + 4, p + 8);
+    if (!/^[A-Za-z]{4}$/.test(type)) { items.push(rsStopItem(cx, p, n, `The chunk type here, ${rsHex(u8, p + 4, p + 8)}, isn’t four letters.`)); break; }
+    if (len > 0x7fffffff || p + 12 + len > n) { items.push(rsStopItem(cx, p, n, `The “${type}” chunk here says it holds ${rsBytesWord(len)}, which runs past the end of the file.`)); break; }
+    const ds = p + 8, de = ds + len;
+    if (type !== 'IEND' && !rsRoom(cx)) { // past the item limit, chunks are only counted
+      const go = rsUnlisted(cx, items, p, de + 4, 'chunk', 'chunks');
+      p = de + 4; chunks++;
+      if (!go && p < n) { items.push(rsTooLong(cx, p, n, 'chunks')); break; }
+      continue;
+    }
+    const crc = rsBE(u8, de, 4), calc = rsCrc32(u8, p + 4, de);
+    const props = `${type[0] < 'a' ? 'critical' : 'ancillary'}, ${type[1] < 'a' ? 'public' : 'private'}, ${type[3] < 'a' ? 'unsafe to copy' : 'safe to copy'}`;
+    const kids = [rsI(cx, 'Length', p, p + 4, rsBytesWord(len)), rsI(cx, 'Type', p + 4, p + 8, `“${type}” (${props})`)];
+    if (len) kids.push(rsI(cx, 'Data', ds, de, rsBytesWord(len), null, rsRoom(cx) ? rsCover(await rsPngData(cx, type, ds, de), ds, de) : null));
+    kids.push(rsI(cx, 'CRC', de, de + 4, crc === calc ? `${crc.toString(16).toUpperCase().padStart(8, '0')}, matches the type and data` : `${crc.toString(16).toUpperCase().padStart(8, '0')}, doesn’t match the type and data (they give ${calc.toString(16).toUpperCase().padStart(8, '0')})`));
+    items.push(rsI(cx, `Chunk “${type}”`, p, de + 4, (Object.hasOwn(RS_PNG_CHUNKS, type) ? RS_PNG_CHUNKS[type] : 'not one of the standard chunks'), null, kids));
+    p = de + 4; chunks++;
+    if (type === 'IEND') { if (p < n) items.push(rsI(cx, 'After the end chunk', p, n, rsBytesWord(n - p))); break; }
+  }
+  rsNoEnd(items, 'Chunk “IEND”', 'There is no IEND chunk: the file ends here.');
+  return { title: `PNG image, ${rsNum(chunks)} chunk${chunks === 1 ? '' : 's'}`, items };
+}
+
+/* ---------- JPEG images ---------- */
+
+function rsJpegMarker(m) {
+  if (m >= 0xd0 && m <= 0xd7) return [`RST${m - 0xd0}`, 'Restart marker'];
+  if (m >= 0xe0 && m <= 0xef) return [`APP${m - 0xe0}`, 'Application segment'];
+  if (m >= 0xf0 && m <= 0xfd) return [`JPG${m - 0xf0}`, 'Reserved extension'];
+  const sof = { 0xc0: 'baseline', 0xc1: 'extended sequential', 0xc2: 'progressive', 0xc3: 'lossless', 0xc5: 'differential sequential', 0xc6: 'differential progressive', 0xc7: 'differential lossless', 0xc9: 'extended sequential, arithmetic coding', 0xca: 'progressive, arithmetic coding', 0xcb: 'lossless, arithmetic coding', 0xcd: 'differential sequential, arithmetic coding', 0xce: 'differential progressive, arithmetic coding', 0xcf: 'differential lossless, arithmetic coding' };
+  if (sof[m]) return [`SOF${m - 0xc0}`, `Start of frame (${sof[m]})`];
+  return ({ 0xc4: ['DHT', 'Huffman tables'], 0xc8: ['JPG', 'Reserved'], 0xcc: ['DAC', 'Arithmetic coding conditions'], 0xd8: ['SOI', 'Start of image'], 0xd9: ['EOI', 'End of image'],
+    0xda: ['SOS', 'Start of scan'], 0xdb: ['DQT', 'Quantization tables'], 0xdc: ['DNL', 'Number of lines'], 0xdd: ['DRI', 'Restart interval'],
+    0xde: ['DHP', 'Hierarchical progression'], 0xdf: ['EXP', 'Expand reference components'], 0xfe: ['COM', 'Comment'], 0x01: ['TEM', 'Temporary'] })[m] || [`FF ${rsHexByte(m)}`, 'Reserved marker'];
+}
+
+function rsJpegContents(cx, m, s, e) {
+  const { u8 } = cx, k = [];
+  const f = (label, a, b, v, note, ch) => { if (b <= e && b > a) k.push(rsI(cx, label, a, b, v, note, ch)); };
+  const u16 = (p) => rsBE(u8, p, 2);
+  if (m >= 0xe0 && m <= 0xef) {
+    const z = rsZero(u8, s, e, 79);
+    const id = z >= 0 ? rsLatin1(u8, s, z) : '';
+    if (z < 0 || !rsAsciiWord(u8, s, z)) { f('Application data', s, e, rsBytesWord(e - s), 'It doesn’t begin with a readable identifier.'); return k; }
+    f('Identifier', s, z + 1, `${rsQuote(id)} and a zero byte`);
+    const d = z + 1;
+    if (m === 0xe0 && id === 'JFIF' && d + 9 <= e) {
+      f('Version', d, d + 2, `${u8[d]}.${String(u8[d + 1]).padStart(2, '0')}`);
+      f('Density units', d + 2, d + 3, `${u8[d + 2]}` + ({ 0: ' (no units; aspect ratio only)', 1: ' (dots per inch)', 2: ' (dots per centimetre)' }[u8[d + 2]] || ''));
+      f('X density', d + 3, d + 5, `${u16(d + 3)}`); f('Y density', d + 5, d + 7, `${u16(d + 5)}`);
+      f('Thumbnail width', d + 7, d + 8, `${u8[d + 7]}`); f('Thumbnail height', d + 8, d + 9, `${u8[d + 8]}`);
+      f('Thumbnail pixels', d + 9, e, rsBytesWord(e - d - 9));
+    } else if (m === 0xe0 && id === 'JFXX' && d < e) {
+      f('Extension code', d, d + 1, `${rsHexByte(u8[d])}` + ({ 0x10: ' (thumbnail in JPEG)', 0x11: ' (thumbnail, 1 byte per pixel)', 0x13: ' (thumbnail, 3 bytes per pixel)' }[u8[d]] || ''));
+      f('Thumbnail data', d + 1, e, rsBytesWord(e - d - 1));
+    } else if (m === 0xe1 && id === 'Exif' && d < e && u8[d] === 0) {
+      f('Padding', d, d + 1, '0');
+      if (d + 1 < e) k.push(rsI(cx, 'Exif data', d + 1, e, rsBytesWord(e - d - 1), null, rsTiffInside(cx, d + 1, e, 'The Exif data')));
+    } else if (m === 0xe1 && id === 'http://ns.adobe.com/xap/1.0/') f('XMP packet', d, e, rsQuote(rsUtf8(u8, d, e), 4000));
+    else if (m === 0xe1 && id === 'http://ns.adobe.com/xmp/extension/') {
+      f('Full packet’s digest', d, d + 32, rsQuote(rsLatin1(u8, d, Math.min(e, d + 32))));
+      f('Full packet’s length', d + 32, d + 36, rsBytesWord(rsBE(u8, d + 32, 4))); f('Offset of this part', d + 36, d + 40, rsNum(rsBE(u8, d + 36, 4)));
+      f('Part of the XMP packet', d + 40, e, rsQuote(rsUtf8(u8, d + 40, e), 2000));
+    } else if (m === 0xe2 && id === 'ICC_PROFILE' && d + 2 <= e) {
+      f('Part number', d, d + 1, `${u8[d]}`); f('Number of parts', d + 1, d + 2, `${u8[d + 1]}`); f('Colour profile data', d + 2, e, rsBytesWord(e - d - 2));
+    } else f('Application data', d, e, rsBytesWord(e - d));
+    return k;
+  }
+  if (m === 0xdb) { // quantization tables
+    let p = s, i = 0;
+    while (p < e) {
+      const pq = u8[p] >> 4, tq = u8[p] & 15, size = 1 + (pq ? 128 : 64);
+      if (p + size > e) { f('Rest', p, e, rsBytesWord(e - p), 'Too short for another table.'); break; }
+      f(`Quantization table ${tq}`, p, p + size, pq ? '16-bit values' : '8-bit values', null,
+        [rsI(cx, 'Precision and table number', p, p + 1, `${pq ? '16' : '8'}-bit, table ${tq}`), rsI(cx, 'Values (in zigzag order)', p + 1, p + size, '64 values')]);
+      p += size; i++;
+    }
+  } else if (m === 0xc4) { // Huffman tables
+    let p = s;
+    while (p < e) {
+      if (p + 17 > e) { f('Rest', p, e, rsBytesWord(e - p), 'Too short for another table.'); break; }
+      let total = 0; for (let i = 1; i <= 16; i++) total += u8[p + i];
+      if (p + 17 + total > e) { f('Rest', p, e, rsBytesWord(e - p), 'The table’s codes run past the segment.'); break; }
+      const tc = u8[p] >> 4, th = u8[p] & 15;
+      f(`Huffman table (${tc ? 'AC' : 'DC'}, ${th})`, p, p + 17 + total, `${total} code${total === 1 ? '' : 's'}`, null,
+        [rsI(cx, 'Class and table number', p, p + 1, `${tc ? 'AC' : 'DC'}, table ${th}`), rsI(cx, 'Code counts by length', p + 1, p + 17, [...u8.subarray(p + 1, p + 17)].join(' ')),
+          rsI(cx, 'Symbols', p + 17, p + 17 + total, `${total} values`)].filter((x) => x.end > x.start));
+      p += 17 + total;
+    }
+  } else if ((m >= 0xc0 && m <= 0xcf) && m !== 0xc4 && m !== 0xc8 && m !== 0xcc) {
+    if (s + 6 > e) return k;
+    f('Sample precision', s, s + 1, `${u8[s]} bits`); f('Height', s + 1, s + 3, `${u16(s + 1)} lines`); f('Width', s + 3, s + 5, `${u16(s + 3)} pixels`);
+    const nc = u8[s + 5]; f('Number of components', s + 5, s + 6, `${nc}`);
+    for (let i = 0; i < nc && s + 6 + 3 * i + 3 <= e; i++) {
+      const c = s + 6 + 3 * i;
+      f(`Component ${u8[c]}`, c, c + 3, `sampling ${u8[c + 1] >> 4}×${u8[c + 1] & 15}, quantization table ${u8[c + 2]}`);
+    }
+  } else if (m === 0xda) {
+    if (s >= e) return k;
+    const nc = u8[s]; f('Number of components', s, s + 1, `${nc}`);
+    for (let i = 0; i < nc && s + 1 + 2 * i + 2 <= e; i++) { const c = s + 1 + 2 * i; f(`Component ${u8[c]}`, c, c + 2, `DC table ${u8[c + 1] >> 4}, AC table ${u8[c + 1] & 15}`); }
+    const q = s + 1 + 2 * nc;
+    f('Spectral selection start', q, q + 1, `${u8[q]}`); f('Spectral selection end', q + 1, q + 2, `${u8[q + 1]}`);
+    f('Successive approximation', q + 2, q + 3, `high ${u8[q + 2] >> 4}, low ${u8[q + 2] & 15}`);
+  } else if (m === 0xdd) f('Restart interval', s, s + 2, `${u16(s)} MCUs`);
+  else if (m === 0xdc) f('Number of lines', s, s + 2, `${u16(s)}`);
+  else if (m === 0xfe) f('Comment text', s, e, rsQuote(rsUtf8(u8, s, e)));
+  return k;
+}
+
+function rsJpeg(cx) {
+  const { u8, n } = cx;
+  if (n < 2 || u8[0] !== 0xff || u8[1] !== 0xd8) throw new Error('It doesn’t begin with the start-of-image marker (FF D8) the format starts with.');
+  const items = [rsI(cx, 'SOI marker', 0, 2, 'Start of image')];
+  let p = 2, segs = 0;
+  while (p < n) {
+    if (u8[p] !== 0xff) { items.push(rsStopItem(cx, p, n, `A marker (a byte FF) should come here, but the byte is ${rsHexByte(u8[p])}.`)); break; }
+    let q = p; while (q < n && u8[q] === 0xff) q++;
+    if (q >= n) { items.push(rsStopItem(cx, p, n, 'The file ends partway through a marker.')); break; }
+    const m = u8[q], [short, long] = rsJpegMarker(m);
+    const fill = q - p - 1;
+    const room = rsRoom(cx); // past the item limit, markers and segments are only counted
+    const unlisted = (e) => { const go = rsUnlisted(cx, items, p, e, 'marker or segment', 'markers and segments'); p = e; return go; };
+    if (m === 0x00) { items.push(rsStopItem(cx, p, n, 'FF 00 isn’t a marker; it only appears inside coded data.')); break; }
+    if (m === 0xd9) { items.push(rsI(cx, 'EOI marker', p, q + 1, long)); p = q + 1; if (p < n) items.push(rsI(cx, 'After the end marker', p, n, rsBytesWord(n - p))); break; }
+    if (m === 0xd8 || m === 0x01 || (m >= 0xd0 && m <= 0xd7)) {
+      if (room) { items.push(rsI(cx, `${short} marker`, p, q + 1, long)); p = q + 1; }
+      else if (!unlisted(q + 1) && p < n) { items.push(rsTooLong(cx, p, n, 'markers and segments')); break; }
+      continue;
+    }
+    if (q + 3 > n) { items.push(rsStopItem(cx, p, n, `The file ends before the ${short} segment’s length.`)); break; }
+    const len = rsBE(u8, q + 1, 2), se = q + 1 + len;
+    if (len < 2 || se > n) { items.push(rsStopItem(cx, p, n, `The ${short} segment here says it is ${rsBytesWord(len)} long, which ${len < 2 ? 'is too short to hold its own length' : 'runs past the end of the file'}.`)); break; }
+    if (room) {
+      const mk = rsI(cx, 'Marker', p, q + 1, `FF ${rsHexByte(m)}`, fill ? `Preceded by ${fill} fill byte${fill === 1 ? '' : 's'} (FF).` : null);
+      const kids = [mk, rsI(cx, 'Length', q + 1, q + 3, rsBytesWord(len))];
+      if (se > q + 3) kids.push(...rsCover(rsJpegContents(cx, m, q + 3, se), q + 3, se));
+      let what = long;
+      if (m >= 0xe0 && m <= 0xef) { const z = rsZero(u8, q + 3, se, 79); if (z > q + 3 && rsAsciiWord(u8, q + 3, z)) what += `, identifier ${rsQuote(rsLatin1(u8, q + 3, z))}`; }
+      if (m >= 0xc0 && m <= 0xcf && ![0xc4, 0xc8, 0xcc].includes(m) && q + 9 <= se) what += `, ${rsBE(u8, q + 6, 2)} × ${rsBE(u8, q + 4, 2)}`;
+      items.push(rsI(cx, `${short} segment`, p, se, what, null, kids));
+      p = se;
+    } else if (!unlisted(se) && p < n) { segs++; items.push(rsTooLong(cx, p, n, 'markers and segments')); break; }
+    segs++;
+    if (m === 0xda) { // the coded data runs to the next marker that isn't a restart marker or FF 00
+      let r = p, restarts = 0;
+      while (r < n) {
+        if (u8[r] === 0xff && r + 1 < n) {
+          const b = u8[r + 1];
+          if (b === 0x00) { r += 2; continue; }
+          if (b >= 0xd0 && b <= 0xd7) { restarts++; r += 2; continue; }
+          if (b === 0xff) { // fill bytes: look past them
+            let t = r + 1; while (t < n && u8[t] === 0xff) t++;
+            if (t < n && (u8[t] === 0x00 || (u8[t] >= 0xd0 && u8[t] <= 0xd7))) { r = t + 1; if (u8[t]) restarts++; continue; }
+          }
+          break;
+        }
+        r++;
+      }
+      if (r > p && room) { items.push(rsI(cx, 'Entropy-coded data', p, r, rsBytesWord(r - p), restarts ? `It contains ${rsNum(restarts)} restart marker${restarts === 1 ? '' : 's'}.` : null)); p = r; }
+      else if (r > p) { const last = items[items.length - 1]; last.end = r; p = r; } // the coded data joins the unlisted segment it follows
+    }
+  }
+  rsNoEnd(items, 'EOI marker', 'There is no end-of-image marker: the file ends here.');
+  return { title: `JPEG image, ${rsNum(segs)} segment${segs === 1 ? '' : 's'}`, items };
+}
+
+/* ---------- GIF images ---------- */
+
+function rsGif(cx) {
+  const { u8, n } = cx;
+  const sig = rsLatin1(u8, 0, Math.min(n, 6));
+  if (sig !== 'GIF87a' && sig !== 'GIF89a') throw new Error('It doesn’t begin with “GIF87a” or “GIF89a”, which is how the format starts.');
+  if (n < 13) throw new Error('It ends before the logical screen descriptor is complete.');
+  const u16 = (p) => rsLE(u8, p, 2);
+  const items = [rsI(cx, 'Header', 0, 6, rsQuote(sig), null, [rsI(cx, 'Signature', 0, 3, '“GIF”'), rsI(cx, 'Version', 3, 6, rsQuote(sig.slice(3)))])];
+  const pk = u8[10];
+  items.push(rsI(cx, 'Logical screen descriptor', 6, 13, `${u16(6)} × ${u16(8)}`, null, [
+    rsI(cx, 'Width', 6, 8, `${u16(6)} pixels`), rsI(cx, 'Height', 8, 10, `${u16(8)} pixels`),
+    rsI(cx, 'Packed fields', 10, 11, `global colour table ${pk & 128 ? 'present' : 'absent'}, colour resolution ${((pk >> 4) & 7) + 1} bit${(pk >> 4) & 7 ? 's' : ''}, ${pk & 8 ? 'sorted' : 'not sorted'}, table size ${2 << (pk & 7)}`),
+    rsI(cx, 'Background colour index', 11, 12, `${u8[11]}`), rsI(cx, 'Pixel aspect ratio', 12, 13, u8[12] ? `${u8[12]} ((${u8[12]} + 15) / 64 = ${(u8[12] + 15) / 64})` : '0 (not given)')]));
+  let p = 13;
+  if (pk & 128) {
+    const sz = 3 * (2 << (pk & 7));
+    if (p + sz > n) { items.push(rsStopItem(cx, p, n, 'The global colour table runs past the end of the file.')); return { title: 'GIF image', items }; }
+    items.push(rsI(cx, 'Global colour table', p, p + sz, `${2 << (pk & 7)} colours`)); p += sz;
+  }
+  // a chain of data sub-blocks, ending with a zero-size block
+  const subBlocks = (s, what) => {
+    let q = s, k = 0, total = 0; const kids = [];
+    for (;;) {
+      if (q >= n) return { err: `The ${what} runs past the end of the file.` };
+      const sz = u8[q];
+      if (!sz) { if (rsRoom(cx)) kids.push(rsI(cx, 'Block terminator', q, q + 1, '0')); q++; break; }
+      if (q + 1 + sz > n) return { err: `A sub-block of the ${what} runs past the end of the file.` };
+      if (rsRoom(cx) && k < 5000) kids.push(rsI(cx, 'Sub-block', q, q + 1 + sz, rsBytesWord(sz)));
+      total += sz; k++; q += 1 + sz;
+    }
+    return { end: q, k, total, kids };
+  };
+  const joined = (s, e) => { // the text in a chain of sub-blocks, quoted; only its start is kept when it is long
+    const parts = []; let q = s, got = 0, total = 0;
+    while (q < e && u8[q]) {
+      const k = u8[q], keep = Math.min(k, RS_TEXT_KEEP - got);
+      if (keep > 0) { parts.push(rsLatin1(u8, q + 1, q + 1 + keep)); got += keep; }
+      total += k; q += 1 + k;
+    }
+    return rsQuote(parts.join(''), 2000, total > got ? `${rsNum(total)} characters` : null);
+  };
+  let images = 0;
+  while (p < n) {
+    const b = u8[p];
+    if (b === 0x3b) { items.push(rsI(cx, 'Trailer', p, p + 1, '3B')); p++; if (p < n) items.push(rsI(cx, 'After the trailer', p, n, rsBytesWord(n - p))); break; }
+    if (b === 0x21) {
+      if (p + 2 > n) { items.push(rsStopItem(cx, p, n, 'The file ends partway through an extension.')); break; }
+      const lab = u8[p + 1];
+      const names = { 0xf9: 'Graphic control extension', 0xfe: 'Comment extension', 0xff: 'Application extension', 0x01: 'Plain text extension' };
+      const sb = subBlocks(p + 2, (names[lab] || 'extension').toLowerCase());
+      if (sb.err) { items.push(rsStopItem(cx, p, n, sb.err)); break; }
+      if (!rsRoom(cx)) { // past the item limit, extensions and images are only counted
+        const go = rsUnlisted(cx, items, p, sb.end, 'extension or image', 'extensions and images');
+        p = sb.end;
+        if (!go && p < n) { items.push(rsTooLong(cx, p, n, 'extensions and images')); break; }
+        continue;
+      }
+      const kids = [rsI(cx, 'Extension introducer', p, p + 1, '21'), rsI(cx, 'Label', p + 1, p + 2, `${rsHexByte(lab)}`)];
+      let value = null;
+      const q = p + 2;
+      if (lab === 0xf9 && u8[q] === 4 && q + 6 <= sb.end) {
+        const f = u8[q + 1];
+        kids.push(rsI(cx, 'Block size', q, q + 1, '4'),
+          rsI(cx, 'Packed fields', q + 1, q + 2, `disposal ${(f >> 2) & 7}${({ 0: ' (not specified)', 1: ' (leave in place)', 2: ' (restore to background)', 3: ' (restore to previous)' }[(f >> 2) & 7] || '')}, user input ${f & 2 ? 'expected' : 'not expected'}, transparency ${f & 1 ? 'on' : 'off'}`),
+          rsI(cx, 'Delay time', q + 2, q + 4, `${u16(q + 2)} hundredths of a second`), rsI(cx, 'Transparent colour index', q + 4, q + 5, `${u8[q + 4]}`),
+          ...sb.kids.slice(1));
+        value = `delay ${u16(q + 2) / 100} s` + (f & 1 ? `, transparent index ${u8[q + 4]}` : '');
+      } else if (lab === 0xfe) {
+        value = joined(q, sb.end);
+        kids.push(rsI(cx, 'Comment text, in sub-blocks', q, sb.end, value, null, sb.kids));
+      } else if (lab === 0xff && u8[q] === 11 && q + 12 <= sb.end) {
+        const id = rsLatin1(u8, q + 1, q + 9), auth = rsLatin1(u8, q + 9, q + 12);
+        value = rsQuote(id + auth);
+        kids.push(rsI(cx, 'Block size', q, q + 1, '11'), rsI(cx, 'Application identifier', q + 1, q + 9, rsQuote(id)), rsI(cx, 'Authentication code', q + 9, q + 12, rsQuote(auth)));
+        const r = q + 12;
+        if ((id + auth === 'NETSCAPE2.0' || id + auth === 'ANIMEXTS1.0') && u8[r] === 3 && u8[r + 1] === 1 && r + 5 <= sb.end) {
+          kids.push(rsI(cx, 'Looping sub-block', r, r + 4, u16(r + 2) ? `repeat ${u16(r + 2)} times` : 'repeat forever'));
+          if (r + 4 < sb.end) kids.push(sb.end - r - 4 === 1 ? rsI(cx, 'Block terminator', r + 4, sb.end, '0') : rsI(cx, 'Further sub-blocks', r + 4, sb.end, rsBytesWord(sb.end - r - 4)));
+        } else if (r < sb.end) kids.push(rsI(cx, 'Application data, in sub-blocks', r, sb.end, rsBytesWord(sb.total - 11)));
+      } else if (lab === 0x01 && u8[q] === 12 && q + 13 <= sb.end) {
+        kids.push(rsI(cx, 'Text grid and colours', q, q + 13, `grid ${u16(q + 5)} × ${u16(q + 7)} at (${u16(q + 1)}, ${u16(q + 3)})`));
+        value = joined(q + 13, sb.end);
+        kids.push(rsI(cx, 'Plain text, in sub-blocks', q + 13, sb.end, value));
+      } else kids.push(rsI(cx, 'Data sub-blocks', q, sb.end, `${rsNum(sb.k)} sub-block${sb.k === 1 ? '' : 's'}, ${rsBytesWord(sb.total)}`, null, sb.kids));
+      items.push(rsI(cx, names[lab] || `Extension ${rsHexByte(lab)}`, p, sb.end, value, null, kids));
+      p = sb.end; continue;
+    }
+    if (b === 0x2c) {
+      if (p + 11 > n) { items.push(rsStopItem(cx, p, n, 'The file ends partway through an image descriptor.')); break; }
+      const f = u8[p + 9];
+      if (!rsRoom(cx)) { // the same for an image: its end is found, and it is counted
+        const ts = 3 * (2 << (f & 7)), q = p + 10 + (f & 128 ? ts : 0);
+        if (q > n) { items.push(rsStopItem(cx, p, n, 'The local colour table runs past the end of the file.')); break; }
+        if (q >= n) { items.push(rsStopItem(cx, p, n, 'The file ends before the image data.')); break; }
+        const sb = subBlocks(q + 1, 'image data');
+        if (sb.err) { items.push(rsStopItem(cx, p, n, sb.err)); break; }
+        const go = rsUnlisted(cx, items, p, sb.end, 'extension or image', 'extensions and images');
+        p = sb.end; images++;
+        if (!go && p < n) { items.push(rsTooLong(cx, p, n, 'extensions and images')); break; }
+        continue;
+      }
+      items.push(rsI(cx, 'Image descriptor', p, p + 10, `${u16(p + 5)} × ${u16(p + 7)} at (${u16(p + 1)}, ${u16(p + 3)})`, null, [
+        rsI(cx, 'Image separator', p, p + 1, '2C'), rsI(cx, 'Left', p + 1, p + 3, `${u16(p + 1)}`), rsI(cx, 'Top', p + 3, p + 5, `${u16(p + 3)}`),
+        rsI(cx, 'Width', p + 5, p + 7, `${u16(p + 5)}`), rsI(cx, 'Height', p + 7, p + 9, `${u16(p + 7)}`),
+        rsI(cx, 'Packed fields', p + 9, p + 10, `local colour table ${f & 128 ? 'present' : 'absent'}, ${f & 64 ? 'interlaced' : 'not interlaced'}, ${f & 32 ? 'sorted' : 'not sorted'}, table size ${2 << (f & 7)}`)]));
+      p += 10;
+      if (f & 128) {
+        const sz = 3 * (2 << (f & 7));
+        if (p + sz > n) { items.push(rsStopItem(cx, p, n, 'The local colour table runs past the end of the file.')); break; }
+        items.push(rsI(cx, 'Local colour table', p, p + sz, `${2 << (f & 7)} colours`)); p += sz;
+      }
+      if (p >= n) { items.push(rsStopItem(cx, p, n, 'The file ends before the image data.')); break; }
+      const sb = subBlocks(p + 1, 'image data');
+      if (sb.err) { items.push(rsStopItem(cx, p, n, sb.err)); break; }
+      items.push(rsI(cx, 'Image data', p, sb.end, `${rsNum(sb.k)} sub-block${sb.k === 1 ? '' : 's'}, ${rsBytesWord(sb.total)} of LZW-coded data`, null, [rsI(cx, 'LZW minimum code size', p, p + 1, `${u8[p]}`), ...sb.kids]));
+      p = sb.end; images++; continue;
+    }
+    items.push(rsStopItem(cx, p, n, `A block should start here (21, 2C or 3B), but the byte is ${rsHexByte(b)}.`)); break;
+  }
+  rsNoEnd(items, 'Trailer', 'There is no trailer: the file ends here.');
+  return { title: `GIF image, ${rsNum(images)} frame${images === 1 ? '' : 's'}`, items };
+}
+
+/* ---------- BMP images ---------- */
+
+function rsBmp(cx) {
+  const { u8, n } = cx;
+  const sig = rsLatin1(u8, 0, Math.min(2, n));
+  if (!['BM', 'BA', 'CI', 'CP', 'IC', 'PT'].includes(sig)) throw new Error('It doesn’t begin with “BM”, which is how the format starts.');
+  if (n < 18) throw new Error('It ends before the file header and the size of the header after it.');
+  const dv = new DataView(u8.buffer, u8.byteOffset, n);
+  const u32 = (p) => dv.getUint32(p, true), i32 = (p) => dv.getInt32(p, true), u16 = (p) => dv.getUint16(p, true);
+  const off = u32(10);
+  const items = [rsI(cx, 'File header', 0, 14, null, null, [rsI(cx, 'Signature', 0, 2, rsQuote(sig)), rsI(cx, 'File size', 2, 6, `${rsBytesWord(u32(2))}` + (u32(2) !== n ? ` (the file is ${rsBytesWord(n)})` : '')),
+    rsI(cx, 'Reserved', 6, 8, `${u16(6)}`), rsI(cx, 'Reserved', 8, 10, `${u16(8)}`), rsI(cx, 'Offset of the pixel data', 10, 14, rsNum(off))])];
+  const hs = u32(14);
+  const names = { 12: 'BITMAPCOREHEADER', 16: 'OS/2 2.x header (short)', 40: 'BITMAPINFOHEADER', 52: 'BITMAPV2INFOHEADER', 56: 'BITMAPV3INFOHEADER', 64: 'OS/2 2.x header', 108: 'BITMAPV4HEADER', 124: 'BITMAPV5HEADER' };
+  if (!names[hs]) { items.push(rsStopItem(cx, 14, n, `The header after the file header says it is ${rsBytesWord(hs)}, which isn’t one of the sizes the format uses.`)); return { title: 'BMP image', items }; }
+  if (14 + hs > n) { items.push(rsStopItem(cx, 14, n, `The ${names[hs]} runs past the end of the file.`)); return { title: 'BMP image', items }; }
+  const k = [rsI(cx, 'Header size', 14, 18, `${hs} (${names[hs]})`)];
+  let w, h, bpp, comp = 0, used = 0, imgSize = 0;
+  if (hs === 12) {
+    w = u16(18); h = dv.getInt16(20, true); bpp = u16(24);
+    k.push(rsI(cx, 'Width', 18, 20, `${w}`), rsI(cx, 'Height', 20, 22, `${h}`), rsI(cx, 'Colour planes', 22, 24, `${u16(22)}`), rsI(cx, 'Bits per pixel', 24, 26, `${bpp}`));
+  } else {
+    w = i32(18); h = i32(22); bpp = u16(28);
+    k.push(rsI(cx, 'Width', 18, 22, `${w}`), rsI(cx, 'Height', 22, 26, `${h}` + (h < 0 ? ' (rows run top to bottom)' : ' (rows run bottom to top)')),
+      rsI(cx, 'Colour planes', 26, 28, `${u16(26)}`), rsI(cx, 'Bits per pixel', 28, 30, `${bpp}`));
+    if (hs >= 40) {
+      comp = u32(30); imgSize = u32(34); used = u32(46);
+      const cn = { 0: 'none (BI_RGB)', 1: 'RLE8', 2: 'RLE4', 3: 'bit fields', 4: 'JPEG', 5: 'PNG', 6: 'alpha bit fields', 11: 'CMYK', 12: 'CMYK RLE8', 13: 'CMYK RLE4' };
+      k.push(rsI(cx, 'Compression', 30, 34, `${comp}` + (cn[comp] ? ` (${cn[comp]})` : '')), rsI(cx, 'Image size', 34, 38, imgSize ? rsBytesWord(imgSize) : '0 (not given)'),
+        rsI(cx, 'Horizontal resolution', 38, 42, `${i32(38)} pixels per metre`), rsI(cx, 'Vertical resolution', 42, 46, `${i32(42)} pixels per metre`),
+        rsI(cx, 'Colours used', 46, 50, used ? `${used}` : '0 (all that the bit depth allows)'), rsI(cx, 'Important colours', 50, 54, u32(50) ? `${u32(50)}` : '0 (all)'));
+    } else if (hs === 16) { /* the short OS/2 header stops after the bit depth */ }
+    if (hs >= 52 && hs !== 64) {
+      k.push(rsI(cx, 'Red mask', 54, 58, u32(54).toString(16).toUpperCase().padStart(8, '0')), rsI(cx, 'Green mask', 58, 62, u32(58).toString(16).toUpperCase().padStart(8, '0')),
+        rsI(cx, 'Blue mask', 62, 66, u32(62).toString(16).toUpperCase().padStart(8, '0')));
+    }
+    if (hs >= 56 && hs !== 64) k.push(rsI(cx, 'Alpha mask', 66, 70, u32(66).toString(16).toUpperCase().padStart(8, '0')));
+    if (hs === 64) k.push(rsI(cx, 'OS/2 fields', 54, 78, rsBytesWord(24)));
+    if (hs >= 108) {
+      const cs = u32(70);
+      const csText = rsAsciiWord(u8, 70, 74) ? rsQuote(rsLatin1(u8, 70, 74).split('').reverse().join('')) : `${cs}` + (cs === 0 ? ' (calibrated RGB)' : '');
+      k.push(rsI(cx, 'Colour space type', 70, 74, csText), rsI(cx, 'Colour space endpoints', 74, 110, '9 fixed-point values'),
+        rsI(cx, 'Red gamma', 110, 114, `${u32(110) / 65536}`), rsI(cx, 'Green gamma', 114, 118, `${u32(114) / 65536}`), rsI(cx, 'Blue gamma', 118, 122, `${u32(118) / 65536}`));
+    }
+    if (hs >= 124) {
+      k.push(rsI(cx, 'Rendering intent', 122, 126, `${u32(122)}` + ({ 1: ' (business: saturation)', 2: ' (graphics: relative colorimetric)', 4: ' (images: perceptual)', 8: ' (absolute colorimetric)' }[u32(122)] || '')),
+        rsI(cx, 'Profile data offset', 126, 130, rsNum(u32(126))), rsI(cx, 'Profile size', 130, 134, rsBytesWord(u32(130))), rsI(cx, 'Reserved', 134, 138, `${u32(134)}`));
+    }
+  }
+  items.push(rsI(cx, 'Bitmap information header', 14, 14 + hs, names[hs], null, k));
+  let p = 14 + hs;
+  if (hs === 40 && (comp === 3 || comp === 6) && p + (comp === 6 ? 16 : 12) <= n) {
+    const m = comp === 6 ? 16 : 12;
+    items.push(rsI(cx, 'Colour masks', p, p + m, ['red', 'green', 'blue', 'alpha'].slice(0, m / 4).map((c, i) => `${c} ${u32(p + 4 * i).toString(16).toUpperCase().padStart(8, '0')}`).join(', ')));
+    p += m;
+  }
+  const entries = used || (bpp && bpp <= 8 ? 1 << bpp : 0);
+  const es = hs === 12 ? 3 : 4;
+  if (entries && p < off) {
+    const e = Math.min(off, p + entries * es, n);
+    items.push(rsI(cx, 'Colour table', p, e, `${rsNum(Math.floor((e - p) / es))} colours, ${es} bytes each`));
+  }
+  const rowBytes = Math.floor((bpp * Math.abs(w) + 31) / 32) * 4;
+  const want = imgSize || (comp === 0 || comp === 3 || comp === 6 ? rowBytes * Math.abs(h) : 0);
+  if (off < n && want) {
+    const e = Math.min(n, off + want);
+    items.push(rsI(cx, 'Pixel data', off, e, rsBytesWord(want), off + want > n ? `It should hold ${rsBytesWord(want)}, but the file ends after ${rsBytesWord(n - off)}.` : (comp ? null : `${rsNum(Math.abs(h))} rows of ${rsBytesWord(rowBytes)}, each padded to a multiple of 4.`)));
+  } else if (off < n && !want) items.push(rsI(cx, 'Pixel data', off, n, rsBytesWord(n - off), 'Its size isn’t given, so it is taken to run to the end of the file.'));
+  if (hs >= 124 && u32(130) && (rsLatin1(u8, 70, 74) === 'DEBM' || rsLatin1(u8, 70, 74) === 'KNIL')) {
+    const s = 14 + u32(126), e = Math.min(n, s + u32(130));
+    if (s < n) items.push(rsI(cx, rsLatin1(u8, 70, 74) === 'DEBM' ? 'Embedded colour profile' : 'Linked colour profile file name', s, e, rsBytesWord(u32(130))));
+  }
+  return { title: `BMP image, ${Math.abs(w)} × ${Math.abs(h)}, ${bpp} bit${bpp === 1 ? "" : "s"} per pixel`, items };
+}
+
+/* ---------- WebP images ---------- */
+
+function rsWebpChunks(cx, s, e, depth, items = []) {
+  const { u8 } = cx;
+  const u24 = (p) => rsLE(u8, p, 3);
+  let p = s;
+  while (p < e) {
+    if (e - p < 8) { items.push(rsStopItem(cx, p, e, `Only ${rsBytesWord(e - p)} remain, too few for a chunk’s name and size.`)); break; }
+    const id = rsLatin1(u8, p, p + 4), size = rsLE(u8, p + 4, 4);
+    if (!rsAsciiWord(u8, p, p + 4)) { items.push(rsStopItem(cx, p, e, `The chunk name here, ${rsHex(u8, p, p + 4)}, isn’t four letters.`)); break; }
+    const ds = p + 8, de = ds + size;
+    if (de > e) { items.push(rsStopItem(cx, p, e, `The “${id}” chunk here says it holds ${rsBytesWord(size)}, which runs past the end of the RIFF data.`)); break; }
+    if (!rsRoom(cx)) { // past the item limit, chunks are only counted
+      const next = size % 2 && de < e ? de + 1 : de;
+      const go = rsUnlisted(cx, items, p, next, 'chunk', 'chunks');
+      p = next;
+      if (!go && p < e) { items.push(rsTooLong(cx, p, e, 'chunks')); break; }
+      continue;
+    }
+    const dk = [];
+    const f = (label, a, b, v) => { if (b <= de && b > a) dk.push(rsI(cx, label, a, b, v)); };
+    let what = null;
+    if (id === 'VP8X' && size >= 10) {
+      const fl = u8[ds];
+      const on = [[0x20, 'colour profile'], [0x10, 'alpha'], [0x08, 'Exif'], [0x04, 'XMP'], [0x02, 'animation']].filter(([b]) => fl & b).map(([, t]) => t);
+      f('Flags', ds, ds + 1, on.length ? on.join(', ') : 'none set'); f('Reserved', ds + 1, ds + 4, rsHex(u8, ds + 1, ds + 4));
+      f('Canvas width minus one', ds + 4, ds + 7, `${u24(ds + 4)} (width ${u24(ds + 4) + 1})`); f('Canvas height minus one', ds + 7, ds + 10, `${u24(ds + 7)} (height ${u24(ds + 7) + 1})`);
+      what = `extended format, canvas ${u24(ds + 4) + 1} × ${u24(ds + 7) + 1}`;
+    } else if (id === 'VP8 ' && size >= 10) {
+      const tag = u24(ds), key = !(tag & 1);
+      f('Frame tag', ds, ds + 3, `${key ? 'key frame' : 'interframe'}, version ${(tag >> 1) & 7}, ${tag & 16 ? 'shown' : 'not shown'}, first partition ${rsBytesWord(tag >>> 5)}`);
+      if (key) {
+        f('Start code', ds + 3, ds + 6, rsHex(u8, ds + 3, ds + 6));
+        const wv = rsLE(u8, ds + 6, 2), hv = rsLE(u8, ds + 8, 2);
+        f('Width and scale', ds + 6, ds + 8, `${wv & 0x3fff} pixels, scale ${wv >> 14}`); f('Height and scale', ds + 8, ds + 10, `${hv & 0x3fff} pixels, scale ${hv >> 14}`);
+        f('Compressed image data', ds + 10, de, rsBytesWord(size - 10));
+        what = `lossy image, ${wv & 0x3fff} × ${hv & 0x3fff}`;
+      } else f('Compressed image data', ds + 3, de, rsBytesWord(size - 3));
+    } else if (id === 'VP8L' && size >= 5) {
+      const b = rsLE(u8, ds + 1, 4);
+      f('Signature', ds, ds + 1, rsHexByte(u8[ds]));
+      f('Size, alpha and version', ds + 1, ds + 5, `width ${(b & 0x3fff) + 1}, height ${((b >>> 14) & 0x3fff) + 1}, alpha ${b >>> 28 & 1 ? 'used' : 'not used'}, version ${b >>> 29}`);
+      f('Compressed image data', ds + 5, de, rsBytesWord(size - 5));
+      what = `lossless image, ${(b & 0x3fff) + 1} × ${((b >>> 14) & 0x3fff) + 1}`;
+    } else if (id === 'ALPH' && size >= 1) {
+      const fl = u8[ds];
+      f('Flags', ds, ds + 1, `pre-processing ${(fl >> 4) & 3}, filtering ${(fl >> 2) & 3}, compression ${fl & 3}${fl & 3 ? ' (lossless)' : ' (none)'}`);
+      f('Alpha data', ds + 1, de, rsBytesWord(size - 1)); what = 'alpha channel';
+    } else if (id === 'ANIM' && size >= 6) {
+      f('Background colour', ds, ds + 4, `blue ${u8[ds]}, green ${u8[ds + 1]}, red ${u8[ds + 2]}, alpha ${u8[ds + 3]}`);
+      f('Loop count', ds + 4, ds + 6, rsLE(u8, ds + 4, 2) ? `${rsLE(u8, ds + 4, 2)}` : '0 (forever)'); what = 'animation settings';
+    } else if (id === 'ANMF' && size >= 16) {
+      f('Frame X (halved)', ds, ds + 3, `${u24(ds)} (x ${2 * u24(ds)})`); f('Frame Y (halved)', ds + 3, ds + 6, `${u24(ds + 3)} (y ${2 * u24(ds + 3)})`);
+      f('Frame width minus one', ds + 6, ds + 9, `${u24(ds + 6)}`); f('Frame height minus one', ds + 9, ds + 12, `${u24(ds + 9)}`);
+      f('Duration', ds + 12, ds + 15, `${u24(ds + 12)} ms`);
+      f('Flags', ds + 15, ds + 16, `${u8[ds + 15] & 2 ? 'no blending' : 'alpha blending'}, ${u8[ds + 15] & 1 ? 'dispose to background' : 'no disposal'}`);
+      if (depth < 4 && de > ds + 16) dk.push(rsI(cx, 'Frame data', ds + 16, de, rsBytesWord(size - 16), null, rsWebpChunks(cx, ds + 16, de, depth + 1)));
+      what = `animation frame, ${u24(ds + 6) + 1} × ${u24(ds + 9) + 1}`;
+    } else if (id === 'EXIF' && size) { dk.push(rsI(cx, 'Exif data', ds, de, rsBytesWord(size), null, rsTiffInside(cx, ds, de, 'The Exif data'))); what = 'Exif data'; }
+    else if (id === 'XMP ' && size) { f('XMP packet', ds, de, rsQuote(rsUtf8(u8, ds, de), 4000)); what = 'XMP metadata'; }
+    else if (id === 'ICCP') what = 'colour profile';
+    const kids = [rsI(cx, 'Chunk name', p, p + 4, `“${id}”`), rsI(cx, 'Chunk size', p + 4, p + 8, rsBytesWord(size))];
+    if (size) kids.push(rsI(cx, 'Chunk data', ds, de, rsBytesWord(size), null, dk.length ? rsCover(dk, ds, de) : null));
+    let next = de;
+    if (size % 2 && de < e) { kids.push(rsI(cx, 'Padding byte', de, de + 1, rsHexByte(u8[de]))); next = de + 1; }
+    items.push(rsI(cx, `Chunk “${id}”`, p, next, what, null, kids));
+    p = next;
+  }
+  return items;
+}
+
+function rsWebp(cx) {
+  const { u8, n } = cx;
+  if (n < 12 || rsLatin1(u8, 0, 4) !== 'RIFF' || rsLatin1(u8, 8, 12) !== 'WEBP') throw new Error('It doesn’t begin with “RIFF”, a size and “WEBP”, which is how the format starts.');
+  const size = rsLE(u8, 4, 4), end = Math.min(n, 8 + size);
+  const items = [rsI(cx, 'RIFF header', 0, 12, null, null, [rsI(cx, 'Signature', 0, 4, '“RIFF”'),
+    rsI(cx, 'RIFF size', 4, 8, `${rsBytesWord(size)}` + (8 + size > n ? ` (the file ends ${rsBytesWord(8 + size - n)} sooner)` : '')), rsI(cx, 'Form type', 8, 12, '“WEBP”')])];
+  rsWebpChunks(cx, 12, end, 0, items);
+  if (end < n) items.push(rsI(cx, 'After the RIFF data', end, n, rsBytesWord(n - end)));
+  return { title: 'WebP image', items };
+}
+
+/* ---------- Parquet tables ---------- */
+
+// Reads one struct of the compact binary encoding Parquet uses to describe itself, keeping where
+// every field lies. Each value is { t, start, end, v }: t is 'bool', 'int', 'double', 'bin',
+// 'list', 'map' or 'struct'; a struct's v is a list of { id, start, end, val }. Throws on damage.
+const RS_THRIFT_MAX = 2000000; // values in one struct, past which reading it stops
+// With cx, the bytes it reads count towards how far the walk goes, and once that has gone too far
+// it reads nothing more.
+function rsThrift(u8, pos, end, cx) {
+  if (cx) {
+    if (cx.walked >= RS_WALK_MAX) throw new Error('there is more in this file than this page will read');
+    let r, at = pos;
+    try { r = rsThrift(u8, pos, end); at = r.end; return r; } catch (err) { at = end; throw err; } finally { rsWalk(cx, Math.ceil((at - pos) / 64)); }
+  }
+  let p = pos, count = 0;
+  const fail = (why) => { throw new Error(why); };
+  const byte = () => { if (p >= end) fail('it ends partway through'); return u8[p++]; };
+  const uvar = () => {
+    let x = 0n, sh = 0n;
+    for (let i = 0; ; i++) {
+      if (i >= 10) fail('a number in it is too long');
+      const b = byte(); x |= BigInt(b & 127) << sh; sh += 7n;
+      if (b < 128) break;
+    }
+    return x & 0xffffffffffffffffn;
+  };
+  const zig = () => { const u = uvar(); const v = (u >> 1n) ^ -(u & 1n); return v >= BigInt(Number.MIN_SAFE_INTEGER) && v <= BigInt(Number.MAX_SAFE_INTEGER) ? Number(v) : BigInt.asIntN(64, v); };
+  const size = () => { const v = uvar(); if (v > BigInt(end - p)) fail('a length in it runs past its end'); return Number(v); };
+  const value = (t, depth) => {
+    if (depth > 64) fail('it is nested too deeply');
+    if (++count > RS_THRIFT_MAX) fail('it holds more values than this page will read');
+    const s = p;
+    switch (t) {
+      case 1: case 2: return { t: 'bool', start: s, end: s, v: t === 1 };
+      case 3: { const b = byte(); return { t: 'int', start: s, end: p, v: b > 127 ? b - 256 : b }; }
+      case 4: case 5: case 6: { const v = zig(); return { t: 'int', start: s, end: p, v }; }

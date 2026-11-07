@@ -1,0 +1,489 @@
+<!-- Review copy: lines 9889-10376 of ruminate/index.html, split so Copilot can review it. Not served. -->
+function status(text) { clearTimeout(statusT); statusT = setTimeout(() => { $('ru-status').textContent = text; }, 250); }
+
+/* ---------- settings: the only thing kept between visits ---------- */
+const KEY = 'ruminate:v1';
+let prefs = {};
+try { const p = JSON.parse(localStorage.getItem(KEY) || '{}'); if (p && typeof p === 'object' && !Array.isArray(p)) prefs = { wrap: p.wrap === true }; } catch (err) { /* storage unavailable */ }
+function savePrefs() { try { localStorage.setItem(KEY, JSON.stringify({ wrap: prefs.wrap === true })); } catch (err) { /* storage unavailable */ } }
+
+/* ---------- the bison ---------- */
+const svg = $('ru-svg'), says = $('ru-says');
+const FACTS = [
+  'The American bison has been the national mammal of the United States since 2016.',
+  'Bison are ruminants. Their stomach has four chambers, and they bring food back up to chew it again: chewing the cud.',
+  'Ruminating means chewing the cud, and it also means thinking something over. This bison does both.',
+  'A big bull can weigh up to about 2,000 pounds (900 kg). Cows are smaller, often around 1,000 pounds (450 kg).',
+  'For all that weight, a bison can run at about 35 mph (55 km/h).',
+  'The hump is muscle, held up by long spines on the backbone over the shoulders. It helps a bison swing its head to push snow aside and reach the grass.',
+  'Newborn calves are nicknamed “red dogs” for their reddish coat, which darkens over their first few months.',
+  'Bison roll in the dust, which is called wallowing. The shallow hollows they wear into the ground are called wallows.',
+  '“Buffalo” is a misnomer for the American bison. The true buffalo, such as the water buffalo and the African buffalo, are different animals.',
+  'A bison can jump about 6 feet (1.8 m) high.',
+  'Both bulls and cows have horns, and they keep them for life. Unlike antlers, horns aren’t shed.',
+  'A bison’s winter coat keeps heat in so well that snow can settle on its back without melting.',
+  'Yellowstone National Park is the one place in the United States where bison have lived continuously since prehistoric times.',
+];
+let factI = -1;
+function nextFact() {
+  factI = (factI + 1) % FACTS.length;
+  says.textContent = FACTS[factI];
+  if (!reduced()) { svg.classList.remove('nudge', 'idle'); void svg.getBoundingClientRect(); svg.classList.add('nudge'); }
+}
+svg.addEventListener('click', nextFact);
+$('ru-fact').addEventListener('click', nextFact);
+svg.addEventListener('animationend', (ev) => {
+  if (ev.animationName === 'ru-swish') svg.classList.remove('nudge');
+  if (ev.animationName === 'ru-chew' && !svg.classList.contains('chewing')) svg.classList.remove('idle');
+});
+let chewers = 0, chewStart = 0, chewStopT = 0;
+function chewOn() { // the jaw moves while something is being read
+  chewers++;
+  clearTimeout(chewStopT);
+  if (chewers === 1) { chewStart = Date.now(); svg.classList.remove('idle'); svg.classList.add('chewing'); }
+}
+function chewOff() { // keep chewing for at least a moment, so a quick read still shows
+  chewers = Math.max(0, chewers - 1);
+  if (chewers) return;
+  clearTimeout(chewStopT);
+  chewStopT = setTimeout(() => { if (!chewers) svg.classList.remove('chewing'); }, Math.max(0, 1100 - (Date.now() - chewStart)));
+}
+function idle() { // now and then it ruminates by itself
+  setTimeout(idle, 9000 + Math.random() * 9000);
+  if (reduced() || document.hidden || chewers || svg.classList.contains('chewing')) return;
+  svg.classList.remove('idle'); void svg.getBoundingClientRect(); svg.classList.add('idle');
+}
+setTimeout(idle, 6000);
+
+/* ---------- the files: read from the device only when first opened ---------- */
+let entries = [], nextId = 1;
+function makeEntry(name, size, file, u8, example) {
+  const e = { id: nextId++, name: String(name), size, file, u8, error: '', example: !!example, added: [], view: null,
+    get bytes() { if (!this.u8) throw new Error('This file hasn’t been read yet.'); return this.u8; } };
+  return e;
+}
+function fromB64(b64) {
+  const bin = atob(String(b64 || '')), u = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) u[i] = bin.charCodeAt(i);
+  return u;
+}
+function readEntry(e) { // gives the bytes, reading the file from the device the first time
+  if (e.u8) return Promise.resolve(e.u8);
+  if (e.reading) return e.reading;
+  e.reading = (async () => {
+    try {
+      const buf = await e.file.arrayBuffer();
+      e.u8 = new Uint8Array(buf);
+      e.error = '';
+      return e.u8;
+    } catch (err) {
+      e.error = `This browser couldn’t read the file${err && err.message ? ': ' + reasonOf(err) : '.'}`;
+      throw new Error(e.error);
+    } finally { e.reading = null; drawItem(e); }
+  })();
+  return e.reading;
+}
+function addFiles(files, how, folders) {
+  const list = [...files].filter((f) => f && typeof f.name === 'string');
+  if (!list.length) return;
+  const added = list.map((f) => makeEntry(f.name, f.size, f, null, false));
+  entries.push(...added);
+  drawList(added);
+  const big = added.filter((e) => e.size > BIG).length;
+  status(`${plural(added.length, 'file')} added${how ? ' ' + how : ''}.${folders ? ' ' + foldersLeftOut(folders) : ''}`);
+  const note = !big ? '' : big === 1 && added.length === 1 ? `That’s a big one (${fmtSize(added[0].size)}). It may take me a moment to chew.` : 'Some of these are big. They may take me a moment to chew.';
+  openEntry(added[0], { note, after: folders ? `I can’t open ${folders === 1 ? 'a folder' : 'folders'}, so I left ${folders === 1 ? 'it' : 'them'} out.` : '' });
+}
+const foldersLeftOut = (k) => `${k === 1 ? 'A folder was' : `${k} folders were`} left out: folders can’t be opened, so drop the files inside instead.`;
+function addExamples() {
+  const have = new Set(entries.filter((e) => e.example).map((e) => e.name));
+  const ex = EXAMPLES.filter((f) => !have.has(String(f.name))).map((f) => { const u = fromB64(f.b64); return makeEntry(f.name, u.length, null, u, true); });
+  if (ex.length) { // any example removed earlier comes back; the ones still listed stay as they are
+    entries.push(...ex);
+    drawList(ex);
+    status(`${plural(ex.length, 'example file')} added.`);
+  }
+  const first = entries.find((e) => e.example);
+  if (first) openEntry(first, { focus: true });
+}
+
+/* ---------- panel 2: the list ---------- */
+const list = $('ru-list');
+function itemHTML(e) {
+  const on = cur === e;
+  return `<button type="button" class="ru-file" data-id="${e.id}" aria-current="${on}"><span class="ru-fn">${esc(e.name)}</span><span class="ru-fs">${esc(fmtSize(e.size))}${e.example ? ' · example' : ''}</span>${e.size > BIG ? '<span class="ru-big">A big file: it may take a moment to read, and some views may be slow.</span>' : ''}${e.error ? `<span class="ru-why">${esc(e.error)}</span>` : ''}</button><button type="button" class="btn small quiet ru-rm" data-rm="${e.id}" aria-label="${esc('Remove ' + e.name)}">Remove</button>`;
+}
+function drawItem(e) {
+  const li = list.querySelector(`li[data-id="${e.id}"]`);
+  if (!li) return;
+  li.className = 'ru-item' + (cur === e ? ' on' : '');
+  li.innerHTML = itemHTML(e);
+}
+function drawList(added) {
+  if (added) { // only the new ones are drawn, so a long list stays quick
+    const frag = document.createDocumentFragment();
+    for (const e of added) { const li = document.createElement('li'); li.dataset.id = e.id; li.className = 'ru-item'; li.innerHTML = itemHTML(e); frag.appendChild(li); }
+    list.appendChild(frag);
+  }
+  const n = entries.length, total = entries.reduce((s, e) => s + e.size, 0);
+  $('ru-listbar').hidden = !n;
+  $('ru-count').textContent = n ? `${plural(n, 'file')}, ${fmtSize(total)} in all` : '';
+  $('ru-files-help').textContent = n ? 'Choose a file to open it in the viewer below.' : 'No files yet. Choose some, drop them here, or try the example: eight small made-up files.';
+}
+list.addEventListener('click', (ev) => {
+  const rm = ev.target.closest('[data-rm]');
+  if (rm) { removeEntry(+rm.dataset.rm); return; }
+  const b = ev.target.closest('.ru-file'); if (!b) return;
+  const e = entries.find((x) => x.id === +b.dataset.id);
+  if (e) openEntry(e, { focus: true });
+});
+function removeEntry(id) {
+  const i = entries.findIndex((x) => x.id === id);
+  if (i < 0) return;
+  const e = entries[i];
+  const li = list.querySelector(`li[data-id="${id}"]`);
+  const next = li && (li.nextElementSibling || li.previousElementSibling);
+  entries.splice(i, 1);
+  if (li) li.remove();
+  forgetEntry(e);
+  if (cur === e) closeViewer();
+  else if (cur && cur.u8 && handle && FV.viewsFor(e.name).includes('map')) { // so the Map view stops offering it
+    const k = shownOthers.indexOf(e); if (k >= 0) shownOthers.splice(k, 1);
+    if (/^map(:|$)/.test(handle.view() || '')) show(cur, cur.view, {}); // redrawn only when it is the view shown, so a playing sound plays on
+  }
+  drawList();
+  status(`Removed ${e.name}.`);
+  const f = next && next.querySelector('.ru-file');
+  if (f) f.focus(); else $('ru-input').focus();
+}
+function forgetEntry(e) { FV.forget(e); STRUCT.delete(e); e.u8 = null; e.file = null; }
+$('ru-clear').addEventListener('click', () => {
+  const n = entries.length;
+  entries.forEach(forgetEntry);
+  entries = [];
+  list.innerHTML = '';
+  closeViewer();
+  drawList();
+  status(`Cleared ${plural(n, 'file')}.`);
+  says.textContent = 'All clear. Give me another file and I’ll chew it over.';
+  $('ru-input').focus();
+});
+
+/* ---------- adding files: the picker, the drop zone, or anywhere on the page ---------- */
+const input = $('ru-input');
+input.addEventListener('change', () => { addFiles(input.files || [], 'from this device'); input.value = ''; });
+$('ru-example').addEventListener('click', addExamples);
+{ const b = $('btn-example'); if (b) b.addEventListener('click', addExamples); }
+let dragDepth = 0;
+const hasFiles = (ev) => !!(ev.dataTransfer && [...(ev.dataTransfer.types || [])].includes('Files'));
+document.addEventListener('dragenter', (ev) => { if (!hasFiles(ev)) return; ev.preventDefault(); dragDepth++; document.body.classList.add('ru-dragging'); });
+document.addEventListener('dragover', (ev) => { if (!hasFiles(ev)) return; ev.preventDefault(); ev.dataTransfer.dropEffect = 'copy'; });
+document.addEventListener('dragleave', (ev) => { if (!hasFiles(ev)) return; dragDepth = Math.max(0, dragDepth - 1); if (!dragDepth) document.body.classList.remove('ru-dragging'); });
+document.addEventListener('drop', (ev) => {
+  if (!hasFiles(ev)) return; // text dropped into a box is left to the box
+  ev.preventDefault();
+  dragDepth = 0; document.body.classList.remove('ru-dragging');
+  const dt = ev.dataTransfer, files = [];
+  let folders = 0;
+  const items = dt.items ? [...dt.items] : [];
+  if (items.length) {
+    for (const it of items) {
+      if (it.kind !== 'file') continue;
+      const en = typeof it.webkitGetAsEntry === 'function' ? it.webkitGetAsEntry() : null;
+      if (en && en.isDirectory) { folders++; continue; }
+      const f = it.getAsFile(); if (f) files.push(f);
+    }
+  } else files.push(...(dt.files || []));
+  if (files.length) addFiles(files, 'by dropping', folders);
+  else if (folders) { says.textContent = `I can’t open ${folders === 1 ? 'a folder' : 'folders'}. Drop the files inside instead.`; status(foldersLeftOut(folders)); }
+});
+
+/* ---------- panel 3: the viewer ---------- */
+let cur = null, handle = null, openTok = 0;
+const KINDS = RS.structureKinds();
+const kindOf = (name) => { const x = FV.helpers.extOf(name); const k = x && KINDS.find((k) => k.exts.includes(x)); return k ? k.kind : null; }; // the name's ending, read the same way as for the other views
+const isStruct = (id) => /^structure:/.test(id);
+const kindLabel = (k) => { const K = KINDS.find((x) => x.kind === k); return K ? K.label : k; };
+const article = (s) => (/^(SQLite|MP\d|[AEIOU])/.test(s) ? 'an ' : 'a ') + s; // by the sound: an SQLite, an MP3, a PNG
+function defaultViews(e) {
+  const v = FV.viewsFor(e.name), k = kindOf(e.name);
+  if (!k) return v;
+  const at = v.indexOf('text');
+  return [...v.slice(0, at < 0 ? v.length : at), 'structure:' + k, ...v.slice(at < 0 ? v.length : at)];
+}
+function extraViews(e) { // a Structure view for every kind; the tab list decides which are shown
+  const k = kindOf(e.name);
+  return KINDS.map((K) => ({ id: 'structure:' + K.kind, label: K.kind === k ? 'Structure' : `Structure (${K.label})`, render: (el, entry, api) => renderStructure(K.kind, el, entry, api) }));
+}
+const sameAs = (id, name) => (isStruct(id) ? id : FV.resolve(id, name));
+async function openEntry(e, opts) {
+  opts = opts || {};
+  if (!e.u8 && handle) closeViewer(true); // while it is read, the last file's viewer goes, so nothing in it can act on this one
+  const tok = ++openTok;
+  cur = e;
+  list.querySelectorAll('li.ru-item').forEach((li) => { const on = +li.dataset.id === e.id; li.classList.toggle('on', on); const b = li.querySelector('.ru-file'); if (b) b.setAttribute('aria-current', String(on)); });
+  if (!e.u8) {
+    chewOn();
+    says.textContent = `Chewing over ${e.name}…${opts.note ? ' ' + opts.note : ''}`;
+    $('ru-empty').hidden = false; $('ru-empty').textContent = `Reading ${e.name}…`;
+    try { await readEntry(e); } catch (err) {
+      chewOff();
+      if (tok !== openTok) return;
+      closeViewer(true);
+      $('ru-empty').hidden = false; $('ru-empty').textContent = `${e.name} couldn’t be opened. ${e.error}`;
+      says.textContent = `I couldn’t get my teeth into ${e.name}.`;
+      return;
+    }
+    chewOff();
+    if (tok !== openTok) return;
+  } else {
+    chewOn(); chewOff();
+  }
+  show(e, e.view, opts);
+  says.textContent = `Done. ${plural(e.u8.length, 'byte')} chewed.${opts.after ? ' ' + opts.after : ''}`;
+}
+let shownOthers = []; // the other files the open viewer was given, for its Map view
+function show(e, view, opts) {
+  opts = opts || {};
+  $('ru-empty').hidden = true;
+  const host = $('ru-open'); host.hidden = false;
+  const focus = !!opts.focus;
+  const views = [...defaultViews(e), ...e.added];
+  const part = !e.textAll && e.u8.length > TEXT_PART;
+  handle = FV.open(host, e, {
+    views, initialView: view, extraViews: extraViews(e),
+    textLimit: part ? TEXT_PART : undefined,
+    onShowAllText: part && e.u8.length <= TEXT_ALL_MAX ? (v) => {
+      e.textAll = true;
+      const other = v && v !== 'text' && handle ? handle.view() : null; // the Code or Formatted view shown, with its reader
+      show(e, other || 'text', {});
+      const t = document.querySelector(!other ? '#tx-find' : v === 'code' ? '#cd-host .bf-lines' : '#bf-panel .bf-md'); if (t) { if (!t.matches('input, [tabindex]')) t.tabIndex = -1; t.focus(); }
+    } : undefined,
+    // the Map view offers the other files with a map view by name; one is read only when it is chosen
+    otherEntries: (shownOthers = entries.filter((o) => o !== e && !o.error)), readEntry, settings: prefs, onSettingsChange: savePrefs,
+    focus, scrollTo: focus ? $('viewer') : null,
+    onViewChange: (v) => { e.view = v; },
+  });
+  // the Open as… row sits under the file's name
+  const row = $('ru-asrow'), head = host.querySelector('.bf-head');
+  if (head) head.after(row); else host.prepend(row);
+  row.hidden = false;
+  fillAs(e);
+}
+function closeViewer(keepMsg) {
+  openTok++;
+  const row = $('ru-asrow'); row.hidden = true; $('viewer').insertBefore(row, $('ru-open')); // out of the viewer before it is emptied
+  if (handle) handle.close();
+  handle = null; cur = null;
+  $('ru-open').hidden = true;
+  if (!keepMsg) { $('ru-empty').hidden = false; $('ru-empty').textContent = 'No file is open yet. Add one above, then choose it from the list.'; }
+  list.querySelectorAll('li.ru-item.on').forEach((li) => { li.classList.remove('on'); const b = li.querySelector('.ru-file'); if (b) b.setAttribute('aria-current', 'false'); });
+}
+
+/* ---------- Open as…: any view on any file, chosen by the person ---------- */
+const asSel = $('ru-as');
+asSel.innerHTML = '<option value="">Choose a way to read this file…</option>'
+  + `<optgroup label="Views">${FV.allViews().map((v) => `<option value="${esc(v.id)}">${esc(v.label)}</option>`).join('')}</optgroup>`
+  + `<optgroup label="Structure: how the bytes are laid out">${KINDS.map((K) => `<option value="${esc('structure:' + K.kind)}">${esc('Structure, read as ' + article(K.label))}</option>`).join('')}</optgroup>`;
+function fillAs(e) { asSel.value = ''; $('ru-as-back').hidden = !e.added.length; }
+$('ru-as-go').addEventListener('click', () => {
+  const e = cur, id = asSel.value;
+  if (!e || !e.u8 || !handle || handle.entry !== e) return;
+  if (!id) { status('Choose a way to read the file first.'); asSel.focus(); return; }
+  const want = sameAs(id, e.name);
+  const have = handle.views().find((v) => sameAs(v, e.name) === want);
+  if (have) { handle.show(have); status('That view is already open.'); }
+  else { e.added.push(id); show(e, id, {}); }
+  fillAs(e);
+  const tab = document.querySelector('#bf-tabs [aria-selected="true"]'); // the keyboard focus goes to the view just opened
+  if (tab) tab.focus(); else asSel.focus();
+});
+$('ru-as-back').addEventListener('click', () => {
+  const e = cur; if (!e || !e.u8 || !handle) return;
+  const was = e.view;
+  e.added = [];
+  show(e, defaultViews(e).includes(was) ? was : null, {});
+  status('Back to the views for this name.');
+  asSel.focus();
+});
+
+/* ---------- the Structure view: a tree of byte ranges ---------- */
+const STRUCT = new WeakMap(); // per file and kind: which items are open, and the one last chosen
+function stState(e, kind) {
+  let m = STRUCT.get(e); if (!m) { m = new Map(); STRUCT.set(e, m); }
+  let s = m.get(kind); if (!s) { s = { open: new Set(), focus: null, chosen: null, limit: 0, top: 0 }; m.set(kind, s); }
+  return s;
+}
+const hexOff = (n) => '0x' + n.toString(16).toUpperCase();
+const STEP = 300; // rows drawn at a time
+function renderStructure(kind, el, e, api) {
+  el.innerHTML = '<p class="bf-loading">Chewing over how it’s built…</p>';
+  chewOn();
+  const S = stState(e, kind);
+  if (!S.result) S.result = Promise.resolve().then(() => RS.structureOf(kind, api.bytes)); // kept while the file is listed
+  const p = S.result;
+  S.want = api;
+  return p.then((r) => {
+    chewOff();
+    if (api.live()) drawStructure(kind, el, e, api, r);
+    else if (S.want === api && S.result === p) S.result = null; // left before it was ready, and not wanted since: not kept
+  }, (err) => { chewOff(); throw err; });
+}
+function countAll(items) { let n = 0; const st = [items]; while (st.length) { const a = st.pop(); n += a.length; for (const x of a) if (x.children) st.push(x.children); } return n; }
+function drawStructure(kind, el, e, api, r) {
+  const S = stState(e, kind), N = api.bytes.length;
+  const total = countAll(r.items);
+  el.innerHTML = `<h4 class="ru-st-title">${esc(r.title || 'Structure')}</h4>
+    <p class="bf-meta">${esc(plural(r.items.length, 'item'))} at the top level${total > r.items.length ? `, ${esc(fmtInt(total))} in all` : ''}, covering all ${esc(plural(N, 'byte'))}. Choose an item to see its bytes marked in the Bytes view.</p>
+    ${r.stopped ? `<div class="bf-info ru-stopped" role="note"><b>Reading stopped partway.</b> ${esc(r.stopped)} What was read up to there is listed below.</div>` : ''}
+    <div class="ru-st-tools">
+      <button type="button" class="btn small" id="st-openall"${total > 5000 ? ' hidden' : ''}>Open every item</button>
+      <button type="button" class="btn small" id="st-closeall">Close every item</button>
+    </div>
+    <div class="ru-treebox" id="st-box">
+      <div role="treegrid" aria-multiselectable="false" aria-label="${esc('How ' + e.name + ' is laid out')}" aria-describedby="st-help" id="st-grid" aria-readonly="true">
+        <div class="ru-tr ru-th" role="row"><span class="ru-off" role="columnheader">Offset</span><span class="ru-len" role="columnheader">Length</span><span class="ru-lab" role="columnheader">Item</span><span class="ru-val" role="columnheader">Value</span></div>
+        <div id="st-rows" role="rowgroup"></div>
+      </div>
+    </div>
+    <div class="ru-st-more"><span id="st-count"></span><button type="button" class="btn small" id="st-more" hidden>Show more rows</button></div>
+    <p class="help" id="st-help">Offsets are in hexadecimal and decimal, lengths in bytes. With an item selected, the up and down arrows move through the list, right opens an item and left closes it, Home and End go to the first and last, and Enter shows its bytes.</p>`;
+  const rows = el.querySelector('#st-rows'), box = el.querySelector('#st-box');
+  let vis = []; // the rows that can be seen when scrolled to: { it, lv, parent }
+  const flat = (items, lv, parent, out) => {
+    const st = [[items, 0, lv, parent]];
+    while (st.length) {
+      const top = st[st.length - 1], [arr, i, l, par] = top;
+      if (i >= arr.length) { st.pop(); continue; }
+      top[1]++;
+      const node = { it: arr[i], lv: l, parent: par };
+      out.push(node);
+      if (arr[i].children && S.open.has(arr[i])) st.push([arr[i].children, 0, l + 1, node]);
+    }
+    return out;
+  };
+  vis = flat(r.items, 0, null, []);
+  const rowHTML = (n) => {
+    const it = n.it, kids = !!(it.children && it.children.length), len = it.end - it.start;
+    const exp = kids ? ` aria-expanded="${S.open.has(it)}"` : '';
+    return `<div class="ru-tr${S.chosen === it ? ' on' : ''}" role="row" aria-level="${n.lv + 1}"${exp}${S.chosen === it ? ' aria-selected="true"' : ''} tabindex="-1" style="--lv:${n.lv}">`
+      + `<span class="ru-off" role="gridcell">${hexOff(it.start)}<span class="sr">, </span><span class="d">${fmtInt(it.start)}</span></span>`
+      + `<span class="ru-len" role="gridcell">${fmtInt(len)}</span>`
+      + `<span class="ru-lab" role="gridcell"><span class="ru-tw${kids ? '' : ' leaf'}" aria-hidden="true">${kids ? '▸' : '·'}</span><span class="t">${esc(it.label)}${it.note ? `<span class="ru-note">${esc(it.note)}</span>` : ''}</span></span>`
+      + `<span class="ru-val" role="gridcell">${it.value !== undefined ? esc(it.value) : ''}</span></div>`;
+  };
+  const drawn = () => rows.children.length;
+  function more(upto) { // draws more rows, up to at least the given index
+    const want = Math.min(vis.length, Math.max(drawn() + STEP, upto === undefined ? 0 : upto + 1));
+    if (want <= drawn()) return;
+    rows.insertAdjacentHTML('beforeend', vis.slice(drawn(), want).map(rowHTML).join(''));
+    S.limit = drawn();
+    counts();
+  }
+  function counts() {
+    const left = vis.length - drawn();
+    el.querySelector('#st-count').textContent = left > 0 ? `Showing ${fmtInt(drawn())} of ${plural(vis.length, 'row')}.` : '';
+    el.querySelector('#st-more').hidden = left <= 0;
+  }
+  const idxOf = (row) => Array.prototype.indexOf.call(rows.children, row);
+  function setFocus(i, move) {
+    if (i < 0 || i >= vis.length) return;
+    if (i >= drawn()) more(i);
+    const old = rows.querySelector('.ru-tr[tabindex="0"]'); if (old) old.tabIndex = -1;
+    const row = rows.children[i]; row.tabIndex = 0;
+    S.focus = vis[i].it;
+    if (move) { row.focus({ preventScroll: true }); keepInView(row); }
+  }
+  function keepInView(row) { // scrolls the box, not the page
+    const head = el.querySelector('.ru-th'), hh = head.offsetHeight > 2 ? head.offsetHeight : 0;
+    const t = row.offsetTop, b = t + row.offsetHeight;
+    if (t - hh < box.scrollTop) box.scrollTop = t - hh;
+    else if (b > box.scrollTop + box.clientHeight) box.scrollTop = b - box.clientHeight;
+  }
+  function toggle(i, on) {
+    const n = vis[i], it = n.it;
+    if (!it.children || !it.children.length) return;
+    const isOpen = S.open.has(it);
+    if (on === isOpen) return;
+    const row = rows.children[i];
+    if (on) {
+      S.open.add(it);
+      const sub = flat(it.children, n.lv + 1, n, []);
+      vis = vis.slice(0, i + 1).concat(sub, vis.slice(i + 1));
+      if (sub.length <= STEP * 2) { row.insertAdjacentHTML('afterend', sub.map(rowHTML).join('')); }
+      else { while (rows.children.length > i + 1) rows.lastChild.remove(); more(i + STEP); } // a big one: draw from here again, a page at a time
+    } else {
+      S.open.delete(it);
+      let k = i + 1; while (k < vis.length && vis[k].lv > n.lv) k++;
+      const gone = k - i - 1, have = Math.max(0, Math.min(gone, drawn() - i - 1));
+      vis.splice(i + 1, gone);
+      for (let j = 0; j < have; j++) rows.children[i + 1].remove();
+    }
+    row.setAttribute('aria-expanded', String(on));
+    S.limit = drawn();
+    counts();
+  }
+  function choose(i) { // marks the item's bytes in the Bytes view
+    const it = vis[i].it;
+    rows.querySelectorAll('.ru-tr.on').forEach((x) => { x.classList.remove('on'); x.removeAttribute('aria-selected'); });
+    const row = rows.children[i]; if (row) { row.classList.add('on'); row.setAttribute('aria-selected', 'true'); }
+    S.chosen = it; S.focus = it; S.top = box.scrollTop;
+    api.jumpToBytes(it.start, it.end > it.start ? it.end : it.start + 1);
+  }
+  // first draw: as much as was shown last time, with the last item chosen in view
+  const fi = S.focus ? vis.findIndex((n) => n.it === S.focus) : -1;
+  more(Math.max(S.limit, STEP, fi + 20) - 1);
+  setFocus(fi >= 0 ? fi : 0, false);
+  if (fi >= 0) { box.scrollTop = S.top; keepInView(rows.children[fi]); }
+  rows.addEventListener('click', (ev) => {
+    const row = ev.target.closest('.ru-tr'); if (!row) return;
+    const i = idxOf(row); if (i < 0) return;
+    setFocus(i, false);
+    if (ev.target.closest('.ru-tw') && !ev.target.closest('.ru-tw.leaf')) { toggle(i, !S.open.has(vis[i].it)); row.focus({ preventScroll: true }); return; }
+    choose(i);
+  });
+  rows.addEventListener('keydown', (ev) => {
+    const row = ev.target.closest('.ru-tr'); if (!row) return;
+    const i = idxOf(row), n = vis[i]; if (!n) return;
+    const kids = !!(n.it.children && n.it.children.length), open = kids && S.open.has(n.it);
+    let go = null;
+    switch (ev.key) {
+      case 'ArrowDown': go = i + 1; break;
+      case 'ArrowUp': go = i - 1; break;
+      case 'PageDown': go = Math.min(vis.length - 1, i + 10); break;
+      case 'PageUp': go = Math.max(0, i - 10); break;
+      case 'Home': go = 0; break;
+      case 'End': if (vis.length <= 20000) go = vis.length - 1; else { more(); go = drawn() - 1; } break;
+      case 'ArrowRight': if (kids && !open) toggle(i, true); else if (open) go = i + 1; break;
+      case 'ArrowLeft': if (open) toggle(i, false); else if (n.parent) go = vis.indexOf(n.parent); break;
+      case 'Enter': choose(i); break;
+      case ' ': if (kids) toggle(i, !open); break;
+      default: return;
+    }
+    ev.preventDefault();
+    if (go !== null && go >= 0 && go < vis.length) setFocus(go, true);
+  });
+  el.querySelector('#st-more').addEventListener('click', () => more());
+  el.querySelector('#st-openall').addEventListener('click', () => { // only offered when the whole tree is small
+    const st = [...r.items]; while (st.length) { const x = st.pop(); if (x.children && x.children.length) { S.open.add(x); st.push(...x.children); } }
+    S.limit = 0; S.focus = vis[Math.max(0, idxOf(rows.querySelector('.ru-tr[tabindex="0"]')))].it;
+    drawStructure(kind, el, e, api, r);
+    refocus('#st-openall');
+  });
+  el.querySelector('#st-closeall').addEventListener('click', () => { S.open.clear(); S.limit = 0; S.focus = null; S.top = 0; drawStructure(kind, el, e, api, r); refocus('#st-closeall'); });
+  const refocus = (sel) => { const b = el.querySelector(sel); (b && !b.hidden ? b : el.querySelector('#st-closeall')).focus(); }; // the button was drawn again: the focus stays on it
+  if (window.IntersectionObserver) { // more rows arrive as the list is scrolled near its end
+    const sentinel = document.createElement('div'); sentinel.style.height = '1px'; box.appendChild(sentinel);
+    const io = new IntersectionObserver((xs) => { if (xs.some((x) => x.isIntersecting) && drawn() < vis.length) more(); }, { root: box, rootMargin: '400px' });
+    if (S.io) S.io.disconnect();
+    S.io = io;
+    io.observe(sentinel);
+    api.onCleanup(() => io.disconnect());
+  }
+  api.onCleanup(() => { S.top = box.scrollTop; });
+}
+})();
+</script>
+</body>
+</html>
+

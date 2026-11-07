@@ -1,0 +1,852 @@
+<!-- Review copy: lines 9038-9888 of ruminate/index.html, split so Copilot can review it. Not served. -->
+      rowsAt: (o, n) => ({ rows: body.slice(o, o + n).map((r) => (r.length < width ? r.concat(Array(width - r.length).fill('')) : r)) }) });
+    return;
+  }
+  if (x === 'parquet') {
+    panel.innerHTML = '<p class="bf-loading">Reading the file…</p>';
+    let t;
+    try { t = await parquetOf(e); } catch (err) { if (live(tok)) panel.innerHTML = failNote(e, reasonOf(err)); return; }
+    if (!live(tok)) return;
+    const columns = t.columns.map((c) => ({ name: c.name, type: c.type === 'list' && c.of ? `list of ${c.of}` : c.type }));
+    panel.innerHTML = `<p class="bf-meta">${plural(t.rows.length, 'row')}, ${plural(columns.length, 'column')}, in ${plural(t.rowGroups, 'row group')}.${t.createdBy ? ` Created by: ${esc(t.createdBy)}` : ''}</p><div id="tb-host"></div>`;
+    tableView($('tb-host'), { label: `The table in ${e.name}`, columns, total: t.rows.length, rowsAt: (o, n) => ({ rows: t.rows.slice(o, o + n) }) });
+    return;
+  }
+  if (x === 'geojson') {
+    let g;
+    try { g = geojsonOf(e); } catch (err) { panel.innerHTML = failNote(e, reasonOf(err)); return; }
+    const keys = [], seen = new Set();
+    let anyId = false;
+    for (const f of g.features) {
+      if (f.id !== undefined) anyId = true;
+      if (f.props && typeof f.props === 'object') for (const k of Object.keys(f.props)) if (!seen.has(k)) { seen.add(k); keys.push(k); }
+    }
+    const columns = [...(anyId ? [{ name: '(feature id)' }] : []), ...keys.map((k) => ({ name: k })), { name: '(geometry)' }];
+    const rows = g.features.map((f) => [...(anyId ? [f.id === undefined ? null : f.id] : []), ...keys.map((k) => (f.props && Object.prototype.hasOwnProperty.call(f.props, k) ? f.props[k] : undefined)), geomSummary(f.geom)]);
+    panel.innerHTML = `<p class="bf-meta">${plural(rows.length, 'feature')}. Each row is one feature and its properties; an empty cell means the feature doesn’t have that property, and NULL means it is set to null.</p><div id="tb-host"></div>`;
+    tableView($('tb-host'), { label: `The features in ${e.name}`, columns, total: rows.length, rowsAt: (o, n) => ({ rows: rows.slice(o, o + n).map((r) => r.map((v) => (v === undefined ? '' : v))) }) });
+  }
+}
+function geomSummary(g) {
+  if (!g) return null;
+  if (g.type === 'Point' && Array.isArray(g.coordinates)) return `Point (${g.coordinates.join(', ')})`;
+  if (g.type === 'GeometryCollection') return `GeometryCollection of ${plural((g.geometries || []).length, 'geometry', 'geometries')}`;
+  let n = 0; const walk = (c) => { if (Array.isArray(c) && typeof c[0] === 'number') n++; else if (Array.isArray(c)) c.forEach(walk); };
+  walk(g.coordinates);
+  return `${g.type}, ${plural(n, 'position')}`;
+}
+
+/* ---------- the Tables view (SQLite files) ---------- */
+function renderTables(e, panel) {
+  let db;
+  try { db = sqliteDb(e); } catch (err) { panel.innerHTML = failNote(e, reasonOf(err)); return; }
+  const items = memo(e, 'tables', () => {
+    const sch = [{ type: 'table', name: 'sqlite_schema', sql: '', builtin: true }, ...db.schema()];
+    return sch.map((s) => {
+      let n = null, why = '';
+      if (s.type === 'table' || s.type === 'index') { try { n = db.read(s.name, { limit: 0 }).total; } catch (err) { why = reasonOf(err); } }
+      return { ...s, n, why };
+    });
+  });
+  const label = (s) => `${s.name} · ${s.builtin ? 'the list of everything below' : s.type}${s.n !== null ? ` · ${plural(s.n, 'row')}` : s.why ? ' · can’t be read' : ''}`;
+  panel.innerHTML = `<div class="bf-tools"><label for="tb-pick">Show</label><select id="tb-pick">${items.map((s, i) => `<option value="${i}">${esc(label(s))}</option>`).join('')}</select></div>
+    <p class="bf-meta">${plural(items.length - 1, 'entry', 'entries')} in the file’s list of tables, views, indexes and triggers, in the order the file lists them, plus that list itself.</p>
+    <div id="tb-one"></div>`;
+  const pick = $('tb-pick');
+  const kept = st(e);
+  pick.value = String(kept.tablePick !== undefined && kept.tablePick < items.length ? kept.tablePick : items.length > 1 ? 1 : 0); // the file's own first entry, unless another was chosen
+  function show() {
+    const s = items[+pick.value];
+    kept.tablePick = +pick.value;
+    const host = $('tb-one');
+    const sql = s.builtin ? 'CREATE TABLE sqlite_schema(type text, name text, tbl_name text, rootpage integer, sql text)' : s.sql;
+    host.innerHTML = `${sql ? `<details class="bf-sql"><summary>The CREATE statement${s.builtin ? ' (built in: the file doesn’t store one for this list)' : ''}</summary><pre class="bf-pre">${esc(sql)}</pre></details>` : '<p class="bf-meta">The file gives no CREATE statement for this entry.</p>'}
+      <div id="tb-rows"></div>`;
+    let first;
+    try { first = db.read(s.name, { offset: 0, limit: 200 }); } catch (err) {
+      $('tb-rows').innerHTML = `<div class="bf-fail"><p><span class="mark">These rows can’t be read.</span> ${esc(reasonOf(err))}</p><p class="also">The Text and Bytes views still show everything in the file.</p></div>`;
+      return;
+    }
+    const rowsHost = $('tb-rows');
+    rowsHost.innerHTML = `${first.note ? `<p class="bf-info">${esc(first.note)}</p>` : ''}<div id="tb-tab"></div>`;
+    if (!first.columns.length && !first.total) return;
+    tableView($('tb-tab'), { label: `Rows of ${s.name}`, columns: first.columns.map((c) => ({ name: c })), total: first.total,
+      rowsAt: (o, n) => (o === 0 ? first : db.read(s.name, { offset: o, limit: n })) });
+  }
+  pick.addEventListener('change', show);
+  show();
+}
+
+/* ---------- the Contents view (pickle) ---------- */
+function renderContents(e, panel) {
+  let text;
+  try { text = memo(e, 'pickle', () => FM.pyRepr(FM.pickleLoad(bytesOf(e)), { indent: true })); } catch (err) { panel.innerHTML = failNote(e, reasonOf(err)); return; }
+  panel.innerHTML = `<div class="bf-tools"><button type="button" class="btn small" id="ct-copy">Copy</button><span class="bf-count" id="ct-said" aria-live="polite"></span></div>
+    <p class="bf-meta">What the file holds, written out as text. Reading it here never runs any code from the file.</p>
+    <pre class="bf-pre" id="ct-pre" tabindex="0"></pre>`;
+  $('ct-pre').textContent = text;
+  $('ct-copy').addEventListener('click', () => {
+    const said = (t) => { $('ct-said').textContent = t; setTimeout(() => { $('ct-said').textContent = ''; }, 2000); };
+    if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(text).then(() => said('Copied.'), () => selectPre());
+    else selectPre();
+    function selectPre() { const r = document.createRange(); r.selectNodeContents($('ct-pre')); const s = getSelection(); s.removeAllRanges(); s.addRange(r); said('Selected: copy it with your device’s copy command.'); }
+  });
+}
+
+/* ---------- the Formatted view (Markdown) ---------- */
+const MD_TAGS = new Set(['H1', 'H2', 'H3', 'H4', 'H5', 'H6', 'P', 'EM', 'STRONG', 'B', 'I', 'DEL', 'S', 'CODE', 'PRE', 'BLOCKQUOTE', 'UL', 'OL', 'LI', 'TABLE', 'THEAD', 'TBODY', 'TR', 'TH', 'TD', 'HR', 'BR', 'A', 'SPAN', 'DIV']);
+/* A second line of defence: keeps only the plain tags a document needs, and only http(s) links. Anything else becomes text. */
+function cleanTree(node) {
+  for (const el of [...node.children]) {
+    if (!MD_TAGS.has(el.tagName)) { el.replaceWith(document.createTextNode(el.tagName === 'IMG' ? `[picture: ${el.getAttribute('alt') || ''} ${el.getAttribute('src') || ''}]` : el.textContent)); continue; }
+    for (const a of [...el.attributes]) {
+      const n = a.name.toLowerCase();
+      const keep = (n === 'href' && el.tagName === 'A' && /^https?:\/\//i.test(a.value.trim())) || n === 'title' || (n === 'class' && /^[\w -]*$/.test(a.value))
+        || (n === 'start' && el.tagName === 'OL' && /^\d+$/.test(a.value)) || (n === 'align' && /^(left|right|center)$/i.test(a.value))
+        || (n === 'style' && /^\s*text-align:\s*(left|right|center);?\s*$/i.test(a.value));
+      if (!keep) el.removeAttribute(a.name);
+    }
+    if (el.tagName === 'A') { if (el.hasAttribute('href')) { el.setAttribute('rel', 'noopener noreferrer'); el.setAttribute('target', '_blank'); } }
+    cleanTree(el);
+  }
+}
+function renderFormatted(e, panel) {
+  let text;
+  try { text = strictText(e); } catch (err) { panel.innerHTML = failNote(e, reasonOf(err)); return; }
+  // with textLimit, a bigger file is laid out only up to about that much, as in the Text view
+  const u8 = bytesOf(e), lim = curOpts.textLimit;
+  let upto = lim > 0 && u8.length > lim ? textCut(u8, Math.floor(lim)) : undefined;
+  if (upto !== undefined) {
+    while (upto > 0 && (u8[upto] & 0xc0) === 0x80) upto--;
+    text = new TextDecoder('utf-8').decode(u8.subarray(0, upto));
+    panel.innerHTML = `<div class="bf-info" role="note"><p>This file is ${esc(fmtInt(u8.length))} bytes long, so the Formatted view lays out only its first ${esc(fmtInt(upto))} bytes. The Text and Bytes views show the rest.</p>${typeof curOpts.onShowAllText === 'function' ? '<div class="btnrow"><button type="button" class="btn small" id="md-all">Show all of it formatted (it may take a while)</button></div>' : ''}</div>`;
+    if ($('md-all')) $('md-all').addEventListener('click', () => curOpts.onShowAllText('formatted'));
+  }
+  const html = memo(e, 'md' + (upto === undefined ? '' : ':' + upto), () => FM.mdRender(text));
+  const t = document.createElement('template'); // a template's content is inert: nothing in it loads or runs
+  t.innerHTML = html;
+  cleanTree(t.content);
+  const art = document.createElement('article');
+  art.className = 'bf-md';
+  art.setAttribute('aria-label', `${e.name}, formatted`);
+  art.appendChild(document.importNode(t.content, true)); // a copy made in this document: moving the template's own nodes over one by one is slow
+  panel.appendChild(art);
+}
+
+/* ---------- the Picture view ---------- */
+let picZoom = 'fit';
+function zoomBar() {
+  return `<span class="grp" role="group" aria-label="Zoom">${[['fit', 'Fit'], ['1', '100%'], ['2', '200%'], ['4', '400%']].map(([z, t]) => `<button type="button" class="btn small" data-z="${z}" aria-pressed="${picZoom === z}">${t}</button>`).join('')}</span>`;
+}
+function picZoomer(panel, box, el, natW, natH, onZoom) {
+  const apply = () => {
+    let scale;
+    if (picZoom === 'fit') { // the whole picture inside the box: its width, and the height the box is allowed to grow to
+      const cs = getComputedStyle(box);
+      let capH = parseFloat(cs.maxHeight);
+      if (cs.boxSizing === 'border-box') capH -= parseFloat(cs.borderTopWidth) + parseFloat(cs.borderBottomWidth);
+      scale = Math.min(box.clientWidth / natW, capH > 0 ? capH / natH : Infinity);
+      el.style.width = Math.floor(natW * scale) + 'px';
+    } else { scale = +picZoom; el.style.width = natW * scale + 'px'; }
+    el.style.height = 'auto';
+    box.classList.toggle('pix', scale > 1.01);
+    panel.querySelectorAll('[data-z]').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.z === picZoom)));
+    if (onZoom) onZoom();
+  };
+  panel.querySelector('[role=group]').addEventListener('click', (ev) => { const b = ev.target.closest('[data-z]'); if (!b) return; picZoom = b.dataset.z; apply(); });
+  let drag = null; // drag with a mouse to move around a zoomed picture (fingers scroll it natively)
+  box.addEventListener('pointerdown', (ev) => { if (ev.pointerType !== 'mouse' || ev.button !== 0) return; drag = { x: ev.clientX, y: ev.clientY, l: box.scrollLeft, t: box.scrollTop, moved: 0 }; });
+  box.addEventListener('pointermove', (ev) => {
+    if (!drag) return;
+    const dx = ev.clientX - drag.x, dy = ev.clientY - drag.y;
+    drag.moved = Math.max(drag.moved, Math.abs(dx) + Math.abs(dy));
+    if (drag.moved > 4) { box.classList.add('drag'); box.scrollLeft = drag.l - dx; box.scrollTop = drag.t - dy; }
+  });
+  const end = () => { if (drag) { box.dataset.moved = drag.moved > 4 ? '1' : ''; drag = null; box.classList.remove('drag'); } };
+  box.addEventListener('pointerup', end); box.addEventListener('pointerleave', end);
+  const ro = new ResizeObserver(apply); ro.observe(box);
+  apply();
+  return () => ro.disconnect();
+}
+async function renderPicture(e, panel, tok, fmt) {
+  if (fmt === 'tiff') return renderTiffPicture(e, panel, tok);
+  const type = IMAGE_TYPES[extOf(e.name)] || '', s = st(e);
+  if (!s.url) s.url = URL.createObjectURL(new Blob([bytesOf(e)], { type }));
+  panel.innerHTML = `<div class="bf-tools">${zoomBar()}</div><p class="bf-meta" id="pc-meta">Opening the picture…</p>
+    <div class="bf-picbox" id="pc-box" tabindex="0" role="region" aria-label="The picture (scroll or drag to move around it when zoomed)"><img id="pc-img" alt="${esc(`The picture in ${e.name}`)}" draggable="false"></div>`;
+  const img = $('pc-img');
+  img.onload = () => {
+    if (!live(tok)) return;
+    $('pc-meta').textContent = `${fmtInt(img.naturalWidth)} × ${fmtInt(img.naturalHeight)} pixels.`;
+    cleanup = picZoomer(panel, $('pc-box'), img, img.naturalWidth, img.naturalHeight);
+  };
+  img.onerror = () => { if (live(tok)) panel.innerHTML = failNote(e, 'This browser couldn’t open the file as a picture.'); };
+  img.src = s.url;
+}
+async function renderTiffPicture(e, panel, tok) {
+  panel.innerHTML = '<p class="bf-loading">Reading the file…</p>';
+  let t;
+  try { t = await tiffOf(e); } catch (err) { if (live(tok)) panel.innerHTML = failNote(e, reasonOf(err)); return; }
+  if (!live(tok)) return;
+  const colour = t.samples >= 3 && t.photometric === 2;
+  const bandOpts = t.samples > 1 ? (colour ? [['', 'Colour']] : []).concat(Array.from({ length: t.samples }, (_, i) => [String(i), `Band ${i + 1}`])) : null;
+  panel.innerHTML = `<div class="bf-tools">${zoomBar()}${bandOpts ? `<label>Show <select id="pc-band">${bandOpts.map(([v, l]) => `<option value="${v}">${l}</option>`).join('')}</select></label>` : ''}</div>
+    <p class="bf-meta">${fmtInt(t.width)} × ${fmtInt(t.height)} pixels. Tap the picture, or select it and use the arrow keys, to read a pixel’s value.</p>
+    <div class="bf-picbox" id="pc-box" tabindex="0" role="region" aria-label="The picture (scroll or drag to move around it when zoomed)"><canvas id="pc-cv" tabindex="0" role="img" aria-label="${esc(`The picture in ${e.name}`)}" aria-describedby="pc-probe"></canvas><span class="bf-pxmark" id="pc-mark" aria-hidden="true" hidden></span></div>
+    <p class="bf-probe" id="pc-probe" aria-live="polite"></p>
+    <details class="bf-details"><summary>Details</summary><dl class="bf-dl">${tiffDetails(t)}</dl></details>`;
+  const cv = $('pc-cv'), box = $('pc-box');
+  function paint() {
+    const v = bandOpts ? $('pc-band').value : '';
+    let img;
+    try { img = FM.tiffToRGBA(t, v === '' ? {} : { band: +v }); } catch (err) { panel.innerHTML = failNote(e, reasonOf(err)); return; }
+    cv.width = img.width; cv.height = img.height;
+    cv.getContext('2d').putImageData(new ImageData(img.data, img.width, img.height), 0, 0);
+  }
+  paint();
+  if (bandOpts) $('pc-band').addEventListener('change', paint);
+  let px = 0, py = 0, marked = false;
+  const mark = $('pc-mark');
+  function place(scroll) { // outline the pixel being read, one picture pixel in size (at least 8 screen pixels)
+    if (!marked) return;
+    const k = cv.clientWidth / t.width, sz = Math.max(k, 8);
+    const at = (p, w, o) => Math.min(o + w - sz, Math.max(o, o + (p + 0.5) * k - sz / 2)); // kept inside the picture
+    mark.style.left = at(px, cv.clientWidth, cv.offsetLeft) + 'px'; mark.style.top = at(py, cv.clientHeight, cv.offsetTop) + 'px';
+    mark.style.width = mark.style.height = sz + 'px';
+    mark.hidden = false;
+    if (scroll) {
+      const l = mark.offsetLeft, tp = mark.offsetTop;
+      if (l < box.scrollLeft) box.scrollLeft = l - 8; else if (l + sz > box.scrollLeft + box.clientWidth) box.scrollLeft = l + sz - box.clientWidth + 8;
+      if (tp < box.scrollTop) box.scrollTop = tp - 8; else if (tp + sz > box.scrollTop + box.clientHeight) box.scrollTop = tp + sz - box.clientHeight + 8;
+    }
+  }
+  cleanup = picZoomer(panel, box, cv, t.width, t.height, () => place(false));
+  const say = () => {
+    let v;
+    try { v = FM.tiffPixel(t, px, py); } catch (err) { v = [reasonOf(err)]; }
+    $('pc-probe').textContent = `${px}, ${py}: ${Array.from(v || [], (x) => String(x)).join(', ')}`;
+    marked = true; place(true);
+  };
+  cv.addEventListener('focus', () => { // from the keyboard, show the pixel being read straight away
+    let k = false;
+    try { k = cv.matches(':focus-visible'); } catch (err) { /* older browsers: wait for a key */ }
+    if (k && !marked) say();
+  });
+  cv.addEventListener('click', (ev) => {
+    if (box.dataset.moved === '1') return;
+    const r = cv.getBoundingClientRect();
+    px = Math.min(t.width - 1, Math.max(0, Math.floor((ev.clientX - r.left) / r.width * t.width)));
+    py = Math.min(t.height - 1, Math.max(0, Math.floor((ev.clientY - r.top) / r.height * t.height)));
+    say();
+  });
+  cv.addEventListener('keydown', (ev) => {
+    const d = { ArrowLeft: [-1, 0], ArrowRight: [1, 0], ArrowUp: [0, -1], ArrowDown: [0, 1] }[ev.key];
+    if (!d) return;
+    ev.preventDefault();
+    const k = ev.shiftKey ? 10 : 1;
+    px = Math.min(t.width - 1, Math.max(0, px + d[0] * k)); py = Math.min(t.height - 1, Math.max(0, py + d[1] * k));
+    say();
+  });
+}
+function tiffDetails(t) {
+  const rows = [['Size', `${fmtInt(t.width)} × ${fmtInt(t.height)} pixels`], ['Bands', String(t.samples)]];
+  if (t.bits != null) rows.push(['Bits per sample', Array.isArray(t.bits) || ArrayBuffer.isView(t.bits) ? Array.from(t.bits).join(', ') : String(t.bits)]);
+  if (t.description) rows.push(['Description', String(t.description)]);
+  if (t.software) rows.push(['Software', String(t.software)]);
+  if (t.datetime) rows.push(['Date and time', String(t.datetime)]);
+  if (t.nodata != null && t.nodata !== '') rows.push(['No-data value', String(t.nodata)]);
+  const g = t.geo;
+  if (g) {
+    if (g.epsg) rows.push(['Coordinate system', `EPSG:${g.epsg}`]);
+    if (g.citation) rows.push(['Citation', String(g.citation)]);
+    const b = g.bounds;
+    if (b) {
+      const f = (v) => (typeof v === 'number' ? (g.geographic ? v.toFixed(7) : fmtNum(v)) : String(v));
+      rows.push(['West edge', f(b.west)], ['East edge', f(b.east)], ['South edge', f(b.south)], ['North edge', f(b.north)]);
+    }
+  }
+  return rows.map(([k, v]) => `<dt>${esc(k)}</dt><dd>${esc(v)}</dd>`).join('');
+}
+
+/* ---------- coordinates ---------- */
+function gcFormat(lat, lon) { // N dd° mm.mmm W ddd° mm.mmm
+  const part = (v, pos, neg, w) => {
+    let a = Math.abs(v), d = Math.floor(a), m = Math.round((a - d) * 60000) / 1000;
+    if (m >= 60) { d += 1; m -= 60; }
+    return `${v < 0 ? neg : pos} ${String(d).padStart(w, '0')}° ${m.toFixed(3).padStart(6, '0')}`;
+  };
+  return `${part(lat, 'N', 'S', 2)} ${part(lon, 'E', 'W', 3)}`;
+}
+function fmtNum(v) { const a = Math.abs(v); return v.toLocaleString('en-US', { maximumFractionDigits: a >= 1000 ? 1 : a >= 1 ? 3 : 6 }); }
+
+/* ---------- reading a .geojson file (strictly) ---------- */
+const GEOM_TYPES = ['Point', 'MultiPoint', 'LineString', 'MultiLineString', 'Polygon', 'MultiPolygon', 'GeometryCollection'];
+function geojsonOf(e) {
+  return memo(e, 'geojson', () => {
+    let o;
+    try { o = JSON.parse(strictText(e)); } catch (err) { throw new Error(/UTF-8/.test(reasonOf(err)) ? reasonOf(err) : `The file isn’t valid JSON: ${reasonOf(err)}`); }
+    if (!o || typeof o !== 'object' || Array.isArray(o)) throw new Error('The file’s top level isn’t an object with a "type", so it holds no features.');
+    let feats;
+    if (o.type === 'FeatureCollection') {
+      if (!Array.isArray(o.features)) throw new Error('The file says it is a FeatureCollection but has no "features" list.');
+      feats = o.features;
+    } else if (o.type === 'Feature') feats = [o];
+    else if (GEOM_TYPES.includes(o.type)) feats = [{ type: 'Feature', geometry: o, properties: null }];
+    else throw new Error(`The file’s top-level "type" is ${JSON.stringify(o.type === undefined ? null : o.type)}, not FeatureCollection, Feature or a geometry, so it holds no features.`);
+    const features = feats.map((f, i) => {
+      const where = `Feature ${i + 1}`;
+      if (!f || typeof f !== 'object' || f.type !== 'Feature') throw new Error(`${where} in the "features" list doesn’t have "type": "Feature".`);
+      if (!('geometry' in f)) throw new Error(`${where} has no "geometry" member.`);
+      if (f.geometry !== null) checkGeom(f.geometry, where, 0);
+      if (f.properties !== undefined && f.properties !== null && (typeof f.properties !== 'object' || Array.isArray(f.properties))) throw new Error(`${where} has "properties" that aren’t an object.`);
+      return { props: f.properties || null, id: f.id, geom: f.geometry };
+    });
+    let code = 4326; // the coordinate system these files use unless they name another
+    const nm = o.crs && o.crs.properties && typeof o.crs.properties.name === 'string' ? o.crs.properties.name : '';
+    if (nm) { const m = /EPSG:{1,2}(\d+)\s*$/i.exec(nm); code = /CRS84$/i.test(nm) ? 4326 : m ? +m[1] : null; }
+    return { features, crs: crsOf(code, '', undefined, nm) };
+  });
+}
+function checkGeom(g, where, depth) {
+  if (!g || typeof g !== 'object' || !GEOM_TYPES.includes(g.type)) throw new Error(`${where} has a geometry whose "type" isn’t one of ${GEOM_TYPES.join(', ')}.`);
+  if (g.type === 'GeometryCollection') {
+    if (!Array.isArray(g.geometries)) throw new Error(`${where} has a GeometryCollection with no "geometries" list.`);
+    if (depth > 16) throw new Error(`${where} nests geometry collections too deeply.`);
+    g.geometries.forEach((x) => checkGeom(x, where, depth + 1));
+    return;
+  }
+  const levels = { Point: 0, MultiPoint: 1, LineString: 1, MultiLineString: 2, Polygon: 2, MultiPolygon: 3 }[g.type];
+  const pos = (p) => Array.isArray(p) && p.length >= 2 && p.every((v) => typeof v === 'number' && isFinite(v));
+  const walk = (c, l) => {
+    if (l === 0) { if (!pos(c)) throw new Error(`${where} has a ${g.type} with a position that isn’t a list of two or more numbers.`); return; }
+    if (!Array.isArray(c)) throw new Error(`${where} has a ${g.type} whose "coordinates" aren’t nested as that kind of geometry needs.`);
+    c.forEach((x) => walk(x, l - 1));
+  };
+  if (g.type === 'Point' && Array.isArray(g.coordinates) && g.coordinates.length === 0) return; // an empty point
+  walk(g.coordinates, levels);
+}
+
+/* ---------- coordinate systems ---------- */
+const MERC = new Set([3857, 900913, 3785, 102100, 102113]);
+const GEOG = new Set([4326, 4269, 4258, 4283, 4617, 4167, 4230, 4267, 4674, 4612, 4979, 4937, 4152, 4759]);
+function unitOfWkt(def) { // the length unit a projected system's description names (not the one inside its base system)
+  if (!def) return null;
+  let s = String(def);
+  for (const key of ['GEOGCS[', 'BASEGEOGCRS[', 'BASEGEODCRS[', 'GEOGCRS[']) {
+    const i = s.toUpperCase().indexOf(key);
+    if (i <= 0) continue;
+    let d = 0, j = i + key.length - 1;
+    for (; j < s.length; j++) { if (s[j] === '[') d++; else if (s[j] === ']' && --d === 0) break; }
+    s = s.slice(0, i) + s.slice(j + 1);
+  }
+  const m = /(?:LENGTHUNIT|UNIT)\s*\[\s*"([^"]+)"\s*,\s*([0-9.eE+-]+)/i.exec(s);
+  return m && +m[2] > 0 ? [m[1], +m[2]] : null;
+}
+function unitOfCode(c) {
+  if (c === null) return null;
+  if ((c >= 32601 && c <= 32660) || (c >= 32701 && c <= 32760) || (c >= 26901 && c <= 26923) || (c >= 25828 && c <= 25838) || (c >= 3395 && c <= 3396) || [27700, 2193, 3577, 3035, 5070, 3005, 2056, 28992, 31370].includes(c)) return ['metre', 1];
+  return null;
+}
+function crsOf(code, def, geoFlag, name) {
+  const c = code === null || code === undefined || code === '' || !isFinite(Number(code)) ? null : Number(code);
+  const label = c !== null && c > 0 ? `EPSG:${c}` : name ? String(name) : 'no stated coordinate system';
+  if (c !== null && MERC.has(c)) return { mode: 'merc', code: c, label };
+  if (geoFlag === true || (c !== null && GEOG.has(c)) || /^\s*GEOG(?:CS|CRS)\s*\[/i.test(def || '')) return { mode: 'geo', code: c, label };
+  const u = unitOfWkt(def) || unitOfCode(c);
+  return { mode: 'native', code: c, label, unit: u ? u[0] : null, unitM: u ? u[1] : null };
+}
+const R_MERC = 6378137;
+const mercToLL = (x, y) => [x / R_MERC * 180 / Math.PI, (2 * Math.atan(Math.exp(y / R_MERC)) - Math.PI / 2) * 180 / Math.PI];
+
+/* ---------- what each map file holds, as layers ---------- */
+function mapSource(e, fmt) {
+  return memoAsync(e, 'mapsrc:' + fmt, async () => {
+    if (fmt === 'gpkg') {
+      const layers = SQ.gpkgLayers(sqliteDb(e));
+      if (!layers.length) throw new Error('The file doesn’t list any tables of map features, so there is nothing to draw.');
+      return layers.map((L) => {
+        const org = String(L.srsOrg || '').toUpperCase();
+        let crs;
+        if (org === 'EPSG' && L.srsCode !== null) crs = crsOf(L.srsCode, L.srsDefinition);
+        else if (Number(L.srsId) === 0) crs = { mode: 'geo', code: null, label: 'an undefined geographic coordinate system' };
+        else if (Number(L.srsId) === -1) crs = { mode: 'native', code: -1, label: 'an undefined Cartesian coordinate system', unit: null, unitM: null };
+        else crs = crsOf(null, L.srsDefinition, undefined, L.srsName || (L.srsId !== undefined ? `coordinate system ${L.srsId}` : ''));
+        return { label: L.table, crs, features: L.features.map((f) => ({ props: f.props, geom: f.geom, error: f.error })) };
+      });
+    }
+    if (fmt === 'geojson') { const g = geojsonOf(e); return [{ label: '', crs: g.crs, features: g.features.map((f) => ({ props: f.props, id: f.id, geom: f.geom })) }]; }
+    if (fmt === 'tiff') {
+      const t = await tiffOf(e);
+      if (!t.geo || !t.geo.bounds) throw new Error('The picture holds no position on the Earth, so it can’t be placed on a map.');
+      return [{ label: '', crs: crsOf(t.geo.epsg, '', t.geo.geographic === true), raster: t }];
+    }
+    throw new Error('This file has no map view.');
+  });
+}
+
+/* ---------- the Map view, drawn from scratch on a canvas ---------- */
+const COLOURS = ['--m1', '--m2', '--m3', '--m4', '--m5', '--m6'];
+const STEPS_MIN = [0.001, 0.002, 0.005, 0.01, 0.02, 0.05, 0.1, 0.2, 0.5, 1, 2, 5, 10, 15, 30, 60, 120, 300, 600, 900, 1800, 2700, 3600, 5400];
+async function renderMap(e, panel, tok, fmt) {
+  panel.innerHTML = '<p class="bf-loading">Reading the file…</p>';
+  let main;
+  try { main = await mapSource(e, fmt); } catch (err) { if (live(tok)) panel.innerHTML = failNote(e, reasonOf(err)); return; }
+  if (!live(tok)) return;
+  const others = [];
+  for (const o of curOpts.otherEntries || []) if (o && o !== e && viewsFor(o.name).includes('map')) others.push(o); // the other files that have a Map view by name
+  const first = main[0].crs;
+  const disp = first.mode === 'native' ? { mode: 'native', code: first.code, label: first.label, unit: first.unit, unitM: first.unitM } : { mode: 'll', label: first.label };
+  const fits = (crs) => (disp.mode === 'll' ? crs.mode !== 'native' : crs.mode === 'native' && crs.code === disp.code && crs.label === disp.label);
+  const hasTab = (id) => curTabs.some((t) => t.key === id);
+  const seeAlso = fmt === 'tiff' ? (hasTab('picture:tiff') ? 'The picture’s pixel values are in the Picture view.' : '')
+    : fmt === 'gpkg' ? (hasTab('tables:sqlite') ? 'The same features are listed in the Tables view.' : '')
+    : hasTab('table:geojson') ? 'The same features are listed in the Table view.' : '';
+  panel.innerHTML = `<div class="bf-tools">
+      <span class="grp"><button type="button" class="btn small" id="mp-in" aria-label="Zoom in">+</button><button type="button" class="btn small" id="mp-out" aria-label="Zoom out">−</button><button type="button" class="btn small" id="mp-fit">Fit</button></span>
+      <label id="mp-oplab" hidden>Picture opacity <input type="range" class="bf-range" id="mp-op" min="0" max="100" step="5" value="85"></label>
+    </div>
+    <canvas class="bf-map" id="mp-cv" tabindex="0" role="application" aria-roledescription="map" aria-label="${esc(`Map of ${e.name}`)}" aria-describedby="mp-help"></canvas>
+    <p class="bf-read" id="mp-read">Move over the map to see coordinates here.</p>
+    <ul class="bf-legend" id="mp-legend" aria-label="Layers on the map"></ul>
+    <p class="help" id="mp-help">Drag to move the map, use the wheel or pinch to zoom, and tap a feature to list its properties (every feature at that spot is listed). Untick a layer above to hide it. With the map selected, the arrow keys move it, + and − zoom, and Enter lists what is at the centre.${seeAlso ? ' ' + seeAlso : ''}</p>
+    <p class="bf-meta" id="mp-units"></p>
+    <div class="bf-ident" id="mp-ident" aria-live="polite"></div>
+    ${others.length ? `<fieldset class="bf-over"><legend>Show the other map files too</legend>${others.map((o, i) => `<label><input type="checkbox" data-o="${i}"> <span class="fn">${esc(o.name)}</span></label><span class="why2" id="mp-why-${i}" hidden></span>`).join('')}</fieldset>` : ''}`;
+  const cv = $('mp-cv');
+  const layers = []; // { entry, label, colour, feats, raster, on }
+  let colourN = 0, kx = 1, V = { cx: 0, cy: 0, s: 1 }, fitS = 1, fitted = false, sel = null, kbd = false, raf = 0;
+  const skipped = [];
+  /* Turn a source layer into something drawable on this map: coordinates in map units (degrees, or the file's own units). */
+  function prep(entry, L) {
+    if (!fits(L.crs)) return { why: `It uses ${L.crs.label}, which can’t be drawn on this map of ${disp.label}.` };
+    const conv = disp.mode === 'll' && L.crs.mode === 'merc' ? mercToLL : (x, y) => [x, y];
+    const out = { entry, label: L.label, colour: COLOURS[colourN++ % COLOURS.length], feats: [], raster: null, on: true, bad: 0, badWhy: '' };
+    if (L.raster) {
+      const t = L.raster, b = t.geo.bounds, [w, s] = conv(b.west, b.south), [ea, n] = conv(b.east, b.north);
+      let rgba;
+      try { rgba = FM.tiffToRGBA(t, t.samples >= 3 && t.photometric === 2 ? {} : { band: 0 }); } catch (err) { return { why: reasonOf(err) }; }
+      const c = document.createElement('canvas'); c.width = rgba.width; c.height = rgba.height;
+      c.getContext('2d').putImageData(new ImageData(rgba.data, rgba.width, rgba.height), 0, 0);
+      out.raster = { img: c, t, w, s, e: ea, n };
+      out.bbox = [w, s, ea, n];
+      return out;
+    }
+    const bb = [Infinity, Infinity, -Infinity, -Infinity];
+    const ring = (cs) => {
+      const a = new Float64Array(cs.length * 2);
+      cs.forEach((p, i) => { const [x, y] = conv(p[0], p[1]); a[2 * i] = x; a[2 * i + 1] = y; if (x < bb[0]) bb[0] = x; if (y < bb[1]) bb[1] = y; if (x > bb[2]) bb[2] = x; if (y > bb[3]) bb[3] = y; });
+      return a;
+    };
+    const parts = (g, acc) => {
+      if (!g) return acc;
+      const c = g.coordinates;
+      switch (g.type) {
+        case 'Point': if (c && c.length >= 2) acc.push({ t: 'pt', r: [ring([c])] }); break;
+        case 'MultiPoint': for (const p of c || []) if (p && p.length >= 2) acc.push({ t: 'pt', r: [ring([p])] }); break;
+        case 'LineString': if (c && c.length) acc.push({ t: 'ln', r: [ring(c)] }); break;
+        case 'MultiLineString': for (const l of c || []) if (l.length) acc.push({ t: 'ln', r: [ring(l)] }); break;
+        case 'Polygon': if (c && c.length) acc.push({ t: 'pg', r: c.filter((x) => x.length).map(ring) }); break;
+        case 'MultiPolygon': for (const p of c || []) if (p.length) acc.push({ t: 'pg', r: p.filter((x) => x.length).map(ring) }); break;
+        case 'GeometryCollection': for (const x of g.geometries || []) parts(x, acc); break;
+        default: break;
+      }
+      return acc;
+    };
+    for (const f of L.features) {
+      if (f.error) { out.bad++; if (!out.badWhy) out.badWhy = f.error; continue; }
+      const p = parts(f.geom, []);
+      if (p.length) out.feats.push({ props: f.props, id: f.id, parts: p });
+    }
+    out.bbox = bb[0] <= bb[2] ? bb : null;
+    return out;
+  }
+  for (const L of main) { const d = prep(e, L); if (d.why) skipped.push(`${L.label ? `The table “${L.label}”` : 'This file'} can’t be drawn here. ${d.why}`); else layers.push(d); }
+  { // squash east–west by the cosine of the middle latitude, so shapes keep their proportions
+    const bbs = layers.map((l) => l.bbox).filter(Boolean);
+    if (disp.mode === 'll' && bbs.length) { const lat0 = (Math.min(...bbs.map((b) => b[1])) + Math.max(...bbs.map((b) => b[3]))) / 2; kx = Math.max(0.05, Math.cos(Math.max(-89, Math.min(89, lat0)) * Math.PI / 180)); }
+  }
+  const W = () => cv.clientWidth, H = () => cv.clientHeight;
+  const sx = (x) => (x * kx - V.cx) * V.s + W() / 2, sy = (y) => H() / 2 - (y - V.cy) * V.s;
+  const ux = (px) => ((px - W() / 2) / V.s + V.cx) / kx, uy = (py) => V.cy - (py - H() / 2) / V.s;
+  function fit() {
+    const bbs = layers.filter((l) => l.on && l.bbox).map((l) => l.bbox);
+    if (!W()) return;
+    if (!bbs.length) { V = { cx: 0, cy: 0, s: W() / (disp.mode === 'll' ? 360 : 1000) }; fitS = V.s; fitted = true; schedule(); return; }
+    const b = [Math.min(...bbs.map((x) => x[0])), Math.min(...bbs.map((x) => x[1])), Math.max(...bbs.map((x) => x[2])), Math.max(...bbs.map((x) => x[3]))];
+    const bw = (b[2] - b[0]) * kx, bh = b[3] - b[1];
+    V.cx = (b[0] + b[2]) / 2 * kx; V.cy = (b[1] + b[3]) / 2;
+    V.s = bw > 0 || bh > 0 ? Math.min(bw > 0 ? (W() - 48) / bw : Infinity, bh > 0 ? (H() - 48) / bh : Infinity) : W() / (disp.mode === 'll' ? 0.01 : 1000);
+    fitS = V.s; fitted = true; schedule();
+  }
+  /* How far the map can zoom and move: out until the whole globe (or 64 times the fitted view) fills it,
+     in to about a centimetre per pixel, and never past the edges of the globe or far from the files. */
+  function limits() {
+    const bbs = layers.filter((l) => l.bbox).map((l) => l.bbox);
+    const b = bbs.length ? [Math.min(...bbs.map((x) => x[0])), Math.min(...bbs.map((x) => x[1])), Math.max(...bbs.map((x) => x[2])), Math.max(...bbs.map((x) => x[3]))] : null;
+    if (disp.mode === 'll') {
+      const lo = Math.min(fitS, Math.max(W() / (360 * kx), H() / 180)), hi = Math.max(fitS, 111320 / 0.01);
+      return { lo, hi, edges: true, x0: Math.min(-180, b ? b[0] : -180) * kx, x1: Math.max(180, b ? b[2] : 180) * kx, y0: -90, y1: 90 };
+    }
+    const lo = fitS / 64, hi = Math.max(fitS, disp.unitM ? disp.unitM / 0.01 : fitS * 1e5);
+    const mx = W() / lo / 2, my = H() / lo / 2;
+    return b ? { lo, hi, x0: b[0] - mx, x1: b[2] + mx, y0: b[1] - my, y1: b[3] + my } : { lo, hi, x0: V.cx - mx, x1: V.cx + mx, y0: V.cy - my, y1: V.cy + my };
+  }
+  function clampView() {
+    if (!fitted || !W()) return;
+    const L = limits();
+    V.s = Math.min(L.hi, Math.max(L.lo, V.s));
+    const hw = L.edges ? W() / 2 / V.s : 0, hh = L.edges ? H() / 2 / V.s : 0; // on the globe, keep the view's edges on it too
+    const keep = (v, a, z) => (a > z ? (a + z) / 2 : Math.min(z, Math.max(a, v)));
+    V.cx = keep(V.cx, L.x0 + hw, L.x1 - hw); V.cy = keep(V.cy, L.y0 + hh, L.y1 - hh);
+  }
+  function zoomAt(px, py, f) {
+    const X = (px - W() / 2) / V.s + V.cx, Y = V.cy - (py - H() / 2) / V.s;
+    const s0 = V.s;
+    V.s *= f; clampView();
+    if (V.s === s0) return;
+    V.cx = X - (px - W() / 2) / V.s; V.cy = Y + (py - H() / 2) / V.s;
+    clampView(); schedule();
+  }
+  function schedule() { if (!raf) raf = requestAnimationFrame(draw); }
+  redrawHook = schedule;
+  function coordText(x, y) {
+    if (disp.mode === 'll' && Math.abs(y) > 90) return 'Past the pole, where latitude stops at 90°';
+    if (disp.mode === 'll' && Math.abs(x) > 180) x = ((x + 180) % 360 + 360) % 360 - 180;
+    if (disp.mode === 'll') return `${gcFormat(y, x)}   (${y.toFixed(6)}, ${x.toFixed(6)})`;
+    return `x ${fmtNum(x)}, y ${fmtNum(y)}${disp.unit ? ` (${disp.unit})` : ''}`;
+  }
+  function draw() {
+    raf = 0;
+    const w = W(), h = H();
+    if (!w || !h) return;
+    if (!fitted) { fit(); if (!fitted) return; }
+    const dpr = Math.min(window.devicePixelRatio || 1, 3);
+    if (cv.width !== Math.round(w * dpr) || cv.height !== Math.round(h * dpr)) { cv.width = Math.round(w * dpr); cv.height = Math.round(h * dpr); }
+    const g = cv.getContext('2d');
+    g.setTransform(dpr, 0, 0, dpr, 0, 0);
+    const C = { bg: cssVar('--surface'), line: cssVar('--line'), lineS: cssVar('--line-strong'), ink: cssVar('--ink'), ink2: cssVar('--ink-2'), focus: cssVar('--focus') };
+    g.fillStyle = C.bg; g.fillRect(0, 0, w, h);
+    const op = +$('mp-op').value / 100;
+    for (const L of layers) {
+      if (!L.on || L.off || !L.raster) continue;
+      const r = L.raster, x0 = sx(r.w), x1 = sx(r.e), y0 = sy(r.n), y1 = sy(r.s);
+      g.globalAlpha = op; g.imageSmoothingEnabled = Math.abs(x1 - x0) < r.img.width;
+      g.drawImage(r.img, x0, y0, x1 - x0, y1 - y0);
+      g.globalAlpha = 1;
+    }
+    grid(g, w, h, C);
+    for (const L of layers) {
+      if (!L.on || L.off || !L.feats.length) continue;
+      const col = cssVar(L.colour);
+      for (const f of L.feats) drawFeat(g, f, col, C, false);
+    }
+    if (sel) for (const h of sel) if (h.L.on && !h.L.off) drawFeat(g, h.f, C.ink, C, true);
+    if (kbd && document.activeElement === cv) { // the centre, for the keyboard
+      g.strokeStyle = C.focus; g.lineWidth = 2;
+      g.beginPath(); g.moveTo(w / 2 - 10, h / 2); g.lineTo(w / 2 + 10, h / 2); g.moveTo(w / 2, h / 2 - 10); g.lineTo(w / 2, h / 2 + 10); g.stroke();
+    }
+    scaleBar(g, w, h, C);
+  }
+  function drawFeat(g, f, col, C, hl) {
+    for (const p of f.parts) {
+      if (p.t === 'pt') {
+        const a = p.r[0], x = sx(a[0]), y = sy(a[1]);
+        if (x < -20 || y < -20 || x > W() + 20 || y > H() + 20) continue;
+        g.beginPath(); g.arc(x, y, hl ? 8 : 5, 0, 2 * Math.PI);
+        if (hl) { g.strokeStyle = col; g.lineWidth = 3; g.stroke(); }
+        else { g.fillStyle = col; g.fill(); g.strokeStyle = C.bg; g.lineWidth = 1.5; g.stroke(); }
+        continue;
+      }
+      g.beginPath();
+      for (const a of p.r) {
+        for (let i = 0; i < a.length; i += 2) { const x = sx(a[i]), y = sy(a[i + 1]); if (i) g.lineTo(x, y); else g.moveTo(x, y); }
+        if (p.t === 'pg') g.closePath();
+      }
+      if (p.t === 'pg' && !hl) { g.globalAlpha = 0.2; g.fillStyle = col; g.fill('evenodd'); g.globalAlpha = 1; }
+      g.strokeStyle = col; g.lineWidth = hl ? 4 : p.t === 'ln' ? 2.5 : 1.6; g.lineJoin = 'round';
+      g.stroke();
+    }
+  }
+  function label(g, t, x, y, C, align) {
+    g.font = '11px "IBM Plex Mono", monospace'; g.textAlign = align || 'left'; g.textBaseline = 'alphabetic';
+    g.lineWidth = 3.5; g.strokeStyle = C.bg; g.strokeText(t, x, y); g.fillStyle = C.ink2; g.fillText(t, x, y);
+  }
+  function grid(g, w, h, C) {
+    g.strokeStyle = C.line; g.lineWidth = 1;
+    const x0 = ux(0), x1 = ux(w), y0 = uy(h), y1 = uy(0);
+    const lines = [];
+    if (disp.mode === 'll') {
+      const pick = (pxPerMin, want) => STEPS_MIN.find((s) => s * pxPerMin >= want) || STEPS_MIN[STEPS_MIN.length - 1];
+      const sLat = pick(V.s / 60, 70), sLon = pick(V.s * kx / 60, 110);
+      const dm = (deg, isLat, step) => {
+        const hemi = isLat ? (deg < 0 ? 'S' : 'N') : (deg < 0 ? 'W' : 'E'), a = Math.abs(deg);
+        if (step >= 60) return `${hemi} ${Math.round(a)}°`;
+        const dec = step >= 1 ? 0 : step >= 0.1 ? 1 : step >= 0.01 ? 2 : 3;
+        let d = Math.floor(a + 1e-12), m = +((a - d) * 60).toFixed(dec);
+        if (m >= 60) { d++; m = 0; }
+        return `${hemi} ${d}° ${m.toFixed(dec)}′`;
+      };
+      for (let k = Math.ceil(Math.max(-90, y0) * 60 / sLat), n = 0; k * sLat <= Math.min(90, y1) * 60 && n < 300; k++, n++) lines.push(['h', k * sLat / 60, dm(k * sLat / 60, true, sLat)]);
+      for (let k = Math.ceil(x0 * 60 / sLon), n = 0; k * sLon <= x1 * 60 && n < 300; k++, n++) lines.push(['v', k * sLon / 60, dm(k * sLon / 60, false, sLon)]);
+    } else {
+      const nice = (v) => { const p = Math.pow(10, Math.floor(Math.log10(v))); return [1, 2, 5, 10].map((m) => m * p).find((m) => m >= v); };
+      const sY = nice(70 / V.s), sX = nice(110 / V.s);
+      for (let k = Math.ceil(y0 / sY), n = 0; k * sY <= y1 && n < 300; k++, n++) lines.push(['h', k * sY, fmtNum(k * sY)]);
+      for (let k = Math.ceil(x0 / sX), n = 0; k * sX <= x1 && n < 300; k++, n++) lines.push(['v', k * sX, fmtNum(k * sX)]);
+    }
+    g.beginPath();
+    for (const [d, v] of lines) { if (d === 'h') { const y = Math.round(sy(v)) + 0.5; g.moveTo(0, y); g.lineTo(w, y); } else { const x = Math.round(sx(v)) + 0.5; g.moveTo(x, 0); g.lineTo(x, h); } }
+    g.stroke();
+    for (const [d, v, t] of lines) { if (d === 'h') label(g, t, 4, sy(v) - 3, C); else label(g, t, sx(v) + 3, 12, C); }
+  }
+  function scaleBar(g, w, h, C) {
+    let mpp = null; // metres per screen pixel, measured north–south at the centre of the view
+    if (disp.mode === 'll') { const f = V.cy * Math.PI / 180; mpp = (111132.954 - 559.822 * Math.cos(2 * f) + 1.175 * Math.cos(4 * f)) / V.s; }
+    else if (disp.unitM) mpp = disp.unitM / V.s;
+    if (!mpp || !isFinite(mpp)) return;
+    const nice = (v) => { const p = Math.pow(10, Math.floor(Math.log10(v))); return [5, 2, 1].map((m) => m * p).find((m) => m <= v); };
+    const m = nice(120 * mpp), ftpp = mpp / 0.3048, useMi = 120 * ftpp >= 5280;
+    const ft = useMi ? nice(120 * ftpp / 5280) : nice(120 * ftpp);
+    const bars = [[m / mpp, m >= 1000 ? `${+(m / 1000).toPrecision(3)} km` : `${+m.toPrecision(3)} m`], [useMi ? ft * 5280 / ftpp : ft / ftpp, useMi ? `${+ft.toPrecision(3)} mi` : `${+ft.toPrecision(3)} ft`]];
+    const x = 10;
+    g.globalAlpha = 0.85; g.fillStyle = C.bg; g.fillRect(x - 6, h - 42, Math.max(bars[0][0], bars[1][0]) + 80, 38); g.globalAlpha = 1;
+    bars.forEach(([len, t], i) => {
+      const y = h - 30 + i * 16;
+      g.strokeStyle = C.ink; g.lineWidth = 2;
+      g.beginPath(); g.moveTo(x, y - 4); g.lineTo(x, y); g.lineTo(x + len, y); g.lineTo(x + len, y - 4); g.stroke();
+      label(g, t, x + len + 6, y + 1, C);
+    });
+  }
+  /* Every feature within about 10 pixels of a screen point, nearest first, so features drawn on top of each other are all
+     listed. A point or line counts as nearer than the inside of a shape. */
+  function hit(px, py) {
+    const found = [], bd = 10.5;
+    const segD = (ax, ay, bx, by) => { const dx = bx - ax, dy = by - ay, l = dx * dx + dy * dy, t = l ? Math.max(0, Math.min(1, ((px - ax) * dx + (py - ay) * dy) / l)) : 0; return Math.hypot(px - ax - t * dx, py - ay - t * dy); };
+    for (let li = layers.length - 1; li >= 0; li--) {
+      const L = layers[li];
+      if (!L.on || L.off) continue;
+      for (let fi = L.feats.length - 1; fi >= 0; fi--) {
+        const f = L.feats[fi];
+        let d = Infinity;
+        for (const p of f.parts) {
+          if (p.t === 'pt') { d = Math.min(d, Math.hypot(sx(p.r[0][0]) - px, sy(p.r[0][1]) - py)); continue; }
+          let inside = false;
+          for (const a of p.r) {
+            const n = a.length / 2;
+            for (let i = 0; i < n - 1 + (p.t === 'pg' ? 1 : 0); i++) {
+              const j = (i + 1) % n, ax = sx(a[2 * i]), ay = sy(a[2 * i + 1]), bx = sx(a[2 * j]), by = sy(a[2 * j + 1]);
+              d = Math.min(d, segD(ax, ay, bx, by));
+              if (p.t === 'pg' && ((ay > py) !== (by > py)) && px < (bx - ax) * (py - ay) / (by - ay) + ax) inside = !inside;
+            }
+            if (n === 1) d = Math.min(d, Math.hypot(sx(a[0]) - px, sy(a[1]) - py));
+          }
+          if (inside) d = Math.min(d, 10);
+        }
+        if (d < bd) found.push({ L, f, d });
+      }
+    }
+    return found.sort((a, b) => a.d - b.d);
+  }
+  function identify(px, py) {
+    const h = hit(px, py), x = ux(px), y = uy(py);
+    let html = '';
+    sel = h;
+    if (h.length > 1) html += `<p>${h.length} features are drawn within 10 pixels of that spot, nearest first.</p>`;
+    for (const { L, f } of h) {
+      const props = f.props && typeof f.props === 'object' ? Object.entries(f.props) : [];
+      if (f.id !== undefined) props.unshift(['(feature id)', f.id]);
+      html += `<h4>From <span class="fn">${esc(L.entry.name)}</span>${L.label ? `, table <span class="fn">${esc(L.label)}</span>` : ''}</h4>`;
+      html += props.length ? `<dl class="bf-dl">${props.map(([k, v]) => `<dt>${esc(k)}</dt><dd>${esc(valueText(v))}</dd>`).join('')}</dl>` : '<p>This feature has no properties.</p>';
+    }
+    if (!h.length) html += '<h4>Nothing is drawn within 10 pixels of that spot.</h4>';
+    for (const L of layers) {
+      if (!L.on || L.off || !L.raster) continue;
+      const r = L.raster;
+      if (x < Math.min(r.w, r.e) || x > Math.max(r.w, r.e) || y < Math.min(r.s, r.n) || y > Math.max(r.s, r.n)) continue;
+      const ix = Math.min(r.t.width - 1, Math.floor((x - r.w) / (r.e - r.w) * r.t.width)), iy = Math.min(r.t.height - 1, Math.floor((r.n - y) / (r.n - r.s) * r.t.height));
+      let v; try { v = Array.from(FM.tiffPixel(r.t, ix, iy), String).join(', '); } catch (err) { v = reasonOf(err); }
+      html += `<p>The picture in <span class="fn">${esc(L.entry.name)}</span> at pixel ${ix}, ${iy}: ${esc(v)}</p>`;
+    }
+    html += disp.mode === 'll' && Math.abs(y) > 90 ? '<p>Tapped past the pole, where latitude stops at 90°.</p>' : `<p>Tapped at ${esc(coordText(x, y))}</p>`;
+    $('mp-ident').innerHTML = html;
+    schedule();
+  }
+  function legend() {
+    // each layer can be hidden on its own, so one drawn underneath another can be seen
+    $('mp-legend').innerHTML = layers.map((l, i) => l.on ? `<li><label><input type="checkbox" data-layer="${i}"${l.off ? '' : ' checked'}><span class="bf-sw${l.raster ? ' img' : ''}" style="color:var(${l.colour})" aria-hidden="true"></span><span><span class="fn">${esc(l.entry.name)}</span>${l.label ? `, table <span class="fn">${esc(l.label)}</span>` : ''}${l.raster ? ' (picture)' : ''}</span></label></li>` : '').join('');
+    $('mp-oplab').hidden = !layers.some((l) => l.on && l.raster);
+    const bad = layers.filter((l) => l.on && l.bad).map((l) => `${plural(l.bad, 'feature')} in ${l.label ? `the table “${l.label}” of ` : ''}${l.entry.name} can’t be drawn: ${l.badWhy}`);
+    $('mp-units').textContent = [disp.mode === 'll' ? 'Coordinates are latitude and longitude, north up.' : `Coordinates are in ${disp.label}${disp.unit ? `, in units of ${disp.unit}` : ', whose units the file doesn’t state'}, plotted as they are, north up.`, ...skipped, ...bad].join(' ');
+  }
+  $('mp-legend').addEventListener('change', (ev) => {
+    const box = ev.target.closest('input[data-layer]'); if (!box) return;
+    const L = layers[+box.dataset.layer]; if (!L) return;
+    L.off = !box.checked;
+    if (sel) sel = sel.filter((h) => h.L !== L || !L.off);
+    schedule();
+  });
+  legend();
+  // pointer: drag to pan, two fingers to pinch, tap to identify
+  const ptrs = new Map();
+  let moved = 0, pinch = null;
+  const at = (ev) => { const r = cv.getBoundingClientRect(); return [ev.clientX - r.left, ev.clientY - r.top]; };
+  cv.addEventListener('pointerdown', (ev) => {
+    kbd = false; cv.setPointerCapture(ev.pointerId);
+    ptrs.set(ev.pointerId, at(ev)); moved = ptrs.size > 1 ? 99 : 0;
+    if (ptrs.size === 2) { const [a, b] = [...ptrs.values()]; pinch = { d: Math.hypot(a[0] - b[0], a[1] - b[1]), m: [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2] }; }
+    cv.classList.add('drag');
+  });
+  cv.addEventListener('pointermove', (ev) => {
+    const p = at(ev);
+    $('mp-read').textContent = coordText(ux(p[0]), uy(p[1]));
+    if (!ptrs.has(ev.pointerId)) return;
+    const q = ptrs.get(ev.pointerId);
+    ptrs.set(ev.pointerId, p);
+    if (ptrs.size === 1) {
+      moved += Math.abs(p[0] - q[0]) + Math.abs(p[1] - q[1]);
+      if (moved > 5) { V.cx -= (p[0] - q[0]) / V.s; V.cy += (p[1] - q[1]) / V.s; clampView(); schedule(); }
+    } else if (ptrs.size === 2 && pinch) {
+      const [a, b] = [...ptrs.values()], d = Math.hypot(a[0] - b[0], a[1] - b[1]), m = [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2];
+      V.cx -= (m[0] - pinch.m[0]) / V.s; V.cy += (m[1] - pinch.m[1]) / V.s; clampView();
+      if (pinch.d > 0 && d > 0) zoomAt(m[0], m[1], d / pinch.d);
+      pinch = { d, m }; schedule();
+    }
+  });
+  const up = (ev) => {
+    if (!ptrs.has(ev.pointerId)) return;
+    const p = ptrs.get(ev.pointerId);
+    ptrs.delete(ev.pointerId);
+    if (ptrs.size < 2) pinch = null;
+    if (!ptrs.size) { cv.classList.remove('drag'); if (ev.type === 'pointerup' && moved <= 5) identify(p[0], p[1]); }
+  };
+  cv.addEventListener('pointerup', up); cv.addEventListener('pointercancel', up);
+  cv.addEventListener('wheel', (ev) => { ev.preventDefault(); const p = at(ev); zoomAt(p[0], p[1], Math.exp(-ev.deltaY * (ev.deltaMode === 1 ? 0.05 : ev.deltaMode === 2 ? 1 : 0.0015))); }, { passive: false });
+  cv.addEventListener('keydown', (ev) => {
+    const k = ev.key, pan = { ArrowLeft: [-1, 0], ArrowRight: [1, 0], ArrowUp: [0, 1], ArrowDown: [0, -1] }[k];
+    kbd = true;
+    if (pan) { ev.preventDefault(); const st = Math.min(W(), H()) / 6 / V.s; V.cx += pan[0] * st; V.cy += pan[1] * st; clampView(); }
+    else if (k === '+' || k === '=') { ev.preventDefault(); zoomAt(W() / 2, H() / 2, 1.5); }
+    else if (k === '-' || k === '_') { ev.preventDefault(); zoomAt(W() / 2, H() / 2, 1 / 1.5); }
+    else if (k === 'Enter' || k === ' ') { ev.preventDefault(); identify(W() / 2, H() / 2); }
+    else return;
+    $('mp-read').textContent = `Centre: ${coordText(ux(W() / 2), uy(H() / 2))}`;
+    schedule();
+  });
+  cv.addEventListener('focus', () => { // arriving from the keyboard shows the centre straight away
+    let k = false;
+    try { k = cv.matches(':focus-visible'); } catch (err) { /* older browsers: wait for a key */ }
+    if (k) kbd = true;
+    schedule();
+  });
+  cv.addEventListener('blur', schedule);
+  $('mp-in').addEventListener('click', () => zoomAt(W() / 2, H() / 2, 1.6));
+  $('mp-out').addEventListener('click', () => zoomAt(W() / 2, H() / 2, 1 / 1.6));
+  $('mp-fit').addEventListener('click', fit);
+  $('mp-op').addEventListener('input', schedule);
+  panel.querySelectorAll('.bf-over input[type=checkbox]').forEach((box) => box.addEventListener('change', async () => {
+    const i = +box.dataset.o, o = others[i], why = $(`mp-why-${i}`);
+    const mine = layers.filter((l) => l.entry === o);
+    if (!box.checked) { mine.forEach((l) => { l.on = false; }); if (sel) sel = sel.filter((h) => h.L.entry !== o); legend(); schedule(); return; }
+    if (mine.length) { mine.forEach((l) => { l.on = true; }); legend(); schedule(); return; }
+    why.hidden = false; why.textContent = 'Reading…';
+    let src;
+    try { if (curOpts.readEntry) { await curOpts.readEntry(o); if (!live(tok)) return; } src = await mapSource(o, nameReader('map', o.name)); } catch (err) { if (!live(tok)) return; why.textContent = `Can’t be drawn: ${reasonOf(err)}`; box.checked = false; return; }
+    if (!live(tok)) return;
+    const msgs = [];
+    let added = 0;
+    for (const L of src) { const d = prep(o, L); if (d.why) msgs.push(`${L.label ? `Table “${L.label}”: ` : ''}${d.why}`); else { layers.push(d); added++; } }
+    why.textContent = msgs.join(' ');
+    why.hidden = !msgs.length;
+    if (!added) box.checked = false;
+    legend(); schedule();
+  }));
+  const ro = new ResizeObserver(schedule); ro.observe(cv);
+  cleanup = () => { ro.disconnect(); cancelAnimationFrame(raf); };
+  schedule();
+}
+
+/* ---------- the Listen and Watch views: this browser's own player ---------- */
+/* What each error code means, as the HTML standard defines it; nothing more is guessed. */
+const MEDIA_ERRORS = {
+  1: ['MEDIA_ERR_ABORTED', 'that reading the file was stopped before it finished'],
+  2: ['MEDIA_ERR_NETWORK', 'an error while reading the file'],
+  3: ['MEDIA_ERR_DECODE', 'an error while decoding it'],
+  4: ['MEDIA_ERR_SRC_NOT_SUPPORTED', 'that the file, or its format, isn’t one it can play'],
+};
+function mediaWhy(err) {
+  if (!err) return 'This browser can’t play the file, and it gives no reason.';
+  const [name, says] = MEDIA_ERRORS[err.code] || ['', ''];
+  const msg = err.message ? String(err.message).trim() : '';
+  return `This browser can’t play the file. It reports ${says || 'an error'} (error code ${String(err.code)}${name ? ', ' + name : ''})${msg ? `, with the message “${msg}”` : ''}.`;
+}
+function lengthText(d) { // '2 min 05 s (125.373 seconds)', from the length the browser reports
+  if (d === Infinity) return 'This browser reports no fixed length for it.';
+  if (!isFinite(d)) return 'This browser reports no length for it.';
+  const exact = d.toLocaleString('en-US', { maximumFractionDigits: 3 }), secs = `${exact} second${exact === '1' ? '' : 's'}`;
+  if (d < 60) return `Length: ${secs}.`;
+  const t = Math.round(d), h = Math.floor(t / 3600), m = Math.floor((t % 3600) / 60), s = t % 60, two = (n) => String(n).padStart(2, '0');
+  return `Length: ${h ? `${fmtInt(h)} h ${two(m)} min` : `${m} min`} ${two(s)} s (${secs}).`;
+}
+function renderMedia(e, panel, tok, video) {
+  const u8 = bytesOf(e);
+  if (!u8.length) { panel.innerHTML = failNote(e, 'The file is empty, so there is nothing to play.'); return; }
+  // one copy of the bytes for the player, made the first time and kept for the file, so going back
+  // to this view doesn't need a second copy of a big file (the name alone gives its media type)
+  const s = st(e);
+  if (!s.mediaUrl) s.mediaUrl = URL.createObjectURL(new Blob([u8], { type: AUDIO_TYPES[extOf(e.name)] || VIDEO_TYPES[extOf(e.name)] || '' }));
+  const url = s.mediaUrl;
+  const tag = video ? 'video' : 'audio';
+  // no autoplay, only the length is read until the person presses play, and it stays on this device
+  panel.innerHTML = `<div class="bf-media${video ? ' vid' : ''}"><${tag} id="av-el" controls preload="metadata"${video ? ' playsinline' : ''} disableremoteplayback aria-label="${esc(`The ${video ? 'video' : 'sound'} in ${e.name}`)}" aria-describedby="av-meta"></${tag}></div>
+    <p class="bf-meta" id="av-meta" aria-live="polite">Reading the length…</p>`;
+  const el = $('av-el'), meta = $('av-meta');
+  let done = false;
+  const stop = () => { // pause and let go of the file; its address is freed by forget
+    if (done) return;
+    done = true;
+    try { el.pause(); el.removeAttribute('src'); el.load(); } catch (err) { /* already stopped */ }
+  };
+  cleanup = stop;
+  const describe = () => {
+    if (!live(tok) || done) return;
+    let t = lengthText(el.duration);
+    if (video) t += el.videoWidth && el.videoHeight ? ` Picture: ${fmtInt(el.videoWidth)} × ${fmtInt(el.videoHeight)} pixels.` : ' This browser reports no picture in it.';
+    if (meta.textContent !== t) meta.textContent = t;
+  };
+  el.addEventListener('loadedmetadata', describe);
+  el.addEventListener('durationchange', () => { if (el.readyState >= 1) describe(); });
+  if (video) el.addEventListener('resize', () => { if (el.readyState >= 1) describe(); });
+  el.addEventListener('error', () => {
+    if (!live(tok) || done) return;
+    const why = mediaWhy(el.error);
+    stop();
+    panel.innerHTML = failNote(e, why);
+  });
+  el.src = url;
+}
+
+const RENDER = { text: renderText, bytes: renderBytes, table: renderTable, tables: renderTables, map: renderMap, picture: renderPicture, contents: renderContents, code: renderCode, formatted: renderFormatted,
+  listen: (e, panel, tok) => renderMedia(e, panel, tok, false), watch: (e, panel, tok) => renderMedia(e, panel, tok, true) };
+
+return {
+  viewsFor, allViews, labelOf, resolve, open, forget,
+  readers: R, helpers: { esc, fmtInt, plural, hex2: HEX2, reasonOf, utf8Len, extOf },
+};
+}
+const FV = fileViewer({ SQ, PQ, FM });
+
+/* ---------- small helpers ---------- */
+const $ = (id) => document.getElementById(id);
+const { esc, plural, fmtInt, reasonOf } = FV.helpers;
+const reduced = () => !!(window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches);
+const BIG = 100 * 1024 * 1024; // past this, the page says calmly that reading may take a moment
+const TEXT_PART = 4 * 1024 * 1024; // on a bigger file the Text, Code and Formatted views lay out only about this much from the start, until asked for all of it
+const TEXT_ALL_MAX = 16 * 1024 * 1024; // past this, laying out all the text can take more memory than a browser tab has, so it isn't offered
+function fmtSize(n) {
+  if (n < 1024) return plural(n, 'byte');
+  const u = ['KB', 'MB', 'GB', 'TB'];
+  let v = n / 1024, i = 0;
+  while (v >= 1024 && i < u.length - 1) { v /= 1024; i++; }
+  return `${v.toLocaleString('en-US', { maximumFractionDigits: v < 10 ? 1 : 0 })} ${u[i]}`;
+}
+let statusT = 0;

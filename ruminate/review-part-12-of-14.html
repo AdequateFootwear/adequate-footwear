@@ -1,0 +1,884 @@
+<!-- Review copy: lines 8155-9037 of ruminate/index.html, split so Copilot can review it. Not served. -->
+    if (idv.bad) { items.push(rsStopItem(cx, p, e, `The byte here, ${rsHexByte(u8[p])}, can’t begin an element ID${idv.n ? ' (IDs are at most four bytes long)' : ''}.`)); return -1; }
+    const id = rsBE(u8, p, idv.n);
+    if (unknownParent && !rsEbmlAllowed(id, parent)) return p;
+    const d = RS_EBML.get(id), name = d ? d[0] : `Element ${rsEbmlId(id)}`, type = d ? d[1] : 'b';
+    const sz = rsVint(u8, p + idv.n, e, 8);
+    if (!sz) { items.push(rsStopItem(cx, p, e, `The data ends partway through the size of ${d ? `the ${name} element` : `an element with ID ${rsEbmlId(id)}`}.`)); return -1; }
+    if (sz.bad) { items.push(rsStopItem(cx, p, e, `The size of ${d ? `the ${name} element` : `the element with ID ${rsEbmlId(id)}`} here begins with a zero byte, which can’t begin a size.`)); return -1; }
+    const hs = p + idv.n + sz.n;
+    let de;
+    const room = rsRoom(cx);
+    let kids = room ? [rsI(cx, 'Element ID', p, p + idv.n, rsEbmlId(id)), rsI(cx, 'Element size', p + idv.n, hs, sz.unknown ? 'unknown' : rsBytesWord(sz.v))] : null;
+    let value = null, note = null;
+    if (sz.unknown) {
+      if (type !== 'm') { items.push(rsStopItem(cx, p, e, `The ${name} element here has an unknown size, which only master elements may have.`)); return -1; }
+      if (depth >= 64) { items.push(rsStopItem(cx, p, e, 'The elements here are nested too deeply for this page to follow.')); return -1; }
+      const ck = room ? kids : [];
+      rsEbmlScope(u8, id, hs, e, true, info);
+      const q = rsEbmlList(cx, hs, e, id, true, depth + 1, ck, info);
+      if (q < 0) { if (room) items.push(rsI(cx, name, p, ck.length ? ck[ck.length - 1].end : hs, null, 'It has an unknown size.', kids)); else rsPushAll(items, ck.filter((x) => x.label === 'Reading stopped here')); return -1; }
+      de = q;
+      note = 'Its size is unknown: it ends where an element that can’t be inside it begins, or where the data around it ends.';
+      if (!room) { const go = rsUnlisted(cx, items, p, de, 'element', 'elements'); p = de; if (!go && p < e) { items.push(rsTooLong(cx, p, e, 'elements')); return -1; } continue; }
+    } else {
+      if (sz.v === null || sz.v > e - hs) { items.push(rsStopItem(cx, p, e, `The ${name} element here says it holds ${sz.v === null ? 'more bytes than the page can count' : rsBytesWord(sz.v)}, which runs past the end of ${parent ? 'the element it is in' : 'the file'}.`)); return -1; }
+      de = hs + sz.v;
+      if (!room) { const go = rsUnlisted(cx, items, p, de, 'element', 'elements'); p = de; if (!go && p < e) { items.push(rsTooLong(cx, p, e, 'elements')); return -1; } continue; }
+      if (type === 'm') {
+        rsEbmlScope(u8, id, hs, de, false, info);
+        if (depth >= 64) kids.push(rsI(cx, 'Element data', hs, de, rsBytesWord(de - hs), 'Nested too deeply for this page to follow.'));
+        else if (rsEbmlList(cx, hs, de, id, false, depth + 1, kids, info) < 0) { items.push(rsI(cx, name, p, de, null, null, kids)); return -1; }
+      } else {
+        const r = rsEbmlValue(cx, id, type, hs, de, info);
+        value = r.value; note = r.note || null;
+        if (de > hs) kids.push(rsI(cx, type === 'b' ? 'Element data' : 'Value', hs, de, type === 'b' ? (r.inner || rsBytesWord(de - hs)) : value));
+      }
+    }
+    if (id === 0x67c8) { // a SimpleTag: name = value
+      const tn = kids.find((x) => x.label === 'TagName'), ts = kids.find((x) => x.label === 'TagString');
+      if (tn) value = `${tn.value} = ${ts ? ts.value : '(no text)'}`;
+    } else if (id === 0xae) {
+      const tt = kids.find((x) => x.label === 'TrackType'), ci = kids.find((x) => x.label === 'CodecID'), tn = kids.find((x) => x.label === 'TrackNumber');
+      value = [tn && `track ${tn.value}`, tt && tt.value, ci && ci.value].filter(Boolean).join(', ') || null;
+    } else if (id === 0x61a7) {
+      const fn = kids.find((x) => x.label === 'FileName'), fm = kids.find((x) => x.label === 'FileMimeType');
+      value = [fn && fn.value, fm && fm.value].filter(Boolean).join(', ') || null;
+    } else if (id === 0x1f43b675) {
+      const ts = kids.find((x) => x.label === 'Timestamp');
+      value = ts ? `timestamp ${ts.value}` : null;
+    }
+    items.push(rsI(cx, name, p, de, value, note, kids));
+    p = de;
+  }
+  return p;
+}
+
+// Sets the timestamp scale that times inside a master element are read with. Each Segment starts
+// with none (the default), and an Info element's own TimestampScale is found before its other
+// children are read, since the elements inside it may come in any order.
+function rsEbmlScope(u8, id, s, e, unknown, info) {
+  if (id === 0x18538067) info.scale = null;
+  if (id !== 0x1549a966) return;
+  info.scale = null;
+  let p = s;
+  while (p < e) {
+    const idv = rsVint(u8, p, e, 4);
+    if (!idv || idv.bad) return;
+    const cid = rsBE(u8, p, idv.n);
+    if (unknown && !rsEbmlAllowed(cid, id)) return;
+    const sz = rsVint(u8, p + idv.n, e, 8);
+    if (!sz || sz.bad || sz.unknown || sz.v === null || sz.v > e - p - idv.n - sz.n) return;
+    const hs = p + idv.n + sz.n;
+    if (cid === 0x2ad7b1) {
+      if (sz.v >= 1 && sz.v <= 8) { const v = rsBE(u8, hs, sz.v); if (v <= Number.MAX_SAFE_INTEGER) info.scale = v; }
+      return;
+    }
+    p = hs + sz.v;
+  }
+}
+
+// The value of a simple element in [s, e).
+function rsEbmlValue(cx, id, type, s, e, info) {
+  const { u8 } = cx, L = e - s;
+  switch (type) {
+    case 'u': case 'i': {
+      if (L > 8) return { value: rsHex(u8, s, e), note: 'It is longer than eight bytes, the most a number may take.' };
+      if (!L) return { value: '0' };
+      let x = 0n; for (let i = s; i < e; i++) x = (x << 8n) | BigInt(u8[i]);
+      if (type === 'i') x = BigInt.asIntN(8 * L, x);
+      const v = x <= BigInt(Number.MAX_SAFE_INTEGER) && x >= BigInt(Number.MIN_SAFE_INTEGER) ? Number(x) : x;
+      let t = rsNum(v);
+      if (id === 0x83 && RS_TRACK_TYPES[v]) t += ` (${RS_TRACK_TYPES[v]})`;
+      if (id === 0x2ad7b1 && typeof v === 'number') { info.scale = v; t += ' nanoseconds a tick'; }
+      if ((id === 0xb9 || id === 0x88 || id === 0x55aa || id === 0x9c) && (v === 0 || v === 1)) t += v ? ' (yes)' : ' (no)';
+      return { value: t };
+    }
+    case 'f': {
+      if (L === 0) return { value: '0' };
+      if (L !== 4 && L !== 8) return { value: rsHex(u8, s, e), note: 'A float must take 4 or 8 bytes.' };
+      const dv = new DataView(u8.buffer, u8.byteOffset + s, L), x = L === 4 ? dv.getFloat32(0) : dv.getFloat64(0);
+      let t = rsNum(x);
+      if (id === 0x4489 && isFinite(x)) t += ` ticks (${rsSecs(x * (info.scale || 1000000) / 1e9)}${info.scale ? '' : ', with the default timestamp scale'})`;
+      if (id === 0xb5 || id === 0x78b5) t += ' Hz';
+      return { value: t };
+    }
+    case 's': { let t = e; while (t > s && !u8[t - 1]) t--; return { value: rsQuoteBytes(u8, s, t, false) }; }
+    case '8': { let t = e; while (t > s && !u8[t - 1]) t--; return { value: rsQuoteBytes(u8, s, t, true) }; }
+    case 'd': {
+      if (L === 0) return { value: '0 (the start of 2001, UTC)' };
+      if (L !== 8) return { value: rsHex(u8, s, e), note: 'A date must take 8 bytes.' };
+      let x = 0n; for (let i = s; i < e; i++) x = (x << 8n) | BigInt(u8[i]);
+      x = BigInt.asIntN(64, x);
+      const t = rsUtcFrom(RS_MKV_EPOCH, Number(x / 1000000n) / 1000);
+      return { value: `${x.toString()} nanoseconds` + (t ? ` (${t})` : ''), note: 'Nanoseconds since the start of 2001, UTC.' };
+    }
+    default: {
+      if (id === 0x53ab && L >= 1 && L <= 4) { const t = rsBE(u8, s, L), d = RS_EBML.get(t); const v = `${rsEbmlId(t)}${d ? ` (${d[0]})` : ''}`; return { value: v, inner: v }; }
+      if ((id === 0xa3 || id === 0xa1) && L >= 4) {
+        const tv = rsVint(u8, s, e, 8);
+        if (tv && !tv.bad && tv.v !== null && s + tv.n + 3 <= e) {
+          const tc = rsBE(u8, s + tv.n, 2), fl = u8[s + tv.n + 2];
+          const v = `track ${tv.v}, timestamp ${tc > 32767 ? tc - 65536 : tc} from the cluster’s` + (id === 0xa3 && fl & 0x80 ? ', keyframe' : '') + `, ${rsBytesWord(L)}`;
+          return { value: v, inner: v };
+        }
+      }
+      if (id === 0x465c) return { value: rsBytesWord(L), note: 'The attached file’s contents aren’t shown here.' };
+      return { value: rsBytesWord(L) };
+    }
+  }
+}
+
+function rsEbml(cx) {
+  const { u8, n } = cx;
+  if (n < 4 || rsBE(u8, 0, 4) !== 0x1a45dfa3) throw new Error('It doesn’t begin with the EBML header ID (1A 45 DF A3), which is how the format starts.');
+  const items = [];
+  rsEbmlList(cx, 0, n, 0, false, 0, items, { scale: null });
+  const doc = (() => { const h = items[0]; const d = h && h.children && h.children.find((x) => x.label === 'DocType'); return d ? d.value : null; })();
+  return { title: `EBML elements${doc ? `, document type ${doc}` : ''}, ${rsPlural(items.filter((x) => x.label !== 'Reading stopped here' && !/ not listed one by one$/.test(x.label)).length, 'top-level element', 'top-level elements')}`, items };
+}
+return { structureOf, structureKinds };
+})();
+/* ==========================================================================================
+   fileview.js: a viewer for one file at a time, shared by every page that shows files.
+   It is written from scratch and inlined into each page by the builder's INCLUDE marker, so
+   keep every copy identical. It runs entirely in the browser: nothing is uploaded or fetched.
+
+   Make it once, after the three readers, with the readers it should use:
+     const FV = fileViewer({ SQ, PQ, FM });
+   where SQ = { sqliteOpen, gpkgLayers, sqliteText }, PQ = { parquetRead } and
+   FM = { tiffRead, tiffToRGBA, tiffPixel, pickleLoad, pyRepr, csvParse, mdRender, highlight, bytesAsText }.
+   fileViewer only touches the page when a viewer is opened, so it can also be loaded in Node
+   for tests: new Function(src + '; return fileViewer')()(readers).
+
+   An entry is { name, bytes } where bytes is a Uint8Array (a getter is fine: it is read when
+   needed). What is worked out from an entry is kept, keyed by the entry object itself, so open
+   the same object again to reuse it.
+
+   View ids. A plain id ('map', 'tables', 'table', 'picture', 'formatted', 'code', 'contents',
+   'listen', 'watch', 'text', 'bytes') reads the file the way its name says. An id with a reader after a colon
+   reads it that way whatever its name: 'map:gpkg', 'map:geojson', 'map:tiff', 'tables:sqlite',
+   'table:csv', 'table:tsv', 'table:parquet', 'table:geojson', 'picture:image', 'picture:tiff',
+   'formatted:md', 'code:c', 'code:r', 'contents:pickle', 'listen:media', 'watch:media'.
+   'listen' and 'watch' hand the bytes to this browser's own audio or video player (from a blob
+   address made in the page the first time, reused each time the view is shown again, and revoked
+   by FV.forget); nothing in the page decodes or analyses the sound or picture. The name only
+   chooses the media type the bytes are given; Open as… on any other name gives none, and the
+   browser then decides for itself whether it can play them.
+
+   FV.viewsFor(name)    -> the plain view ids for a file name, chosen by the ending of the name only.
+   FV.allViews()        -> [{ id, label }] for an "Open as…" menu: every way of reading a file,
+                           each with a plain label. The labels name formats, because the person
+                           chooses them; nothing here guesses what a file is.
+   FV.labelOf(id)       -> the short label a tab shows for a view id ('Map', 'Table (CSV)' …).
+   FV.resolve(id, name) -> the id with its reader, as it would read a file of that name
+                           ('table', 'a.csv' -> 'table:csv'), or null when the name gives no
+                           reader for a plain id ('map', 'notes.txt' -> null). 'text' and 'bytes'
+                           come back as they are. An extra view's id comes back as it is.
+   FV.open(container, entry, opts) -> a viewer handle (below). Renders the file's name, size, a
+                           row of tabs and the open view into container (an empty element).
+                           Calling it again on the same container replaces what it shows.
+     opts.views         the tab list, in order, overriding viewsFor(entry.name). Ids the name
+                        can't resolve are left out, and two ids that read the file the same way
+                        make one tab (the first).
+     opts.initialView   the view to show first; the first tab if it isn't one of the tabs.
+     opts.onViewChange(id, entry)  called each time a view is shown, the first one included.
+     opts.extraViews    [{ id, label, render(el, entry, api) }]: more views this page adds. When
+                        opts.views is given it decides where they go; otherwise they follow
+                        the views the name gives. render may return a promise; anything it
+                        throws or rejects with is shown as the view's failure note.
+     opts.otherEntries  the other open files: the Map view offers those with a Map view by
+                        name as layers to draw too.
+     opts.readEntry(entry)  with otherEntries, gives a promise of an entry's bytes: the Map view
+                        calls it when one of them is chosen as a layer, before reading it, so a
+                        page can read files only when they are needed.
+     opts.settings      an object the viewer reads and writes its few settings on (only
+                        settings.wrap, for wrapping long lines, so far).
+     opts.onSettingsChange(settings)  called after the person changes a setting.
+     opts.scrollTo      an element to scroll to the top of the window once the name is shown
+                        (the section holding the viewer, say).
+     opts.focus         true moves the keyboard focus to the file's name (without scrolling).
+     opts.textLimit     a number of bytes: on a bigger file the Text, Code and Formatted views lay
+                        out only about that much from the start (to the end of a line), and say so.
+                        Without it, they lay out the whole file.
+     opts.onShowAllText(view)  with textLimit: those views' notes then offer to show everything,
+                        and call this with 'text', 'code' or 'formatted' when it is chosen (the page
+                        then opens the file again without textLimit).
+   The handle: { entry, view() -> the id shown, views() -> the tab ids, show(id),
+                 jumpToBytes(start, end), close() }.
+   api, given to an extra view's render:
+     api.bytes                 the entry's bytes
+     api.jumpToBytes(start, end)  switches to the Bytes view, turns to the page holding start,
+                               and marks bytes start to end - 1 (end is exclusive)
+     api.show(id)              switch to another tab
+     api.live()                false once the person has moved on to another view or file
+     api.onCleanup(fn)         run fn when this view is closed
+     api.memo(key, fn), api.memoAsync(key, fn)  work something out once per entry and keep it
+                               (or the reason it failed); keys are kept apart from the core's
+     api.fail(why)             the HTML of a failure note giving a plain reason
+     api.tableView(host, spec) the core's paged table (spec as tableView below)
+     api.esc, api.fmtInt, api.plural, api.hex2  helpers, as in FV.helpers
+   FV.forget(entry)     drops what was kept for an entry (and its picture and player addresses).
+   FV.readers           the readers it was made with. FV.helpers: { esc, fmtInt, plural, hex2, reasonOf, utf8Len,
+                        extOf }, where extOf(name) is the ending of a name as the views read it ('' for none).
+
+   One viewer at a time per page: the views use fixed element ids (bf-name, bf-tabs, bf-panel,
+   tx-…, bx-…, mp-…, av-… and so on). Announcements go to the element with id bf-status, which is
+   made inside the container if the page has none. The styles are in fileview.css.
+   ========================================================================================== */
+function fileViewer(R) {
+'use strict';
+const SQ = R.SQ, PQ = R.PQ, FM = R.FM;
+
+/* ---------- small helpers ---------- */
+const $ = (id) => document.getElementById(id);
+const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+const fmtInt = (n) => (typeof n === 'bigint' ? n : Number(n)).toLocaleString('en-US');
+const plural = (n, one, many) => `${fmtInt(n)} ${n === 1 ? one : (many || one + 's')}`;
+const HEX2 = Array.from({ length: 256 }, (_, i) => i.toString(16).toUpperCase().padStart(2, '0'));
+const reasonOf = (err) => (err && err.message ? String(err.message) : String(err));
+const cssVar = (name) => getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+const escRe = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+let announceT = 0;
+function announce(text) { clearTimeout(announceT); announceT = setTimeout(() => { const s = $('bf-status'); if (s) s.textContent = text; }, 300); }
+function utf8Len(s) { // how many bytes a piece of valid text takes in UTF-8
+  let n = 0;
+  for (let i = 0; i < s.length; i++) {
+    const c = s.charCodeAt(i);
+    if (c < 0x80) n += 1; else if (c < 0x800) n += 2;
+    else if (c >= 0xD800 && c <= 0xDBFF && i + 1 < s.length) { n += 4; i++; } else n += 3;
+  }
+  return n;
+}
+
+/* ---------- what is kept for each entry: decoded results, or the reason they failed ---------- */
+const KEPT = new WeakMap();
+function st(e) { let s = KEPT.get(e); if (!s) { s = { memo: new Map(), url: null, mediaUrl: null, tablePick: undefined }; KEPT.set(e, s); } return s; }
+function forget(e) {
+  const s = KEPT.get(e);
+  if (s) for (const u of [s.url, s.mediaUrl]) if (u) { try { URL.revokeObjectURL(u); } catch (err) { /* nothing to free */ } }
+  KEPT.delete(e);
+}
+const bytesOf = (e) => e.bytes;
+/* Work something out once per file and keep the result, or the reason it failed. */
+function memo(e, key, fn) {
+  const m = st(e).memo;
+  if (!m.has(key)) { try { m.set(key, { ok: true, v: fn() }); } catch (err) { m.set(key, { ok: false, why: reasonOf(err) }); } }
+  const r = m.get(key);
+  if (!r.ok) throw new Error(r.why);
+  return r.v;
+}
+function memoAsync(e, key, fn) { // the same for a reader that takes time: the promise itself is kept
+  const m = st(e).memo;
+  if (!m.has(key)) m.set(key, Promise.resolve().then(fn));
+  return m.get(key);
+}
+const strictText = (e) => memo(e, 'utf8', () => {
+  try { return new TextDecoder('utf-8', { fatal: true }).decode(bytesOf(e)); } catch (err) { throw new Error('The file isn’t valid UTF-8 text, so it can’t be read this way.'); }
+});
+const sqliteDb = (e) => memo(e, 'sqlite', () => SQ.sqliteOpen(bytesOf(e)));
+const tiffOf = (e) => memoAsync(e, 'tiff', () => FM.tiffRead(bytesOf(e)));
+const parquetOf = (e) => memoAsync(e, 'parquet', () => PQ.parquetRead(bytesOf(e)));
+
+/* ---------- which views a file gets: from the ending of its name only ---------- */
+const IMAGE_TYPES = { png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg', gif: 'image/gif', webp: 'image/webp', bmp: 'image/bmp' };
+/* the media type each audio or video ending implies, given to the browser with the bytes */
+const AUDIO_TYPES = { mp3: 'audio/mpeg', mp2: 'audio/mpeg', mpga: 'audio/mpeg', wav: 'audio/wav', wave: 'audio/wav', bwf: 'audio/wav', rf64: 'audio/wav', ogg: 'audio/ogg', oga: 'audio/ogg', opus: 'audio/ogg', spx: 'audio/ogg', flac: 'audio/flac', m4a: 'audio/mp4', m4b: 'audio/mp4', aac: 'audio/aac', aif: 'audio/aiff', aiff: 'audio/aiff', aifc: 'audio/aiff', weba: 'audio/webm', mka: 'audio/x-matroska' };
+const VIDEO_TYPES = { mp4: 'video/mp4', m4v: 'video/mp4', mov: 'video/quicktime', qt: 'video/quicktime', '3gp': 'video/3gpp', '3g2': 'video/3gpp2', webm: 'video/webm', mkv: 'video/x-matroska', mk3d: 'video/x-matroska', ogv: 'video/ogg' };
+const LABELS = { map: 'Map', tables: 'Tables', table: 'Table', picture: 'Picture', text: 'Text', bytes: 'Bytes', contents: 'Contents', code: 'Code', formatted: 'Formatted', listen: 'Listen', watch: 'Watch' };
+function extOf(name) { name = String(name); const i = name.lastIndexOf('.'); return i > 0 && i < name.length - 1 ? name.slice(i + 1).toLowerCase() : ''; }
+function viewsFor(name) {
+  const x = extOf(name);
+  if (x === 'gpkg') return ['map', 'tables', 'text', 'bytes'];
+  if (IMAGE_TYPES[x]) return ['picture', 'text', 'bytes'];
+  if (x === 'csv' || x === 'tsv' || x === 'parquet') return ['table', 'text', 'bytes'];
+  if (x === 'geojson') return ['map', 'table', 'text', 'bytes'];
+  if (x === 'pickle' || x === 'pkl') return ['contents', 'text', 'bytes'];
+  if (x === 'c' || x === 'h' || x === 'r') return ['code', 'text', 'bytes'];
+  if (x === 'md' || x === 'markdown') return ['formatted', 'text', 'bytes'];
+  if (x === 'sqlite' || x === 'sqlite3' || x === 'db') return ['tables', 'text', 'bytes'];
+  if (x === 'geotiff') return ['picture', 'map', 'text', 'bytes'];
+  if (x === 'tif' || x === 'tiff') return ['picture', 'text', 'bytes'];
+  if (AUDIO_TYPES[x]) return ['listen', 'text', 'bytes'];
+  if (VIDEO_TYPES[x]) return ['watch', 'text', 'bytes'];
+  return ['text', 'bytes']; // .json, the plain-text endings, and every other name
+}
+/* Every way of reading a file, for a page that lets the person choose: [id, tab label, menu label]. */
+const READERS = [
+  ['map:gpkg', 'Map (GeoPackage)', 'Map, read as a GeoPackage'],
+  ['map:geojson', 'Map (GeoJSON)', 'Map, read as GeoJSON'],
+  ['map:tiff', 'Map (GeoTIFF)', 'Map, read as a GeoTIFF picture'],
+  ['tables:sqlite', 'Tables (SQLite)', 'Tables, read as an SQLite database'],
+  ['table:csv', 'Table (CSV)', 'Table, read as comma-separated values (CSV)'],
+  ['table:tsv', 'Table (TSV)', 'Table, read as tab-separated values (TSV)'],
+  ['table:parquet', 'Table (Parquet)', 'Table, read as a Parquet file'],
+  ['table:geojson', 'Table (GeoJSON)', 'Table of features, read as GeoJSON'],
+  ['picture:image', 'Picture (browser)', 'Picture, as this browser opens PNG, JPEG, GIF, WebP and BMP'],
+  ['picture:tiff', 'Picture (TIFF)', 'Picture, read as a TIFF'],
+  ['formatted:md', 'Formatted (Markdown)', 'Formatted, read as Markdown'],
+  ['code:c', 'Code (C)', 'Code, coloured as C'],
+  ['code:r', 'Code (R)', 'Code, coloured as R'],
+  ['contents:pickle', 'Contents (pickle)', 'Contents, read as a Python pickle (no code from it is run)'],
+  ['listen:media', 'Listen', 'Listen, as this browser plays audio'],
+  ['watch:media', 'Watch', 'Watch, as this browser plays video'],
+  ['text', 'Text', 'Text'],
+  ['bytes', 'Bytes', 'Bytes'],
+];
+const READER_IDS = new Set(READERS.map((r) => r[0]));
+function allViews() { return READERS.map(([id, , label]) => ({ id, label })); }
+/* The reader a plain view id uses for a file of this name, or '' when the name gives none. */
+function nameReader(base, name) {
+  const x = extOf(name), tif = x === 'tif' || x === 'tiff' || x === 'geotiff';
+  switch (base) {
+    case 'map': return x === 'gpkg' ? 'gpkg' : x === 'geojson' ? 'geojson' : tif ? 'tiff' : '';
+    case 'table': return x === 'csv' || x === 'tsv' || x === 'parquet' || x === 'geojson' ? x : '';
+    case 'tables': return 'sqlite';
+    case 'picture': return tif ? 'tiff' : 'image';
+    case 'code': return x === 'r' ? 'r' : 'c';
+    case 'formatted': return 'md';
+    case 'contents': return 'pickle';
+    case 'listen': case 'watch': return 'media';
+    default: return '';
+  }
+}
+function resolve(id, name) {
+  id = String(id);
+  if (id === 'text' || id === 'bytes' || READER_IDS.has(id)) return id;
+  if (!LABELS[id]) return null;
+  const r = nameReader(id, name);
+  return r ? `${id}:${r}` : null;
+}
+function labelOf(id) {
+  if (LABELS[id]) return LABELS[id];
+  const r = READERS.find((x) => x[0] === id);
+  return r ? r[1] : String(id);
+}
+
+/* ---------- the open viewer: one at a time ---------- */
+let cur = null, curOpts = {}, curTabs = [], curView = null, curHost = null, curExtra = new Map(), settings = {};
+let viewTok = 0, cleanup = null, redrawHook = null, pendingRange = null, themed = false;
+const live = (tok) => tok === viewTok;
+const saveSettings = () => { if (curOpts.onSettingsChange) { try { curOpts.onSettingsChange(settings); } catch (err) { /* the page's own business */ } } };
+function failNote(e, why) {
+  const also = curTabs.some((t) => t.id === 'text') ? 'The Text and Bytes views still show everything in the file.' : 'The Bytes view still shows every byte in the file.';
+  return `<div class="bf-fail" role="note"><p><span class="mark">This view can’t be shown.</span> ${esc(why)}</p><p class="also">${also}</p></div>`;
+}
+const tabIdOf = (v) => 'bf-tab-' + String(v).replace(/[^A-Za-z0-9_-]/g, '-');
+const BUILT = new WeakSet();
+function skeleton(host) {
+  if (BUILT.has(host) && host.querySelector('#bf-panel')) return;
+  BUILT.add(host);
+  host.innerHTML = `
+      <div class="bf-head">
+        <h3 class="bf-name" id="bf-name" tabindex="-1"></h3>
+        <span class="bf-size" id="bf-size"></span>
+      </div>
+      <div class="bf-tabs" role="tablist" aria-label="Views of this file" id="bf-tabs"></div>
+      <div class="bf-panel" role="tabpanel" id="bf-panel" tabindex="0"></div>
+    ${$('bf-status') ? '' : '<p class="sr" role="status" id="bf-status"></p>'}`;
+  const tabs = host.querySelector('#bf-tabs');
+  tabs.addEventListener('click', (ev) => { const t = ev.target.closest('[role=tab]'); if (t && host === curHost) showView(t.dataset.v); });
+  tabs.addEventListener('keydown', (ev) => { // arrow keys move along the tabs and open each one
+    const all = [...tabs.querySelectorAll('[role=tab]')], i = all.indexOf(document.activeElement);
+    if (i < 0 || host !== curHost) return;
+    const j = { ArrowRight: i + 1, ArrowLeft: i - 1, Home: 0, End: all.length - 1 }[ev.key];
+    if (j === undefined) return;
+    ev.preventDefault();
+    const t = all[(j + all.length) % all.length];
+    t.focus(); showView(t.dataset.v);
+  });
+}
+function themeFollow() { // the map follows the light or dark theme
+  if (themed) return;
+  themed = true;
+  const redraw = () => { if (redrawHook) redrawHook(); };
+  try { matchMedia('(prefers-color-scheme: dark)').addEventListener('change', redraw); } catch (err) { /* older browsers */ }
+  if (window.MutationObserver) new MutationObserver(redraw).observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
+}
+function open(host, e, opts) {
+  opts = opts || {};
+  themeFollow();
+  stopView();
+  cur = e; curOpts = opts; curHost = host; settings = opts.settings || {};
+  curExtra = new Map((opts.extraViews || []).filter((x) => x && x.id && typeof x.render === 'function').map((x) => [String(x.id), x]));
+  const want = opts.views ? [...opts.views] : [...viewsFor(e.name), ...curExtra.keys()];
+  curTabs = [];
+  const seen = new Set();
+  for (const raw of want) {
+    const id = String(raw), key = curExtra.has(id) ? 'extra:' + id : resolve(id, e.name);
+    if (!key || seen.has(key)) continue;
+    seen.add(key);
+    curTabs.push({ id, key, label: curExtra.has(id) ? String(curExtra.get(id).label || id) : labelOf(id) });
+  }
+  skeleton(host);
+  $('bf-name').textContent = e.name;
+  $('bf-size').textContent = plural(bytesOf(e).length, 'byte');
+  // scrolling and focus come before the view is drawn, so the page doesn't jump while it loads
+  if (opts.scrollTo && opts.scrollTo.scrollIntoView) opts.scrollTo.scrollIntoView({ block: 'start' });
+  if (opts.focus) $('bf-name').focus({ preventScroll: true });
+  let view = curTabs.find((t) => t.id === opts.initialView) || (opts.initialView != null && curTabs.find((t) => t.key === resolve(opts.initialView, e.name))) || curTabs[0];
+  $('bf-tabs').innerHTML = curTabs.map((t) => `<button type="button" role="tab" class="bf-tab" id="${esc(tabIdOf(t.id))}" data-v="${esc(t.id)}" aria-controls="bf-panel" aria-selected="false" tabindex="-1">${esc(t.label)}</button>`).join('');
+  if (view) { showView(view.id); announce(`Opened ${e.name}, ${view.label} view.`); }
+  else $('bf-panel').innerHTML = '';
+  return handle(host, e);
+}
+function handle(host, e) {
+  const mine = () => cur === e && curHost === host;
+  return {
+    entry: e,
+    view: () => (mine() ? curView : null),
+    views: () => (mine() ? curTabs.map((t) => t.id) : []),
+    show: (v) => { if (mine()) showView(String(v)); },
+    jumpToBytes: (a, b) => { if (mine()) jumpToBytes(a, b); },
+    close: () => { if (!mine()) return; stopView(); viewTok++; cur = null; curHost = null; curTabs = []; curView = null; host.innerHTML = ''; BUILT.delete(host); },
+  };
+}
+function stopView() {
+  if (cleanup) { try { cleanup(); } catch (err) { /* nothing to undo */ } cleanup = null; }
+  redrawHook = null;
+}
+function showView(v) {
+  const e = cur, tab = curTabs.find((t) => t.id === v);
+  if (!e || !tab) return;
+  curView = v;
+  const tabs = $('bf-tabs');
+  tabs.querySelectorAll('[role=tab]').forEach((t) => { const on = t.dataset.v === v; t.setAttribute('aria-selected', String(on)); t.tabIndex = on ? 0 : -1; });
+  const panel = $('bf-panel');
+  panel.setAttribute('aria-labelledby', tabIdOf(v));
+  stopView();
+  panel.innerHTML = '';
+  if (curOpts.onViewChange) { try { curOpts.onViewChange(v, e); } catch (err) { /* the page's own business */ } }
+  const tok = ++viewTok;
+  const failed = (err) => { if (tok === viewTok) panel.innerHTML = failNote(e, reasonOf(err)); };
+  try {
+    let run;
+    if (tab.key.startsWith('extra:')) run = curExtra.get(v).render(panel, e, apiFor(e, tok));
+    else { const [base, fmt] = tab.key.split(':'); run = RENDER[base](e, panel, tok, fmt); }
+    if (run && run.catch) run.catch(failed);
+  } catch (err) { failed(err); }
+}
+function jumpToBytes(a, b) {
+  const N = bytesOf(cur).length;
+  a = Math.floor(Number(a)); b = Math.floor(Number(b));
+  if (!isFinite(a) || !N) return;
+  a = Math.max(0, Math.min(N - 1, a));
+  b = isFinite(b) ? Math.max(a + 1, Math.min(N, b)) : a + 1;
+  let t = curTabs.find((x) => x.id === 'bytes');
+  if (!t) { // a page that left the Bytes tab out still gets one to jump to
+    t = { id: 'bytes', key: 'bytes', label: 'Bytes' };
+    curTabs.push(t);
+    $('bf-tabs').insertAdjacentHTML('beforeend', `<button type="button" role="tab" class="bf-tab" id="${tabIdOf('bytes')}" data-v="bytes" aria-controls="bf-panel" aria-selected="false" tabindex="-1">Bytes</button>`);
+  }
+  pendingRange = [a, b];
+  showView('bytes');
+}
+function apiFor(e, tok) {
+  return {
+    get bytes() { return bytesOf(e); },
+    jumpToBytes: (a, b) => { if (live(tok)) jumpToBytes(a, b); },
+    show: (v) => { if (live(tok)) showView(String(v)); },
+    live: () => live(tok),
+    onCleanup: (fn) => { if (!live(tok) || typeof fn !== 'function') return; const prev = cleanup; cleanup = prev ? () => { try { prev(); } finally { fn(); } } : fn; },
+    memo: (key, fn) => memo(e, 'page:' + key, fn),
+    memoAsync: (key, fn) => memoAsync(e, 'page:' + key, fn),
+    fail: (why) => failNote(e, String(why)),
+    tableView, esc, fmtInt, plural, hex2: HEX2,
+  };
+}
+
+/* ---------- formatting values for tables and lists ---------- */
+const NUMLIKE = /^\s*[-+]?(\d[\d,]*(\.\d*)?|\.\d+)([eE][-+]?\d+)?\s*$/;
+const NUMTYPES = new Set(['whole number', 'decimal number']);
+function valueText(v, kind, ctype) {
+  if (v === null || v === undefined) return 'NULL';
+  if (v instanceof Uint8Array) return `BLOB, ${plural(v.length, 'byte')}`;
+  if (typeof v === 'bigint') return String(v);
+  if (typeof v === 'number') {
+    if (kind && SQ.sqliteText) return SQ.sqliteText(v, kind);
+    if (ctype === 'decimal number' && Number.isInteger(v) && Math.abs(v) < 1e16) return v.toFixed(1);
+    return String(v);
+  }
+  if (typeof v === 'string') return v;
+  if (typeof v === 'boolean') return v ? 'true' : 'false';
+  if (Array.isArray(v)) return '[' + v.map((x) => (typeof x === 'string' ? JSON.stringify(x) : valueText(x, undefined, ctype))).join(', ') + ']';
+  try { return JSON.stringify(v, (k, x) => (typeof x === 'bigint' ? String(x) : x instanceof Uint8Array ? `BLOB, ${x.length} bytes` : x)); } catch (err) { return String(v); }
+}
+function hexPreview(u, n) { n = n || 16; return Array.from(u.subarray(0, n), (b) => HEX2[b]).join(' ') + (u.length > n ? ' …' : ''); }
+function cellHTML(v, kind, ctype, numStrings) {
+  if (v === null || v === undefined) return ['<span class="nul">NULL</span>', ''];
+  if (v instanceof Uint8Array) return [`<span class="blob">BLOB, ${esc(plural(v.length, 'byte'))}${v.length ? `<span class="hx">${hexPreview(v)}</span>` : ''}</span>`, ''];
+  const t = valueText(v, kind, ctype);
+  const right = typeof v === 'number' || typeof v === 'bigint' || (typeof v === 'string' && (numStrings || NUMTYPES.has(ctype)) && NUMLIKE.test(v));
+  return [esc(t), right ? 'r' : ''];
+}
+
+/* ---------- a table of rows, 200 at a time ---------- */
+/* spec: { label, columns: [{name, type}], total, rowsAt(offset, count) -> {rows, kinds}, numStrings } */
+function tableView(host, spec) {
+  const STEP = 200, cols = spec.columns;
+  let off = 0;
+  host.innerHTML = `<div class="bf-tbox" tabindex="0" role="region" aria-label="${esc(spec.label)}"><table class="bf-t">
+      <thead><tr><th class="rn" scope="col"><span class="sr">Row</span>#</th>${cols.map((c) => `<th scope="col"><div class="c">${c.name === '' ? '<span class="nul">(no name)</span>' : esc(c.name)}${c.type ? `<span class="ty">${esc(c.type)}</span>` : ''}</div></th>`).join('')}</tr></thead>
+      <tbody></tbody></table></div>
+    <div class="bf-pager"${spec.total > STEP ? '' : ' hidden'}>
+      <button type="button" class="btn small" data-a="first">First</button><button type="button" class="btn small" data-a="prev">Previous ${STEP}</button>
+      <span class="bf-count" aria-live="polite"></span>
+      <button type="button" class="btn small" data-a="next">Next ${STEP}</button><button type="button" class="btn small" data-a="last">Last</button>
+    </div>`;
+  const tbody = host.querySelector('tbody'), count = host.querySelector('.bf-count'), box = host.querySelector('.bf-tbox');
+  function page() {
+    let got;
+    try { got = spec.rowsAt(off, STEP); } catch (err) {
+      tbody.innerHTML = `<tr><td colspan="${cols.length + 1}"><div class="bf-fail"><p><span class="mark">These rows can’t be read.</span> ${esc(reasonOf(err))}</p></div></td></tr>`;
+      return;
+    }
+    const rows = got.rows, kinds = got.kinds;
+    if (!spec.total) tbody.innerHTML = `<tr><td colspan="${cols.length + 1}" class="nul">No rows.</td></tr>`;
+    else tbody.innerHTML = rows.map((r, i) => `<tr><td class="rn">${fmtInt(off + i + 1)}</td>${cols.map((c, j) => {
+      const [h, cl] = cellHTML(r[j], kinds && kinds[i] ? kinds[i][j] : undefined, c.type, spec.numStrings);
+      return cl ? `<td class="${cl}">${h}</td>` : `<td><div class="c">${h}</div></td>`;
+    }).join('')}</tr>`).join('');
+    const end = Math.min(spec.total, off + STEP);
+    count.textContent = spec.total ? `Rows ${fmtInt(off + 1)}–${fmtInt(end)} of ${fmtInt(spec.total)}` : '';
+    host.querySelector('[data-a=first]').disabled = host.querySelector('[data-a=prev]').disabled = off === 0;
+    host.querySelector('[data-a=next]').disabled = host.querySelector('[data-a=last]').disabled = end >= spec.total;
+  }
+  host.querySelector('.bf-pager').addEventListener('click', (ev) => {
+    const a = ev.target.closest('[data-a]'); if (!a) return;
+    const lastOff = Math.max(0, Math.floor((spec.total - 1) / STEP) * STEP);
+    off = { first: 0, prev: Math.max(0, off - STEP), next: Math.min(lastOff, off + STEP), last: lastOff }[a.dataset.a];
+    page(); box.scrollTop = 0;
+  });
+  page();
+}
+
+/* ---------- lines of text, with numbers, drawn a chunk at a time ---------- */
+/* o: { label, count, chunks: [[firstLine, endLine], ...], html(i) -> the inside of line i } */
+function linesBox(host, o) {
+  const wrap = settings.wrap !== false;
+  host.innerHTML = `<div class="bf-lines${wrap ? ' wrap' : ''}" tabindex="0" role="region" aria-label="${esc(o.label)}" style="--gw:${String(o.count).length}ch"></div>
+    <div class="bf-more"><span aria-live="polite"></span><button type="button" class="btn small">Show more</button></div>`;
+  const box = host.firstElementChild, more = host.lastElementChild, btn = more.querySelector('button');
+  const els = [];
+  let shown = 0;
+  function nextChunk() {
+    if (shown >= o.chunks.length) return;
+    const [a, b] = o.chunks[shown++];
+    let h = '';
+    for (let i = a; i < b; i++) h += `<div class="bf-line"><span class="bf-ln" aria-hidden="true">${i + 1}</span><span class="bf-lt">${o.html(i)}</span></div>`;
+    const d = document.createElement('div');
+    d.innerHTML = h;
+    els.push(...d.children);
+    box.appendChild(d);
+    const done = shown >= o.chunks.length;
+    btn.hidden = done;
+    more.firstElementChild.textContent = done ? `${plural(o.count, 'line')}.` : `Showing lines 1–${fmtInt(b)} of ${fmtInt(o.count)}.`;
+  }
+  btn.addEventListener('click', nextChunk);
+  if (o.chunks.length) nextChunk();
+  return {
+    box,
+    ensure(i) { while (els.length <= i && shown < o.chunks.length) nextChunk(); },
+    refresh(i) { if (i < els.length) els[i].lastElementChild.innerHTML = o.html(i); },
+    shownLines: () => els.length,
+    setWrap(on) { box.classList.toggle('wrap', on); },
+  };
+}
+function wrapToggle(id) {
+  return `<label><input type="checkbox" id="${id}"${settings.wrap !== false ? ' checked' : ''}> Wrap long lines</label>`;
+}
+function hookWrap(id, lb) {
+  $(id).addEventListener('change', () => { settings.wrap = $(id).checked; saveSettings(); lb.setWrap(settings.wrap); });
+}
+
+/* ---------- the Text view ---------- */
+/* Splits the file into lines the way a plain text viewer does (at LF, CR LF or a lone CR), keeping each piece's byte offset. */
+function textModel(e, upto) {
+  return memo(e, upto === undefined ? 'textmodel' : 'textmodel:' + upto, () => {
+    const u8 = upto === undefined ? bytesOf(e) : bytesOf(e).subarray(0, upto), runs = FM.bytesAsText(u8, 0, u8.length);
+    const lines = [];
+    let segs = [], str = '', start = 0, off = 0, crAtEnd = false;
+    const add = (s, odd) => { segs.push([s, odd, off]); str += s; off += odd ? s.length : utf8Len(s); };
+    for (const r of runs) {
+      const s = String(r.s);
+      if (!s) continue;
+      if (r.odd) { add(s, true); crAtEnd = false; continue; }
+      const re = /\r\n|\r|\n/g;
+      let p = 0, m;
+      if (crAtEnd && s[0] === '\n') { off += 1; p = 1; re.lastIndex = 1; lines[lines.length - 1].brk += 1; } // a CR LF split between two runs
+      crAtEnd = false;
+      while ((m = re.exec(s))) {
+        if (m.index > p) add(s.slice(p, m.index), false);
+        off += m[0].length;
+        lines.push({ segs, str, start, brk: m[0].length });
+        segs = []; str = ''; start = off; p = m.index + m[0].length;
+        crAtEnd = m[0] === '\r' && p === s.length;
+      }
+      if (p < s.length) add(s.slice(p), false);
+    }
+    if (segs.length || !lines.length) lines.push({ segs, str, start, brk: 0 });
+    const offsetsOk = off === u8.length;
+    const chunks = []; // up to 64 KB of the file per chunk, or fewer bytes when many of them aren't text, always ending at the end of a line
+    for (let a = 0, i = 0, odd = 0; i < lines.length; i++) {
+      const end = i + 1 < lines.length ? lines[i + 1].start : u8.length;
+      for (const g of lines[i].segs) if (g[1]) odd++;
+      if (end - lines[a].start >= 65536 || odd >= 1500 || i === lines.length - 1) { chunks.push([a, i + 1]); a = i + 1; odd = 0; }
+    }
+    return { lines, chunks, offsetsOk };
+  });
+}
+function oddTitle(u8, M, from, to) {
+  if (!M.offsetsOk) return 'Not shown as text';
+  const n = to - from, list = Array.from(u8.subarray(from, Math.min(to, from + 16)), (b) => '0x' + HEX2[b]).join(' ');
+  return (n === 1 ? 'Byte ' : 'Bytes ') + list + (n > 16 ? ` and ${fmtInt(n - 16)} more` : '');
+}
+/* The inside of one line: odd bytes dimmed, and the Find matches marked. hits are [start, end, matchNumber] in the line's text. */
+function textLineHTML(u8, M, i, hits, curK) {
+  let out = '', pos = 0, hi = 0;
+  for (const [s, odd, off] of M.lines[i].segs) {
+    let p = 0;
+    while (p < s.length) {
+      while (hi < hits.length && hits[hi][1] <= pos + p) hi++;
+      let q = s.length, k = -1;
+      if (hi < hits.length) {
+        const [a, b, mk] = hits[hi];
+        if (a <= pos + p) { k = mk; q = Math.min(q, b - pos); } else q = Math.min(q, a - pos);
+      }
+      const piece = s.slice(p, q);
+      let h = odd ? `<span class="bf-odd" data-o="${off + p}">${esc(piece)}</span>` : esc(piece);
+      if (k >= 0) h = `<mark class="bf-hit${k === curK ? ' cur' : ''}" data-m="${k}">${h}</mark>`;
+      out += h; p = q;
+    }
+    pos += s.length;
+  }
+  return out;
+}
+/* Where a limited Text view stops: at the end of a line within the last 64 KB before the limit, if there is one. */
+function textCut(u8, limit) {
+  for (let i = limit - 1; i >= Math.max(0, limit - 65536); i--) if (u8[i] === 10 || (u8[i] === 13 && u8[i + 1] !== 10)) return i + 1;
+  return limit;
+}
+function renderText(e, panel) {
+  const u8 = bytesOf(e);
+  if (!u8.length) { panel.innerHTML = '<p class="bf-info">This file is empty: it holds no bytes.</p>'; return; }
+  const lim = curOpts.textLimit, upto = lim > 0 && u8.length > lim ? textCut(u8, Math.floor(lim)) : undefined;
+  let M;
+  try { M = textModel(e, upto); } catch (err) { panel.innerHTML = `<div class="bf-fail"><p><span class="mark">The text can’t be shown.</span> ${esc(reasonOf(err))}</p><p class="also">The Bytes view still shows every byte in the file.</p></div>`; return; }
+  panel.innerHTML = `<div class="bf-tools">
+      <label for="tx-find">Find</label>
+      <span class="grp"><input type="search" id="tx-find" autocomplete="off" spellcheck="false" aria-describedby="tx-count">
+      <button type="button" class="btn small" id="tx-prev" aria-label="Previous match">Prev</button><button type="button" class="btn small" id="tx-next" aria-label="Next match">Next</button>
+      <span class="bf-count" id="tx-count" aria-live="polite"></span></span>
+      ${wrapToggle('tx-wrap')}
+    </div>
+    ${upto === undefined ? '' : `<div class="bf-info" role="note"><p>This file is ${esc(fmtInt(u8.length))} bytes long, so the Text view lays out only its first ${esc(fmtInt(upto))} bytes, and Find looks only there. The Bytes view shows every byte, with the bytes as letters in its right-hand column.</p>${typeof curOpts.onShowAllText === 'function' ? '<div class="btnrow"><button type="button" class="btn small" id="tx-all">Show all of the text (it may take a while)</button></div>' : ''}</div>`}
+    <div id="tx-host"></div>
+    <p class="bf-probe" id="tx-probe" aria-live="polite"></p>`;
+  if ($('tx-all')) $('tx-all').addEventListener('click', () => curOpts.onShowAllText('text'));
+  let hits = [], byLine = new Map(), curK = -1;
+  const lb = linesBox($('tx-host'), { label: `The text of ${e.name}`, count: M.lines.length, chunks: M.chunks, html: (i) => textLineHTML(u8, M, i, byLine.get(i) || [], curK) });
+  hookWrap('tx-wrap', lb);
+  const count = $('tx-count');
+  function setCurrent(k) {
+    lb.box.querySelectorAll('mark.bf-hit.cur').forEach((m) => m.classList.remove('cur'));
+    curK = k;
+    if (k < 0) return;
+    lb.ensure(hits[k][0]);
+    const ms = lb.box.querySelectorAll(`mark[data-m="${k}"]`);
+    ms.forEach((m) => m.classList.add('cur'));
+    if (ms.length) { // scroll the box (not the page) to the match
+      const br = lb.box.getBoundingClientRect(), mr = ms[0].getBoundingClientRect();
+      lb.box.scrollTop += mr.top - br.top - lb.box.clientHeight / 2;
+      if (mr.left < br.left + 40 || mr.right > br.right - 20) lb.box.scrollLeft += mr.left - br.left - lb.box.clientWidth / 3;
+    }
+    count.textContent = `${fmtInt(k + 1)} of ${fmtInt(hits.length)}${hits.length >= 100000 ? '+' : ''}`;
+  }
+  function find() {
+    const q = $('tx-find').value, old = byLine;
+    hits = []; byLine = new Map(); curK = -1;
+    if (q) {
+      const re = new RegExp(escRe(q), 'gi');
+      for (let i = 0; i < M.lines.length && hits.length < 100000; i++) {
+        const s = M.lines[i].str;
+        if (!s) continue;
+        re.lastIndex = 0;
+        let m;
+        while ((m = re.exec(s)) && hits.length < 100000) {
+          if (!m[0].length) { re.lastIndex++; continue; }
+          const k = hits.length;
+          hits.push([i, m.index]);
+          if (!byLine.has(i)) byLine.set(i, []);
+          byLine.get(i).push([m.index, m.index + m[0].length, k]);
+        }
+      }
+    }
+    const touched = new Set([...old.keys(), ...byLine.keys()]);
+    for (const i of touched) lb.refresh(i);
+    if (hits.length) setCurrent(0);
+    else count.textContent = q ? 'No matches' : '';
+  }
+  let ft = 0;
+  $('tx-find').addEventListener('input', () => { clearTimeout(ft); ft = setTimeout(find, 160); });
+  const step = (d) => { if (!hits.length) return; setCurrent((curK + d + hits.length) % hits.length); };
+  $('tx-find').addEventListener('keydown', (ev) => { if (ev.key === 'Enter') { ev.preventDefault(); clearTimeout(ft); if (!hits.length && $('tx-find').value) find(); else step(ev.shiftKey ? -1 : 1); } });
+  $('tx-next').addEventListener('click', () => step(1));
+  $('tx-prev').addEventListener('click', () => step(-1));
+  lb.box.addEventListener('pointerover', (ev) => { // pointing at a dimmed run gives its byte values, worked out only then
+    const sp = ev.target.closest('.bf-odd');
+    if (sp && !sp.title) { const o = +sp.dataset.o; sp.title = oddTitle(u8, M, o, o + sp.textContent.length); }
+  });
+  lb.box.addEventListener('click', (ev) => { // tapping a dimmed byte says which byte it is
+    const sp = ev.target.closest('.bf-odd'); if (!sp || !M.offsetsOk) return;
+    let k = 0;
+    const r = document.caretRangeFromPoint ? document.caretRangeFromPoint(ev.clientX, ev.clientY) : null;
+    const cp = !r && document.caretPositionFromPoint ? document.caretPositionFromPoint(ev.clientX, ev.clientY) : null;
+    const node = r ? r.startContainer : cp ? cp.offsetNode : null, at = r ? r.startOffset : cp ? cp.offset : 0;
+    if (node && sp.contains(node)) k = Math.min(Math.max(0, at - (at >= sp.textContent.length ? 1 : 0)), sp.textContent.length - 1);
+    const o = +sp.dataset.o + k, ch = sp.textContent[k];
+    $('tx-probe').textContent = `Offset ${fmtInt(o)} (0x${o.toString(16).toUpperCase()}): byte 0x${HEX2[u8[o]]}, shown as “${ch}”.`;
+  });
+}
+
+/* ---------- the Code view ---------- */
+/* Splits highlighted HTML into lines, closing and reopening the colour spans at each line break. Anything else is escaped. */
+function splitHighlighted(html) {
+  const lines = [];
+  let line = '', open = [];
+  const re = /<span class="(tk-[a-z]+)">|<\/span>|\r\n|\r|\n|&(?:amp|lt|gt|quot|#39|#\d+|#x[0-9a-fA-F]+);|[^<&\r\n]+|[<&]/g;
+  let m;
+  while ((m = re.exec(html))) {
+    const t = m[0];
+    if (m[1]) { open.push(m[1]); line += `<span class="${m[1]}">`; }
+    else if (t === '</span>') { if (open.length) { open.pop(); line += '</span>'; } }
+    else if (t === '\n' || t === '\r' || t === '\r\n') { lines.push(line + '</span>'.repeat(open.length)); line = open.map((c) => `<span class="${c}">`).join(''); }
+    else if (t === '<' || t === '&') line += esc(t);
+    else line += t;
+  }
+  lines.push(line + '</span>'.repeat(open.length));
+  if (lines.length > 1 && lines[lines.length - 1].replace(/<[^>]*>/g, '') === '') lines.pop(); // a final line break doesn't start another line
+  return lines;
+}
+function renderCode(e, panel, tok, fmt) {
+  let text;
+  try { text = strictText(e); } catch (err) { panel.innerHTML = failNote(e, reasonOf(err)); return; }
+  const lang = fmt === 'r' ? 'r' : 'c';
+  // with textLimit, a bigger file is coloured and laid out only up to about that much, as in the Text view
+  const u8 = bytesOf(e), lim = curOpts.textLimit;
+  let upto = lim > 0 && u8.length > lim ? textCut(u8, Math.floor(lim)) : undefined;
+  if (upto !== undefined) { while (upto > 0 && (u8[upto] & 0xc0) === 0x80) upto--; text = new TextDecoder('utf-8').decode(u8.subarray(0, upto)); }
+  const lines = memo(e, 'code:' + lang + (upto === undefined ? '' : ':' + upto), () => splitHighlighted(FM.highlight(text, lang)));
+  panel.innerHTML = `<div class="bf-tools">${wrapToggle('cd-wrap')}</div>${upto === undefined ? '' : `<div class="bf-info" role="note"><p>This file is ${esc(fmtInt(u8.length))} bytes long, so the Code view colours and lays out only its first ${esc(fmtInt(upto))} bytes. The Bytes view shows every byte.</p>${typeof curOpts.onShowAllText === 'function' ? '<div class="btnrow"><button type="button" class="btn small" id="cd-all">Show all of the code (it may take a while)</button></div>' : ''}</div>`}<div id="cd-host"></div>`;
+  if ($('cd-all')) $('cd-all').addEventListener('click', () => curOpts.onShowAllText('code'));
+  const chunks = [];
+  for (let a = 0; a < lines.length; a += 3000) chunks.push([a, Math.min(lines.length, a + 3000)]);
+  const lb = linesBox($('cd-host'), { label: `The code in ${e.name}`, count: lines.length, chunks, html: (i) => lines[i] });
+  hookWrap('cd-wrap', lb);
+}
+
+/* ---------- the Bytes view ---------- */
+const hexOff = (o) => '0x' + o.toString(16).toUpperCase();
+function rangeText(a, b) { // the bytes from a to b - 1
+  return b - a === 1 ? `Marked: byte ${fmtInt(a)} (${hexOff(a)}).` : `Marked: bytes ${fmtInt(a)}–${fmtInt(b - 1)} (${hexOff(a)}–${hexOff(b - 1)}), ${plural(b - a, 'byte')}.`;
+}
+function renderBytes(e, panel) {
+  const u8 = bytesOf(e), N = u8.length, ROWS = 256;
+  const range = pendingRange && pendingRange[0] < N ? pendingRange : null;
+  pendingRange = null;
+  if (!N) { panel.innerHTML = '<p class="bf-info">This file is empty: it holds no bytes.</p>'; return; }
+  const D = Math.max(4, (N - 1).toString(16).length);
+  const pager = (w) => `<div class="bf-pager" data-w="${w}">
+      <button type="button" class="btn small" data-a="first">First</button><button type="button" class="btn small" data-a="prev">Previous</button>
+      <span class="bf-count"${w === 'top' ? ' aria-live="polite"' : ''}></span>
+      <button type="button" class="btn small" data-a="next">Next</button><button type="button" class="btn small" data-a="last">Last</button></div>`;
+  panel.innerHTML = `<div id="bx-root"><div class="bf-tools"><label for="bx-go">Go to offset</label><span class="grp"><input type="text" id="bx-go" autocomplete="off" spellcheck="false" placeholder="4096 or 0x1000" aria-describedby="bx-err"><button type="button" class="btn small" id="bx-gob">Go</button></span></div>
+    <p class="bf-err" id="bx-err" role="alert"></p>${range ? `
+    <p class="bf-hl" id="bx-hl"><span>${esc(rangeText(range[0], range[1]))}</span> <button type="button" class="btn small" id="bx-hlx">Clear the marking</button></p>` : ''}
+    ${pager('top')}
+    <div class="bf-hexbox" tabindex="0" role="region" aria-label="The bytes of ${esc(e.name)}"><pre class="bf-hex" id="bx-pre"></pre></div>
+    ${pager('bottom')}</div>`;
+  const box = panel.querySelector('.bf-hexbox'), pre = $('bx-pre');
+  let per = 16, page = 0, mark = range ? range[0] : -1, rs = range ? range[0] : -1, re = range ? range[1] : -1;
+  const pages = () => Math.ceil(N / (per * ROWS));
+  function chooseWidth() { // 16 bytes a row when they fit, else 8
+    const probe = document.createElement('span'); probe.textContent = '0'.repeat(20); pre.appendChild(probe);
+    const cw = probe.getBoundingClientRect().width / 20; probe.remove();
+    const need = (D + 2 + 16 * 3 + 1 + 1 + 16) * cw + 22;
+    return box.clientWidth >= need ? 16 : 8;
+  }
+  function draw() {
+    const first = page * per * ROWS, last = Math.min(N, first + per * ROWS);
+    let h = `<span class="hd">${' '.repeat(D)}  ${Array.from({ length: per }, (_, i) => HEX2[i]).join(' ').replace(per === 16 ? /^((?:\S\S ){8})/ : /^$/, '$1 ')}  Text</span>\n`;
+    for (let r = first; r < last; r += per) {
+      let hx = '', tx = '', inR = false;
+      for (let i = 0; i < per; i++) {
+        const o = r + i;
+        if (per === 16 && i === 8) hx += ' ';
+        if (o >= N) { hx += '   '; continue; }
+        const b = u8[o], c = b >= 0x20 && b < 0x7f ? esc(String.fromCharCode(b)) : '<span class="d">·</span>';
+        if (!inR && o >= rs && o < re) { hx += '<span class="rg">'; tx += '<span class="rg">'; inR = true; } // a marked range, one run per row
+        if (o === mark) { hx += `<span class="at">${HEX2[b]}</span>`; tx += `<span class="at">${c}</span>`; } else { hx += HEX2[b]; tx += c; }
+        if (inR && !(o + 1 < re && o + 1 < N && i + 1 < per)) { hx += '</span>'; tx += '</span>'; inR = false; }
+        hx += ' ';
+      }
+      h += `<span class="o">${r.toString(16).toUpperCase().padStart(D, '0')}</span>  ${hx} ${tx}\n`;
+    }
+    pre.innerHTML = h;
+    const msg = `Bytes ${fmtInt(first)}–${fmtInt(last - 1)} of ${fmtInt(N)} · page ${fmtInt(page + 1)} of ${fmtInt(pages())}`;
+    panel.querySelectorAll('.bf-pager').forEach((p) => {
+      p.hidden = pages() < 2 && p.dataset.w === 'bottom';
+      p.querySelector('.bf-count').textContent = msg;
+      p.querySelector('[data-a=first]').disabled = p.querySelector('[data-a=prev]').disabled = page === 0;
+      p.querySelector('[data-a=next]').disabled = p.querySelector('[data-a=last]').disabled = page >= pages() - 1;
+    });
+  }
+  $('bx-root').addEventListener('click', (ev) => {
+    const a = ev.target.closest('.bf-pager [data-a]'); if (!a) return;
+    page = { first: 0, prev: Math.max(0, page - 1), next: Math.min(pages() - 1, page + 1), last: pages() - 1 }[a.dataset.a];
+    draw();
+    if (a.closest('[data-w=bottom]')) box.scrollIntoView({ block: 'start' });
+  });
+  function go() {
+    const t = $('bx-go').value.trim().replace(/[\s_,]/g, '');
+    let o = NaN;
+    if (/^0x[0-9a-f]+$/i.test(t)) o = parseInt(t.slice(2), 16); else if (/^\d+$/.test(t)) o = parseInt(t, 10);
+    if (!t) { $('bx-err').textContent = ''; return; }
+    if (!Number.isSafeInteger(o)) { $('bx-err').textContent = 'Type an offset as a whole number, like 4096, or in hexadecimal starting with 0x, like 0x1000.'; return; }
+    if (o >= N) { $('bx-err').textContent = `That is past the end: the file is ${plural(N, 'byte')} long, so the last offset is ${fmtInt(N - 1)} (0x${(N - 1).toString(16).toUpperCase()}).`; return; }
+    $('bx-err').textContent = '';
+    mark = o; page = Math.floor(o / (per * ROWS)); draw();
+    const at = pre.querySelector('.at');
+    if (at) { const br = box.getBoundingClientRect(), ar = at.getBoundingClientRect(); if (ar.top < 0 || ar.bottom > innerHeight) at.scrollIntoView({ block: 'center' }); void br; }
+    announce(`Offset ${fmtInt(o)} (0x${o.toString(16).toUpperCase()}) holds byte 0x${HEX2[u8[o]]}.`);
+  }
+  $('bx-gob').addEventListener('click', go);
+  $('bx-go').addEventListener('keydown', (ev) => { if (ev.key === 'Enter') { ev.preventDefault(); go(); } });
+  per = chooseWidth();
+  if (range) page = Math.floor(mark / (per * ROWS));
+  draw();
+  if (range) {
+    box.focus({ preventScroll: true });
+    const at = pre.querySelector('.at');
+    if (at) { const ar = at.getBoundingClientRect(); if (ar.top < 0 || ar.bottom > innerHeight) at.scrollIntoView({ block: 'center' }); }
+    announce(rangeText(range[0], range[1]));
+    $('bx-hlx').addEventListener('click', () => { rs = re = mark = -1; $('bx-hl').remove(); draw(); box.focus({ preventScroll: true }); });
+  }
+  const ro = new ResizeObserver(() => {
+    const p = chooseWidth();
+    if (p !== per) { const first = page * per * ROWS, onPage = mark >= first && mark < first + per * ROWS; per = p; page = Math.floor((onPage ? mark : first) / (per * ROWS)); draw(); }
+  });
+  ro.observe(box);
+  cleanup = () => ro.disconnect();
+}
+
+/* ---------- the Table view ---------- */
+async function renderTable(e, panel, tok, fmt) {
+  const x = fmt;
+  if (x === 'csv' || x === 'tsv') {
+    let rows;
+    try { rows = memo(e, x === 'tsv' ? 'tsv' : 'csv', () => FM.csvParse(strictText(e), x === 'tsv' ? '\t' : ',')); } catch (err) { panel.innerHTML = failNote(e, reasonOf(err)); return; }
+    if (!rows.length) { panel.innerHTML = '<p class="bf-info">The file has no rows.</p>'; return; }
+    const width = rows.reduce((m, r) => Math.max(m, r.length), 0);
+    const head = rows[0], body = rows.slice(1);
+    const columns = Array.from({ length: width }, (_, j) => ({ name: j < head.length ? head[j] : '' }));
+    panel.innerHTML = `<p class="bf-meta">${plural(body.length, 'row')} below the header row, ${plural(width, 'column')}.</p><div id="tb-host"></div>`;
+    tableView($('tb-host'), { label: `The table in ${e.name}`, columns, total: body.length, numStrings: true,

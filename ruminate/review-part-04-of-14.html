@@ -1,0 +1,1119 @@
+<!-- Review copy: lines 896-2013 of ruminate/index.html, split so Copilot can review it. Not served. -->
+(() => {
+'use strict';
+
+/* ---------- the readers, each in its own scope so their helper names can't collide ---------- */
+const SQ = (() => {
+/* ---------- SQLite files: a read-only reader written from SQLite's published file-format description ---------- */
+/* Everything here is plain functions, so the page can inline it and tests can load it on their own.
+   It reads tables the way SQLite itself does. */
+
+function sqFail(msg) { throw new Error(msg); }
+
+/* Reads a 4-byte big-endian whole number. */
+function sqBe32(p, o) { return ((p[o] << 24) | (p[o + 1] << 16) | (p[o + 2] << 8) | p[o + 3]) >>> 0; }
+
+/* Turns a 64-bit BigInt into a Number when that loses nothing. */
+function sqSmall(w) { return (w >= -9007199254740991n && w <= 9007199254740991n) ? Number(w) : w; }
+
+/* Reads one of SQLite's variable-length numbers (1 to 9 bytes) at p[o], which must end before lim.
+   Returns the number (a BigInt when it is too big for a Number) and leaves the next offset in sqPos. */
+let sqPos = 0;
+function sqVarint(p, o, lim, what) {
+  let v = 0;
+  for (let i = 0; i < 7; i++) { // seven bytes hold 49 bits, which a Number holds exactly
+    if (o + i >= lim) sqFail(`${what} runs past the end of the space it belongs in.`);
+    const b = p[o + i];
+    v = v * 128 + (b & 127);
+    if (b < 128) { sqPos = o + i + 1; return v; }
+  }
+  let w = BigInt(v);
+  for (let i = 7; ; i++) {
+    if (o + i >= lim) sqFail(`${what} runs past the end of the space it belongs in.`);
+    const b = p[o + i];
+    if (i === 8) { w = (w << 8n) | BigInt(b); sqPos = o + 9; break; } // the ninth byte gives all eight of its bits
+    w = (w << 7n) | BigInt(b & 127);
+    if (b < 128) { sqPos = o + i + 1; break; }
+  }
+  return sqSmall(BigInt.asIntN(64, w));
+}
+
+/* ---------- reading the CREATE statements kept in the file ---------- */
+
+/* Splits SQL text into tokens: words, quoted names, strings, numbers, blob literals and single punctuation marks.
+   Each token keeps where it starts (s) and ends (e) in the text. Comments and spaces are dropped. */
+function sqTokens(sql) {
+  const out = [], n = sql.length;
+  let i = 0;
+  while (i < n) {
+    const c = sql[i];
+    if (c === ' ' || c === '\t' || c === '\n' || c === '\r' || c === '\f' || c === '\v') { i++; continue; }
+    if (c === '-' && sql[i + 1] === '-') { const e = sql.indexOf('\n', i); i = e < 0 ? n : e + 1; continue; }
+    if (c === '/' && sql[i + 1] === '*') { const e = sql.indexOf('*/', i + 2); i = e < 0 ? n : e + 2; continue; }
+    const s = i;
+    if ((c === 'x' || c === 'X') && sql[i + 1] === "'") {
+      const e = sql.indexOf("'", i + 2), hex = sql.slice(i + 2, e < 0 ? n : e);
+      i = e < 0 ? n : e + 1;
+      out.push({ t: 'blob', v: hex, s, e: i });
+      continue;
+    }
+    if (c === "'" || c === '"' || c === '`' || c === '[') {
+      const close = c === '[' ? ']' : c;
+      let v = '';
+      i++;
+      while (i < n) {
+        if (sql[i] === close) {
+          if (close !== ']' && sql[i + 1] === close) { v += close; i += 2; continue; } // a doubled quote stands for one
+          i++; break;
+        }
+        v += sql[i++];
+      }
+      out.push({ t: c === "'" ? 'str' : 'id', v, s, e: i });
+      continue;
+    }
+    if ((c >= '0' && c <= '9') || (c === '.' && sql[i + 1] >= '0' && sql[i + 1] <= '9')) {
+      const m = /^(0[xX][0-9a-fA-F]+|(\d+(\.\d*)?|\.\d+)([eE][+-]?\d+)?)/.exec(sql.slice(i, i + 400));
+      i += m[0].length;
+      out.push({ t: 'num', v: m[0], s, e: i });
+      continue;
+    }
+    if (/[A-Za-z_\u0080-￿]/.test(c)) {
+      i++;
+      while (i < n && /[\w$\u0080-￿]/.test(sql[i])) i++;
+      const v = sql.slice(s, i);
+      out.push({ t: 'word', v, u: v.toUpperCase(), s, e: i });
+      continue;
+    }
+    out.push({ t: 'op', v: c, s, e: i + 1 });
+    i++;
+  }
+  return out;
+}
+
+/* Finds the token that closes the bracket opened at tk[i]. Returns its index, or tk.length if it is never closed. */
+function sqClose(tk, i) {
+  let d = 0;
+  for (let j = i; j < tk.length; j++) {
+    if (tk[j].t !== 'op') continue;
+    if (tk[j].v === '(') d++;
+    else if (tk[j].v === ')' && --d === 0) return j;
+  }
+  return tk.length;
+}
+
+/* Splits tokens at commas that are not inside brackets. */
+function sqSplit(tk) {
+  const parts = [[]];
+  let d = 0;
+  for (const t of tk) {
+    if (t.t === 'op' && t.v === '(') d++;
+    if (t.t === 'op' && t.v === ')') d--;
+    if (t.t === 'op' && t.v === ',' && d === 0) { parts.push([]); continue; }
+    parts[parts.length - 1].push(t);
+  }
+  return parts;
+}
+
+/* The affinity SQLite gives a column from its declared type, by the rules in SQLite's documentation. */
+function sqAffinityOf(type) {
+  const u = String(type || '').toUpperCase();
+  if (u.includes('INT')) return 'integer';
+  if (u.includes('CHAR') || u.includes('CLOB') || u.includes('TEXT')) return 'text';
+  if (u.includes('BLOB') || u.trim() === '') return 'blob';
+  if (u.includes('REAL') || u.includes('FLOA') || u.includes('DOUB')) return 'real';
+  return 'numeric';
+}
+
+/* Reads a whole-number literal (decimal or 0x hex) as a 64-bit value, or returns null when it doesn't fit. */
+function sqIntLiteral(txt, neg) {
+  if (/^0[xX]/.test(txt)) {
+    if (txt.length > 18) return null;
+    const w = BigInt.asIntN(64, BigInt(txt));
+    return sqSmall(neg ? BigInt.asIntN(64, -w) : w);
+  }
+  let w = BigInt(txt);
+  if (neg) w = -w;
+  if (w < -9223372036854775808n || w > 9223372036854775807n) return null;
+  return sqSmall(w);
+}
+
+/* Works out a DEFAULT value given as a literal: a number (with any signs in front), a string, a blob, NULL, TRUE or FALSE.
+   Returns {v, k} with k one of 'null', 'integer', 'real', 'text', 'blob', or null when the default isn't a plain literal. */
+function sqLiteral(toks) {
+  let i = 0, neg = false, signed = false;
+  while (i < toks.length && toks[i].t === 'op' && (toks[i].v === '-' || toks[i].v === '+')) { if (toks[i].v === '-') neg = !neg; signed = true; i++; }
+  if (i !== toks.length - 1) return null;
+  const t = toks[i];
+  if (t.t === 'num') {
+    if (/^(0[xX][0-9a-fA-F]+|\d+)$/.test(t.v)) {
+      const v = sqIntLiteral(t.v, neg);
+      if (v !== null) return { v, k: 'integer' };
+      if (/^0[xX]/.test(t.v)) return null;
+    }
+    const r = parseFloat(t.v);
+    return { v: neg ? -r : r, k: 'real' };
+  }
+  if (signed) return null;
+  if (t.t === 'str' || t.t === 'id') return { v: t.v, k: 'text' };
+  if (t.t === 'blob') {
+    if (t.v.length % 2 || /[^0-9a-fA-F]/.test(t.v)) return null;
+    const b = new Uint8Array(t.v.length / 2);
+    for (let j = 0; j < b.length; j++) b[j] = parseInt(t.v.substr(2 * j, 2), 16);
+    return { v: b, k: 'blob' };
+  }
+  if (t.t === 'word') {
+    if (t.u === 'NULL') return { v: null, k: 'null' };
+    if (t.u === 'TRUE') return { v: 1, k: 'integer' };
+    if (t.u === 'FALSE') return { v: 0, k: 'integer' };
+    if (t.u.startsWith('CURRENT_')) return null; // these depend on the clock when a row is added
+    return { v: t.v, k: 'text' }; // SQLite takes a bare word after DEFAULT as a string
+  }
+  return null;
+}
+
+/* Text SQLite would write for a real number when it has to turn one into text ("%!.15g"). */
+function sqRealText(r) {
+  if (!isFinite(r)) return isNaN(r) ? '' : (r > 0 ? 'Inf' : '-Inf');
+  const [m, ex] = r.toExponential(14).split('e');
+  const e = parseInt(ex, 10);
+  let digits = m.replace('-', '').replace('.', '').replace(/0+$/, '') || '0';
+  const sign = r < 0 || Object.is(r, -0) ? '-' : '';
+  if (e < -4 || e >= 15) return sign + digits[0] + '.' + (digits.slice(1) || '0') + 'e' + (e < 0 ? '-' : '+') + String(Math.abs(e)).padStart(2, '0');
+  if (e < 0) return sign + '0.' + '0'.repeat(-e - 1) + digits;
+  if (digits.length <= e + 1) return sign + digits.padEnd(e + 1, '0') + '.0';
+  return sign + digits.slice(0, e + 1) + '.' + digits.slice(e + 1);
+}
+
+/* Reads text as a number the way SQLite's numeric affinity does, or returns null if it isn't a well-formed number. */
+function sqTextNumber(s) {
+  const t = s.trim();
+  if (!/^[+-]?(\d+(\.\d*)?|\.\d+)([eE][+-]?\d+)?$/.test(t)) return null;
+  if (/^[+-]?\d+$/.test(t)) {
+    const v = sqIntLiteral(t.replace(/^[+-]/, ''), t[0] === '-');
+    if (v !== null) return { v, k: 'integer' };
+  }
+  return { v: parseFloat(t), k: 'real' };
+}
+
+/* Applies a column's affinity to a default value, as SQLite does when a row lacks that column. */
+function sqApplyAffinity(val, aff) {
+  if (!val || val.k === 'null' || val.k === 'blob' || aff === 'blob') return val;
+  let { v, k } = val;
+  if (aff === 'text') {
+    if (k === 'integer') return { v: String(v), k: 'text' };
+    if (k === 'real') return { v: sqRealText(v), k: 'text' };
+    return val;
+  }
+  if (k === 'text') { const n = sqTextNumber(v); if (!n) return val; ({ v, k } = n); }
+  if (k === 'real' && Number.isInteger(v) && v > -9223372036854775808 && v < 9223372036854775807) { v = sqSmall(BigInt(v)); k = 'integer'; }
+  if (k === 'integer' && aff === 'real') { v = Number(v); k = 'real'; }
+  return { v, k };
+}
+
+/* Reads a CREATE TABLE statement. Returns {cols: [{name, type, aff, pk, pkDesc, gen, dflt}], pk: [column names],
+   withoutRowid}, or throws if the statement can't be understood. */
+function sqParseTable(sql) {
+  const tk = sqTokens(sql);
+  const open = tk.findIndex((t) => t.t === 'op' && t.v === '(');
+  if (open < 0) sqFail('it has no list of columns');
+  const close = sqClose(tk, open);
+  if (close >= tk.length) sqFail('its list of columns is never closed');
+  const after = tk.slice(close + 1);
+  const withoutRowid = after.some((t, i) => t.t === 'word' && t.u === 'WITHOUT' && after[i + 1] && after[i + 1].u === 'ROWID');
+  const cols = [], pk = [];
+  const STOP = new Set(['CONSTRAINT', 'PRIMARY', 'NOT', 'NULL', 'UNIQUE', 'CHECK', 'DEFAULT', 'COLLATE', 'REFERENCES', 'GENERATED', 'AS']);
+  const TABLE_CONS = new Set(['CONSTRAINT', 'PRIMARY', 'UNIQUE', 'CHECK', 'FOREIGN']);
+  for (const el of sqSplit(tk.slice(open + 1, close))) {
+    if (!el.length) sqFail('its list of columns has an empty entry');
+    if (el[0].t === 'word' && TABLE_CONS.has(el[0].u)) { // a constraint on the whole table: only PRIMARY KEY (...) matters here
+      for (let i = 0; i < el.length; i++) {
+        if (el[i].t === 'word' && el[i].u === 'PRIMARY' && el[i + 1] && el[i + 1].u === 'KEY' && el[i + 2] && el[i + 2].v === '(') {
+          const end = sqClose(el, i + 2);
+          for (const item of sqSplit(el.slice(i + 3, end))) if (item.length) pk.push(item[0].v);
+          break;
+        }
+      }
+      continue;
+    }
+    if (!['word', 'id', 'str'].includes(el[0].t)) sqFail('a column has no name');
+    const col = { name: el[0].v, type: '', aff: 'blob', pk: false, pkDesc: false, gen: null, dflt: null };
+    let i = 1;
+    const ts = i;
+    while (i < el.length && (el[i].t === 'id' || el[i].t === 'str' || (el[i].t === 'word' && !STOP.has(el[i].u)))) i++;
+    if (i > ts && el[i] && el[i].t === 'op' && el[i].v === '(') i = sqClose(el, i) + 1;
+    if (i > ts) col.type = (i - ts === 1 && el[ts].t !== 'word') ? el[ts].v : sql.slice(el[ts].s, el[Math.min(i, el.length) - 1].e);
+    col.aff = sqAffinityOf(col.type);
+    for (; i < el.length; i++) {
+      const t = el[i];
+      if (t.t === 'op' && t.v === '(') { i = sqClose(el, i); continue; }
+      if (t.t !== 'word') continue;
+      if (t.u === 'PRIMARY' && el[i + 1] && el[i + 1].u === 'KEY') {
+        col.pk = true; i++;
+        if (el[i + 1] && el[i + 1].u === 'DESC') col.pkDesc = true;
+      } else if (t.u === 'DEFAULT' && el[i + 1]) {
+        let j = i + 1;
+        if (el[j].t === 'op' && el[j].v === '(') {
+          const end = sqClose(el, j);
+          col.dflt = sqLiteral(el.slice(j + 1, end));
+          i = end;
+        } else {
+          while (j < el.length && el[j].t === 'op' && (el[j].v === '-' || el[j].v === '+')) j++;
+          col.dflt = sqLiteral(el.slice(i + 1, j + 1));
+          i = j;
+        }
+      } else if (t.u === 'AS' && el[i + 1] && el[i + 1].v === '(') {
+        const end = sqClose(el, i + 1), nx = el[end + 1];
+        col.gen = nx && nx.t === 'word' && nx.u === 'STORED' ? 'stored' : 'virtual';
+        i = end;
+      }
+    }
+    if (col.pk) pk.push(col.name);
+    cols.push(col);
+  }
+  if (!cols.length) sqFail('it has no columns');
+  for (const c of cols) if (c.dflt) c.dflt = sqApplyAffinity(c.dflt, c.aff);
+  return { cols, pk, withoutRowid };
+}
+
+/* Reads a CREATE INDEX statement. Returns {table, items: [name or expression text]}. */
+function sqParseIndex(sql) {
+  const tk = sqTokens(sql);
+  const on = tk.findIndex((t) => t.t === 'word' && t.u === 'ON');
+  const open = tk.findIndex((t, i) => i > on && t.t === 'op' && t.v === '(');
+  if (on < 0 || open < 0) sqFail('it names no table or no columns');
+  const items = sqSplit(tk.slice(open + 1, sqClose(tk, open))).map((it) => {
+    let n = it.length;
+    while (n > 1 && it[n - 1].t === 'word' && (it[n - 1].u === 'ASC' || it[n - 1].u === 'DESC')) n--;
+    if (n > 2 && it[n - 2].t === 'word' && it[n - 2].u === 'COLLATE') n -= 2;
+    if (n === 1) return it[0].v;
+    return n ? sql.slice(it[0].s, it[n - 1].e) : '';
+  });
+  return { table: tk[on + 1] ? tk[on + 1].v : '', items };
+}
+
+/* Reads the arguments of CREATE VIRTUAL TABLE ... USING module(...) and keeps those that look like column names. */
+function sqParseVirtual(sql) {
+  const tk = sqTokens(sql);
+  const open = tk.findIndex((t) => t.t === 'op' && t.v === '(');
+  if (open < 0) return [];
+  return sqSplit(tk.slice(open + 1, sqClose(tk, open)))
+    .filter((a) => a.length && ['word', 'id', 'str'].includes(a[0].t) && !a.some((t) => t.t === 'op' && t.v === '='))
+    .map((a) => a[0].v);
+}
+
+/* ---------- the reader ---------- */
+
+/* Opens an SQLite database held in a Uint8Array. Returns db with schema(), columns(name) and read(name, opts),
+   or throws an Error whose message says in plain words why the file can't be read. */
+function sqliteOpen(u8) {
+  if (!(u8 instanceof Uint8Array)) sqFail('There is no file to read.');
+  const len = u8.length;
+  let pageSize = 4096, usable = 4096, nPages = 0, enc = 'utf-8';
+  if (len > 0) { // an empty file is an empty database to SQLite
+    if (len < 100) sqFail(`The file is only ${len} bytes long, and an SQLite database begins with a 100-byte header.`);
+    const MAGIC = 'SQLite format 3\u0000';
+    for (let i = 0; i < 16; i++) {
+      if (u8[i] !== MAGIC.charCodeAt(i)) sqFail('The file doesn’t begin with the words “SQLite format 3”, as every SQLite database does, so it can’t be read as one. (SQLite itself says “file is not a database”.)');
+    }
+    const scrambled = (what) => sqFail(`The file begins like an SQLite database, but ${what}, so the rest of it can’t be read. A database looks like this when it has been encrypted or damaged. (SQLite itself says “file is not a database”.)`);
+    const ps = (u8[16] << 8) | u8[17];
+    pageSize = ps === 1 ? 65536 : ps;
+    if (pageSize < 512 || pageSize > 65536 || (pageSize & (pageSize - 1))) scrambled(`its header gives the page size as ${ps}, where SQLite only uses powers of two from 512 to 65536`);
+    if (u8[21] !== 64 || u8[22] !== 32 || u8[23] !== 32) scrambled(`bytes 21 to 23 of its header are ${u8[21]}, ${u8[22]} and ${u8[23]}, where SQLite always writes 64, 32 and 32`);
+    if (u8[18] === 0 || u8[19] === 0) scrambled('its header gives a file-format version of 0, which SQLite never writes');
+    if (u8[19] > 2) sqFail(`The header says this database needs a reader for file-format version ${u8[19]}, and this reader knows versions 1 and 2.`);
+    usable = pageSize - u8[20];
+    if (usable < 480) scrambled(`its header sets aside ${u8[20]} bytes of every ${pageSize}-byte page, leaving too little room for data`);
+    const e = sqBe32(u8, 56);
+    if (e > 3) scrambled(`its header gives the text encoding as ${e}, where SQLite only uses 1, 2 and 3`);
+    enc = e === 2 ? 'utf-16le' : e === 3 ? 'utf-16be' : 'utf-8';
+    const nFile = Math.ceil(len / pageSize), nHead = sqBe32(u8, 28);
+    nPages = nHead > 0 && sqBe32(u8, 24) === sqBe32(u8, 92) ? nHead : nFile; // the header's count holds only while it is up to date
+    if (nPages > nFile) sqFail(`The header says the database has ${nPages} pages of ${pageSize} bytes (${nPages * pageSize} bytes in all), but the file is only ${len} bytes long, so part of it is missing.`);
+  }
+  const dec = new TextDecoder(enc, { ignoreBOM: true });
+
+  /* One page of the file, checked to be in range and all there. from says what pointed to it, for the error message. */
+  const page = (pg, from) => {
+    if (!Number.isInteger(pg) || pg < 1 || pg > nPages) sqFail(`${from} points to page ${pg}, but the database has only ${nPages} pages.`);
+    const s = (pg - 1) * pageSize;
+    if (s + pageSize > len) sqFail(`Page ${pg} should be ${pageSize} bytes long, but the file ends ${len - s} bytes into it.`);
+    return u8.subarray(s, s + pageSize);
+  };
+
+  /* One page of a b-tree: its kind, its number of entries and where their offsets are listed. */
+  const btPage = (pg, table, from) => {
+    const p = page(pg, from), h = pg === 1 ? 100 : 0, t = p[h];
+    if (table ? t !== 13 && t !== 5 : t !== 10 && t !== 2) sqFail(`Page ${pg} should hold part of ${table ? 'a table' : 'an index'}, but it isn’t marked as one (its kind byte is ${t}).`);
+    const leaf = t === 13 || t === 10, nc = (p[h + 3] << 8) | p[h + 4], ptr = h + (leaf ? 8 : 12);
+    if (ptr + 2 * nc > usable) sqFail(`Page ${pg} says it holds ${nc} entries, more than can fit on one page.`);
+    return { pg, p, leaf, nc, ptr, right: leaf ? 0 : sqBe32(p, h + 8) };
+  };
+
+  /* Where entry i starts on b-tree page b. */
+  const cellAt = (b, i) => {
+    const o = (b.p[b.ptr + 2 * i] << 8) | b.p[b.ptr + 2 * i + 1];
+    if (o < b.ptr + 2 * b.nc || o >= usable) sqFail(`Entry ${i + 1} on page ${b.pg} is placed outside the part of the page that holds entries.`);
+    return o;
+  };
+
+  /* The bytes held by the entry starting at offset o of page b, following its chain of overflow pages if it has one.
+     For a table entry, its rowid is left in cellRowid. The local and overflow sizes use the file format's formulas. */
+  let cellRowid = 0;
+  const cellPayload = (b, o, table) => {
+    const p = b.p, what = `An entry on page ${b.pg}`;
+    const P = sqVarint(p, o, usable, `The size of an entry on page ${b.pg}`);
+    o = sqPos;
+    if (typeof P !== 'number' || P < 0) sqFail(`${what} gives an impossible size.`);
+    if (table) { cellRowid = sqVarint(p, o, usable, `The rowid of an entry on page ${b.pg}`); o = sqPos; }
+    const X = table ? usable - 35 : Math.floor((usable - 12) * 64 / 255) - 23;
+    if (P <= X) {
+      if (o + P > usable) sqFail(`${what} runs past the end of the page.`);
+      return p.subarray(o, o + P);
+    }
+    const M = Math.floor((usable - 12) * 32 / 255) - 23, K = M + (P - M) % (usable - 4), local = K <= X ? K : M;
+    if (o + local + 4 > usable) sqFail(`${what} runs past the end of the page.`);
+    if (P - local > nPages * (usable - 4)) sqFail(`${what} says it holds ${P} bytes, more than the whole file could hold.`);
+    const out = new Uint8Array(P);
+    out.set(p.subarray(o, o + local));
+    let got = local, next = sqBe32(p, o + local);
+    const seen = new Set();
+    while (got < P) {
+      if (next === 0) sqFail(`${what} should carry on over more pages to make up its ${P} bytes, but its chain of pages ends after ${got}.`);
+      if (seen.has(next)) sqFail(`The chain of pages carrying on ${what.toLowerCase()} comes back round to page ${next}, so it loops.`);
+      seen.add(next);
+      const q = page(next, what), take = Math.min(usable - 4, P - got);
+      out.set(q.subarray(4, 4 + take), got);
+      got += take;
+      next = sqBe32(q, 0);
+    }
+    return out;
+  };
+
+  /* Splits the bytes of one row into its values. Returns [values, kinds], where a kind is
+     'null', 'integer', 'real', 'text' or 'blob'. */
+  const f64 = new DataView(new ArrayBuffer(8));
+  const record = (d, where) => {
+    const hs = sqVarint(d, 0, d.length, `The header of a row ${where}`);
+    let o = sqPos;
+    if (typeof hs !== 'number' || hs > d.length || hs < o) sqFail(`A row ${where} has a header that doesn’t fit inside it.`);
+    const types = [];
+    while (o < hs) { types.push(sqVarint(d, o, hs, `The header of a row ${where}`)); o = sqPos; }
+    const vals = new Array(types.length), kinds = new Array(types.length);
+    let b = hs;
+    const room = (n) => { if (b + n > d.length) sqFail(`A row ${where} says its values take more room than the row has.`); };
+    for (let i = 0; i < types.length; i++) {
+      const t = types[i];
+      if (typeof t !== 'number' || t < 0) sqFail(`A row ${where} gives a value an impossible size.`);
+      let v, k = 'integer';
+      if (t === 0) { v = null; k = 'null'; }
+      else if (t <= 4) {
+        room(t);
+        v = 0;
+        for (let j = 0; j < t; j++) v = v * 256 + d[b + j];
+        if (d[b] & 128) v -= 2 ** (8 * t); // the top bit makes it negative
+        b += t;
+      } else if (t === 5) {
+        room(6);
+        v = ((d[b] << 8 | d[b + 1]) << 16 >> 16) * 4294967296 + sqBe32(d, b + 2);
+        b += 6;
+      } else if (t === 6) {
+        room(8);
+        v = sqSmall(BigInt.asIntN(64, (BigInt(sqBe32(d, b)) << 32n) | BigInt(sqBe32(d, b + 4))));
+        b += 8;
+      } else if (t === 7) {
+        room(8);
+        for (let j = 0; j < 8; j++) f64.setUint8(j, d[b + j]);
+        v = f64.getFloat64(0, false); k = 'real';
+        b += 8;
+      } else if (t === 8 || t === 9) v = t - 8;
+      else if (t === 10 || t === 11) sqFail(`A row ${where} uses value code ${t}, which SQLite keeps for its own use and never writes into a file.`);
+      else {
+        const n = Math.floor((t - 12) / 2);
+        room(n);
+        if (t & 1) { v = dec.decode(d.subarray(b, b + n)); k = 'text'; }
+        else { v = d.slice(b, b + n); k = 'blob'; }
+        b += n;
+      }
+      vals[i] = v; kinds[i] = k;
+    }
+    return [vals, kinds];
+  };
+
+  /* Visits every entry of the b-tree that starts at page root, in order. leaf(b) is called for each leaf page; for an
+     index, inner(b, o) is called for each entry of an interior page between its children, since those are entries too. */
+  const walk = (root, table, what, from, leaf, inner) => {
+    const seen = new Set();
+    const go = (pg, depth, src) => {
+      if (seen.has(pg)) sqFail(`While reading ${what}, page ${pg} comes up a second time, so its pages loop back on themselves.`);
+      if (depth > 20) sqFail(`The pages of ${what} are nested more than 20 levels deep, which SQLite never does.`);
+      if (pg === 1 && root !== 1) sqFail(`${src} points to page 1, which holds the list of tables and can’t be part of ${what}.`);
+      seen.add(pg);
+      const b = btPage(pg, table, src);
+      if (b.leaf) { leaf(b); return; }
+      for (let i = 0; i < b.nc; i++) {
+        const o = cellAt(b, i);
+        go(sqBe32(b.p, o), depth + 1, `Page ${pg}`);
+        if (!table) inner(b, o + 4);
+      }
+      go(b.right, depth + 1, `Page ${pg}`);
+    };
+    go(root, 0, from);
+  };
+
+  /* The table list (sqlite_schema) lives in the b-tree on page 1. */
+  const schema = [];
+  if (nPages > 0) {
+    walk(1, true, 'the list of tables', 'The header', (b) => {
+      for (let i = 0; i < b.nc; i++) {
+        const [v] = record(cellPayload(b, cellAt(b, i), true), 'in the list of tables');
+        if (v.length < 5 || typeof v[0] !== 'string' || typeof v[1] !== 'string') sqFail('An entry in the list of tables is damaged.');
+        schema.push({ type: v[0], name: v[1], tbl_name: v[2] == null ? '' : String(v[2]), rootpage: typeof v[3] === 'number' ? v[3] : 0, sql: typeof v[4] === 'string' ? v[4] : null });
+      }
+    });
+  }
+  const SCHEMA_SQL = 'CREATE TABLE sqlite_schema(type text,name text,tbl_name text,rootpage int,sql text)';
+  const find = (name) => {
+    const n = String(name), l = n.toLowerCase();
+    const e = schema.find((x) => x.name === n) || schema.find((x) => x.name.toLowerCase() === l);
+    if (e) return e;
+    if (['sqlite_schema', 'sqlite_master'].includes(l)) return { type: 'table', name: n, tbl_name: n, rootpage: 1, sql: SCHEMA_SQL };
+    return null;
+  };
+
+  /* What a table's CREATE statement says, plus where each column sits in a stored row. */
+  const defs = new Map();
+  const tableDef = (e) => {
+    if (defs.has(e)) return defs.get(e);
+    let d;
+    try { d = sqParseTable(e.sql || ''); } catch (err) { sqFail(`The description of “${e.name}” in the file can’t be understood: ${err.message}.`); }
+    const low = (s) => String(s).toLowerCase();
+    d.alias = -1;
+    if (!d.withoutRowid && d.pk.length === 1) { // a lone INTEGER PRIMARY KEY column is another name for the rowid
+      const c = d.cols.findIndex((x) => low(x.name) === low(d.pk[0]));
+      if (c >= 0 && d.cols[c].type.toUpperCase() === 'INTEGER' && !(d.cols[c].pk && d.cols[c].pkDesc)) d.alias = c;
+    }
+    d.store = new Array(d.cols.length).fill(-1);
+    let k = 0;
+    if (d.withoutRowid) { // rows are stored primary-key columns first, then the others in order
+      if (!d.pk.length) sqFail(`The table “${e.name}” is stored without rowids but names no primary key.`);
+      for (const n of d.pk) {
+        const c = d.cols.findIndex((x) => low(x.name) === low(n));
+        if (c < 0) sqFail(`The primary key of “${e.name}” names a column, “${n}”, that the table doesn’t have.`);
+        if (d.store[c] < 0) d.store[c] = k++;
+      }
+    }
+    d.cols.forEach((c, i) => { if (d.store[i] < 0 && c.gen !== 'virtual') d.store[i] = k++; });
+    defs.set(e, d);
+    return d;
+  };
+
+  /* Builds one row of a table from the values stored for it. */
+  const tableRow = (d, vals, kinds, rowid, res) => {
+    const row = new Array(d.cols.length), kd = new Array(d.cols.length);
+    for (let c = 0; c < d.cols.length; c++) {
+      const col = d.cols[c], k = d.store[c];
+      let v = null, kind = 'null';
+      if (c === d.alias) { v = rowid; kind = 'integer'; }
+      else if (k >= 0 && k < vals.length) { v = vals[k]; kind = kinds[k]; }
+      else if (k >= 0 && col.dflt) { v = col.dflt.v; kind = col.dflt.k; } // a column added later: older rows take its default
+      if (kind === 'integer' && col.aff === 'real') { v = Number(v); kind = 'real'; } // SQLite keeps whole reals as integers and turns them back
+      row[c] = v; kd[c] = kind;
+    }
+    res.rows.push(row); res.kinds.push(kd);
+  };
+
+  const columns = (name) => {
+    const e = find(name);
+    if (!e) sqFail(`There is no table called “${name}” in this file.`);
+    if (e.type === 'table' && !e.rootpage && /^\s*create\s+virtual\b/i.test(e.sql || '')) return sqParseVirtual(e.sql);
+    if (e.type === 'table') return tableDef(e).cols.map((c) => c.name);
+    if (e.type === 'index') return indexColumns(e, 0);
+    return [];
+  };
+
+  /* Column names for an index: the indexed columns, then whatever points back to the row. */
+  const indexColumns = (e, nFields) => {
+    let names = [];
+    const t = find(e.tbl_name);
+    if (e.sql) {
+      try { names = sqParseIndex(e.sql).items; } catch (err) { names = []; }
+      if (t && t.type === 'table' && t.sql) {
+        try {
+          const d = tableDef(t);
+          if (!d.withoutRowid) names.push('rowid');
+          else for (const n of d.pk) if (!names.some((x) => String(x).toLowerCase() === String(n).toLowerCase())) names.push(n);
+        } catch (err) { /* the table's own description is reported when the table is read */ }
+      }
+    }
+    for (let i = names.length; i < nFields; i++) names.push(`column ${i + 1}`);
+    return names;
+  };
+
+  /* Reads the rows of a table, index or the table list. Rows outside offset..offset+limit are counted but not decoded. */
+  const read = (name, opts) => {
+    const o = opts || {};
+    const offset = Math.max(0, Math.floor(Number(o.offset) || 0));
+    const limit = o.limit === undefined || o.limit === null ? Infinity : Math.max(0, Number(o.limit));
+    const end = offset + limit;
+    const e = find(name);
+    if (!e) sqFail(`There is no table called “${name}” in this file.`);
+    const res = { columns: [], rows: [], kinds: [], rowids: [], total: 0, note: '' };
+    const what = `“${e.name}”`, from = `The entry for “${e.name}” in the list of tables`, where = `of “${e.name}”`;
+    if (e.type === 'view') { res.note = 'This is a view: a saved query that works out its rows from other tables when it is run, so it has no rows of its own in the file.'; return res; }
+    if (e.type === 'trigger') { res.note = 'This is a trigger: saved steps that run when a table changes, so it has no rows of its own.'; return res; }
+    if (e.type === 'table' && !e.rootpage && /^\s*create\s+virtual\b/i.test(e.sql || '')) {
+      res.columns = sqParseVirtual(e.sql);
+      const pre = e.name.toLowerCase() + '_';
+      const shadows = schema.filter((x) => x.type === 'table' && x.rootpage > 0 && x.name.toLowerCase().startsWith(pre)).map((x) => `“${x.name}”`);
+      const list = shadows.length > 1 ? shadows.slice(0, -1).join(', ') + ' and ' + shadows[shadows.length - 1] : shadows[0];
+      res.note = shadows.length
+        ? `This is a virtual table: its rows aren’t stored under its own name, but in the ${shadows.length > 1 ? 'tables' : 'table'} that hold its data, ${list}.`
+        : 'This is a virtual table: its rows aren’t stored under its own name, and no tables holding its data are in this file.';
+      return res;
+    }
+    if (!e.rootpage) { res.note = `${what} keeps no rows in this file.`; return res; }
+    if (nPages === 0) { res.columns = tableDef(e).cols.map((c) => c.name); return res; } // an empty file has an empty table list
+    let idx = 0;
+    if (e.type === 'index') {
+      let most = 0;
+      const each = (b, at) => {
+        if (idx >= offset && idx < end) {
+          const [v, k] = record(cellPayload(b, at, false), where);
+          most = Math.max(most, v.length);
+          res.rows.push(v); res.kinds.push(k);
+        }
+        idx++;
+      };
+      walk(e.rootpage, false, what, from, (b) => { for (let i = 0; i < b.nc; i++) { if (idx >= offset && idx < end) each(b, cellAt(b, i)); else idx++; } }, each);
+      res.columns = indexColumns(e, most);
+      for (let r = 0; r < res.rows.length; r++) while (res.rows[r].length < res.columns.length) { res.rows[r].push(null); res.kinds[r].push('null'); }
+      res.total = idx;
+      res.note = 'This is an index: a sorted copy of some columns that SQLite keeps to find rows quickly.';
+      return res;
+    }
+    const d = tableDef(e);
+    res.columns = d.cols.map((c) => c.name);
+    if (d.withoutRowid) {
+      const each = (b, at) => {
+        if (idx >= offset && idx < end) { const [v, k] = record(cellPayload(b, at, false), where); tableRow(d, v, k, null, res); }
+        idx++;
+      };
+      walk(e.rootpage, false, what, from, (b) => { for (let i = 0; i < b.nc; i++) { if (idx >= offset && idx < end) each(b, cellAt(b, i)); else idx++; } }, each);
+      res.rowids = null;
+    } else {
+      walk(e.rootpage, true, what, from, (b) => {
+        if (idx + b.nc <= offset || idx >= end) { idx += b.nc; return; }
+        for (let i = 0; i < b.nc; i++, idx++) {
+          if (idx < offset || idx >= end) continue;
+          const d0 = cellPayload(b, cellAt(b, i), true), rid = cellRowid;
+          const [v, k] = record(d0, where);
+          tableRow(d, v, k, rid, res);
+          res.rowids.push(rid);
+        }
+      });
+    }
+    res.total = idx;
+    const virt = d.cols.filter((c) => c.gen === 'virtual').map((c) => `“${c.name}”`);
+    if (virt.length) res.note = `${virt.length > 1 ? 'The columns' : 'The column'} ${virt.join(', ')} ${virt.length > 1 ? 'are' : 'is'} worked out from a formula each time the table is read, and not stored in the file, so ${virt.length > 1 ? 'they show' : 'it shows'} as empty here.`;
+    return res;
+  };
+
+  return {
+    info: { pageSize, usableSize: usable, encoding: enc, pageCount: nPages },
+    schema: () => schema.map((x) => ({ ...x })),
+    columns,
+    read,
+    /* The name of the column that is another name for the rowid, or null. */
+    rowidColumn: (name) => {
+      const e = find(name);
+      if (!e || e.type !== 'table' || !e.rootpage || /^\s*create\s+virtual\b/i.test(e.sql || '')) return null;
+      const d = tableDef(e);
+      return d.alias >= 0 ? d.cols[d.alias].name : null;
+    },
+  };
+}
+
+/* Text for a value the way SQLite's own tools show it: whole reals keep a ".0", and nothing is rounded. */
+function sqliteText(v, kind) {
+  if (v === null || v === undefined) return 'NULL';
+  if (kind === 'real' || (kind === undefined && typeof v === 'number' && !Number.isInteger(v))) {
+    if (!isFinite(v)) return isNaN(v) ? 'NaN' : (v > 0 ? 'Inf' : '-Inf');
+    if (v === 0) return Object.is(v, -0) ? '-0.0' : '0.0';
+    const [m, ex] = v.toExponential().split('e'), e = parseInt(ex, 10); // the shortest digits that read back the same
+    const sign = v < 0 ? '-' : '', digits = m.replace('-', '').replace('.', '');
+    if (e < -4 || e >= 16) return sign + digits[0] + (digits.length > 1 ? '.' + digits.slice(1) : '') + 'e' + (e < 0 ? '-' : '+') + String(Math.abs(e)).padStart(2, '0');
+    if (e < 0) return sign + '0.' + '0'.repeat(-e - 1) + digits;
+    if (digits.length <= e + 1) return sign + digits.padEnd(e + 1, '0') + '.0';
+    return sign + digits.slice(0, e + 1) + '.' + digits.slice(e + 1);
+  }
+  if (v instanceof Uint8Array) return Array.from(v, (b) => b.toString(16).padStart(2, '0')).join('').toUpperCase();
+  return String(v);
+}
+
+/* ---------- GeoPackage: map layers kept in an SQLite file ---------- */
+
+/* Reads well-known-binary geometry from b at offset o. Returns [geom, next offset]. Accepts either byte order,
+   and the ISO (+1000, +2000, +3000) and extended (high flag bits) ways of marking Z and M values. */
+function sqWkb(b, o, depth) {
+  const NAMES = [null, 'Point', 'LineString', 'Polygon', 'MultiPoint', 'MultiLineString', 'MultiPolygon', 'GeometryCollection'];
+  const dv = new DataView(b.buffer, b.byteOffset, b.byteLength);
+  const need = (n) => { if (o + n > b.length) sqFail('The geometry value ends before all of its points are there.'); };
+  if (depth > 32) sqFail('The geometry value nests collections more than 32 levels deep.');
+  need(5);
+  const bo = b[o];
+  if (bo > 1) sqFail(`A part of the geometry value starts with byte-order mark ${bo}, where only 0 or 1 are used.`);
+  const le = bo === 1;
+  let t = dv.getUint32(o + 1, le);
+  o += 5;
+  let hasZ = !!(t & 0x80000000), hasM = !!(t & 0x40000000);
+  if (t & 0x20000000) { need(4); o += 4; } // a spatial reference number is carried inside: skip it
+  t &= 0x0fffffff;
+  if (t >= 3000 && t < 4000) { hasZ = hasM = true; t -= 3000; } else if (t >= 2000 && t < 3000) { hasM = true; t -= 2000; } else if (t >= 1000 && t < 2000) { hasZ = true; t -= 1000; }
+  if (t < 1 || t > 7) sqFail(`The geometry value is of kind ${t}, and this reader knows only the seven simple kinds: points, lines, polygons, their multi forms and collections.`);
+  const dims = 2 + hasZ + hasM;
+  const pt = () => { need(8 * dims); const c = []; for (let i = 0; i < dims; i++) c.push(dv.getFloat64(o + 8 * i, le)); o += 8 * dims; return c; };
+  const count = (min) => { need(4); const n = dv.getUint32(o, le); o += 4; if (n * min > b.length - o) sqFail('The geometry value says it has more parts than it has room for.'); return n; };
+  const line = () => { const n = count(8 * dims), c = new Array(n); for (let i = 0; i < n; i++) c[i] = pt(); return c; };
+  const g = { type: NAMES[t], hasZ, hasM };
+  if (t === 1) { const c = pt(); g.coordinates = c.every((x) => Number.isNaN(x)) ? [] : c; }
+  else if (t === 2) g.coordinates = line();
+  else if (t === 3) { const n = count(4); g.coordinates = []; for (let i = 0; i < n; i++) g.coordinates.push(line()); }
+  else {
+    const n = count(5), parts = [];
+    for (let i = 0; i < n; i++) {
+      const [s, next] = sqWkb(b, o, depth + 1);
+      o = next;
+      if (t < 7 && s.type !== NAMES[t - 3]) sqFail(`A ${NAMES[t]} in the geometry value holds a ${s.type}.`);
+      parts.push(s);
+    }
+    if (t === 7) g.geometries = parts; else g.coordinates = parts.map((s) => s.coordinates);
+  }
+  return [g, o];
+}
+
+/* Decodes a GeoPackage geometry blob: the "GP" header, its optional bounding box, then the geometry itself.
+   Returns a GeoJSON-shaped object (with hasZ and hasM), null when there is no blob, or throws if it is malformed. */
+function gpkgGeom(blob) {
+  if (!(blob instanceof Uint8Array)) return null;
+  const b = blob;
+  if (b.length < 8 || b[0] !== 0x47 || b[1] !== 0x50) sqFail('The geometry value doesn’t begin with the letters “GP”, as a GeoPackage geometry does.');
+  const flags = b[3];
+  if (flags & 0x20) sqFail('The geometry value is marked as an extended kind, which this reader can’t draw.');
+  const env = (flags >> 1) & 7;
+  if (env > 4) sqFail(`The geometry value’s header gives bounding-box code ${env}, where only 0 to 4 are used.`);
+  const start = 8 + [0, 32, 48, 48, 64][env];
+  if (start >= b.length) sqFail('The geometry value ends before its geometry begins.');
+  return sqWkb(b, start, 0)[0];
+}
+
+/* Lists the feature layers of a GeoPackage, or [] for a plain SQLite file. Each feature has its fid, its other columns
+   in props, and its decoded geom; a geometry that can't be decoded leaves geom null and says why in error. */
+function gpkgLayers(db) {
+  const sch = db.schema();
+  const has = (n) => sch.some((e) => e.type === 'table' && e.name.toLowerCase() === n);
+  if (!has('gpkg_geometry_columns')) return [];
+  const rows = (name) => {
+    const r = db.read(name);
+    return r.rows.map((row) => Object.fromEntries(r.columns.map((c, i) => [c.toLowerCase(), row[i]])));
+  };
+  const srs = new Map();
+  if (has('gpkg_spatial_ref_sys')) for (const s of rows('gpkg_spatial_ref_sys')) srs.set(String(s.srs_id), s);
+  const layers = [];
+  for (const gc of rows('gpkg_geometry_columns')) {
+    const table = String(gc.table_name), geomColumn = String(gc.column_name), s = srs.get(String(gc.srs_id)) || {};
+    const r = db.read(table);
+    const gi = r.columns.findIndex((c) => c.toLowerCase() === geomColumn.toLowerCase());
+    const alias = db.rowidColumn(table), fi = alias === null ? -1 : r.columns.indexOf(alias);
+    const columns = r.columns.filter((c, i) => i !== gi);
+    const features = r.rows.map((row, n) => {
+      const props = Object.create(null); // so a column named __proto__ is kept like any other
+      r.columns.forEach((c, i) => { if (i !== gi) props[c] = row[i]; });
+      const f = { fid: fi >= 0 ? row[fi] : (r.rowids ? r.rowids[n] : n + 1), props, geom: null };
+      if (gi >= 0) { try { f.geom = gpkgGeom(row[gi]); } catch (err) { f.error = err.message; } }
+      return f;
+    });
+    layers.push({
+      table, geomColumn, geometryType: gc.geometry_type_name == null ? '' : String(gc.geometry_type_name),
+      srsId: gc.srs_id, srsName: s.srs_name == null ? '' : String(s.srs_name), srsOrg: s.organization == null ? '' : String(s.organization),
+      srsCode: s.organization_coordsys_id == null ? null : s.organization_coordsys_id, srsDefinition: s.definition == null ? '' : String(s.definition),
+      z: gc.z, m: gc.m, columns, features, note: r.note,
+    });
+  }
+  return layers;
+}
+return { sqliteOpen, gpkgLayers, sqliteText: typeof sqliteText === 'function' ? sqliteText : null };
+})();
+const PQ = (() => {
+/* ---------- reading .parquet tables, written from scratch ----------
+   parquetRead(u8) reads the whole file the way a standard reader does and gives back
+   { columns: [{name, type, of?}], rows: [[value...]], numRows, createdBy, rowGroups }.
+   It is strict: anything malformed stops it with a short plain reason. Every name and
+   value it gives back comes from the file, so the page must escape it before showing it. */
+
+/* ---------- the compact binary encoding the file uses to describe itself ---------- */
+
+/* Read one struct (a set of numbered fields) starting at pos, stopping at end.
+   Gives { value, end }, where value maps field numbers to their values: numbers (or BigInt
+   when too big), booleans, Uint8Array for strings and bytes, arrays for lists, nested
+   objects for structs, and arrays of [key, value] for maps.
+   `what` names the thing being read, for the error message. */
+function pqThrift(u8, pos, end, what) {
+  let p = pos;
+  const fail = (why) => { throw new Error(`${what} couldn’t be read: ${why}.`); };
+  const byte = () => { if (p >= end) fail('it ends partway through'); return u8[p++]; };
+  const uvar = () => { // an unsigned varint: 7 bits per byte, low bits first
+    const bs = [];
+    for (;;) {
+      const b = byte(); bs.push(b & 127);
+      if (b < 128) break;
+      if (bs.length >= 10) fail('a number in it is too long');
+    }
+    if (bs.length <= 7) { let x = 0; for (let i = bs.length - 1; i >= 0; i--) x = x * 128 + bs[i]; return x; }
+    let x = 0n; for (let i = bs.length - 1; i >= 0; i--) x = (x << 7n) | BigInt(bs[i]);
+    return x & 0xffffffffffffffffn;
+  };
+  const zig = () => { // a signed varint, stored zigzag (0, -1, 1, -2, ...)
+    const n = uvar();
+    if (typeof n === 'number') return n % 2 ? -(n + 1) / 2 : n / 2;
+    const v = (n >> 1n) ^ -(n & 1n);
+    return v >= BigInt(Number.MIN_SAFE_INTEGER) && v <= BigInt(Number.MAX_SAFE_INTEGER) ? Number(v) : v;
+  };
+  const value = (t, depth) => {
+    if (depth > 64) fail('it is nested too deeply');
+    switch (t) {
+      case 1: return true;
+      case 2: return false;
+      case 3: { const b = byte(); return b > 127 ? b - 256 : b; }
+      case 4: case 5: case 6: return zig();
+      case 7: {
+        if (p + 8 > end) fail('it ends partway through');
+        const v = new DataView(u8.buffer, u8.byteOffset + p, 8).getFloat64(0, true); p += 8; return v;
+      }
+      case 8: {
+        const n = uvar();
+        if (typeof n !== 'number' || p + n > end) fail('a piece of text in it runs past its end');
+        const v = u8.subarray(p, p + n); p += n; return v;
+      }
+      case 9: case 10: {
+        const h = byte(); let n = h >> 4; const et = h & 15;
+        if (n === 15) n = uvar();
+        if (typeof n !== 'number' || n > end - p) fail('a list in it claims more entries than there is room for');
+        const out = [];
+        for (let i = 0; i < n; i++) {
+          if (et === 1 || et === 2) out.push(byte() === 1); // booleans in a list take one byte each
+          else out.push(value(et, depth + 1));
+        }
+        return out;
+      }
+      case 11: {
+        const n = uvar();
+        if (typeof n !== 'number' || n > end - p) fail('a map in it claims more entries than there is room for');
+        if (n === 0) return [];
+        const kv = byte(), kt = kv >> 4, vt = kv & 15, out = [];
+        for (let i = 0; i < n; i++) {
+          const k = (kt === 1 || kt === 2) ? byte() === 1 : value(kt, depth + 1);
+          const v = (vt === 1 || vt === 2) ? byte() === 1 : value(vt, depth + 1);
+          out.push([k, v]);
+        }
+        return out;
+      }
+      case 12: {
+        const obj = {}; let last = 0;
+        for (;;) {
+          const h = byte();
+          if (h === 0) break;
+          const ft = h & 15, d = h >> 4;
+          let id = last + d;
+          if (d === 0) { id = zig(); if (typeof id !== 'number') fail('a field number in it is too big'); }
+          obj[id] = value(ft, depth + 1);
+          last = id;
+        }
+        return obj;
+      }
+      default: fail('it holds a field of an unknown kind');
+    }
+  };
+  const v = value(12, 0);
+  return { value: v, end: p };
+}
+
+/* ---------- small helpers ---------- */
+
+const PQ_UTF8 = new TextDecoder('utf-8');
+function pqStr(v) { return v instanceof Uint8Array ? PQ_UTF8.decode(v) : (v == null ? null : String(v)); }
+function pqNum(v) { return typeof v === 'bigint' ? NaN : v; } // a footer number that has to be an ordinary number
+function pqInt64Out(v) { // a 64-bit whole number as a plain number when that is exact, else a BigInt
+  return v >= -9007199254740991n && v <= 9007199254740991n ? Number(v) : v;
+}
+
+/* A cursor over a page's bytes, for the value readers. */
+function pqCursor(b, p, end) { return { b, p, end: end == null ? b.length : end }; }
+function pqNeed(c, n, what) { if (c.p + n > c.end) throw new Error(`${what}: the page ends before all its values.`); }
+function pqUvarint(c, what) { // an unsigned varint that must fit an ordinary number
+  let x = 0, mul = 1;
+  for (let i = 0; ; i++) {
+    pqNeed(c, 1, what);
+    const b = c.b[c.p++];
+    x += (b & 127) * mul; mul *= 128;
+    if (b < 128) break;
+    if (i >= 7) throw new Error(`${what}: a number in a page is too long.`);
+  }
+  return x;
+}
+function pqZigzag64(c, what) { // a signed varint up to 64 bits, as a BigInt
+  let x = 0n, sh = 0n;
+  for (let i = 0; ; i++) {
+    pqNeed(c, 1, what);
+    const b = c.b[c.p++];
+    x |= BigInt(b & 127) << sh; sh += 7n;
+    if (b < 128) break;
+    if (i >= 9) throw new Error(`${what}: a number in a page is too long.`);
+  }
+  x &= 0xffffffffffffffffn;
+  return (x >> 1n) ^ -(x & 1n);
+}
+
+/* Unpack `count` values of `bw` bits each, packed low bit first, starting at byte pos. */
+function pqUnpack(b, pos, bw, count, out, at) {
+  if (bw === 0) { for (let i = 0; i < count; i++) out[at + i] = 0; return; }
+  const top = 2 ** bw;
+  for (let i = 0; i < count; i++) {
+    const bit = i * bw, sh = bit & 7; let q = pos + (bit >>> 3);
+    let v = 0, mul = 1;
+    for (let got = 0; got < sh + bw; got += 8) { v += b[q++] * mul; mul *= 256; }
+    out[at + i] = Math.floor(v / 2 ** sh) % top;
+  }
+}
+/* The same for widths up to 64 bits, giving BigInts. */
+function pqUnpackBig(b, pos, bw, count, out, at) {
+  if (bw <= 32) { const tmp = new Array(count); pqUnpack(b, pos, bw, count, tmp, 0); for (let i = 0; i < count; i++) out[at + i] = BigInt(tmp[i]); return; }
+  const mask = (1n << BigInt(bw)) - 1n;
+  for (let i = 0; i < count; i++) {
+    const bit = i * bw, sh = bit & 7; let q = pos + (bit >>> 3);
+    let v = 0n, s = 0n;
+    for (let got = 0; got < sh + bw; got += 8) { v |= BigInt(b[q++]) << s; s += 8n; }
+    out[at + i] = (v >> BigInt(sh)) & mask;
+  }
+}
+
+/* The run-length / bit-packed hybrid: fills out[0..n) with values of bw bits. */
+function pqHybrid(c, bw, n, out, what) {
+  let got = 0;
+  const vbytes = (bw + 7) >> 3;
+  while (got < n) {
+    if (c.p >= c.end) throw new Error(`${what}: the page ends before all its values.`);
+    const h = pqUvarint(c, what);
+    if (h % 2) { // bit-packed groups of eight values
+      const groups = Math.floor(h / 2), take = Math.min(groups * 8, n - got);
+      const bytes = groups * bw;
+      pqNeed(c, Math.ceil(take * bw / 8), what);
+      pqUnpack(c.b, c.p, bw, take, out, got);
+      c.p = Math.min(c.p + bytes, c.end);
+      got += take;
+    } else { // one value repeated
+      const run = Math.floor(h / 2);
+      pqNeed(c, vbytes, what);
+      let v = 0;
+      for (let i = vbytes - 1; i >= 0; i--) v = v * 256 + c.b[c.p + i];
+      c.p += vbytes;
+      if (bw < 32 && v >= 2 ** bw) throw new Error(`${what}: a repeated value is wider than the page allows.`);
+      const take = Math.min(run, n - got);
+      for (let i = 0; i < take; i++) out[got + i] = v;
+      got += take;
+    }
+  }
+}
+
+/* The older level encoding: bits packed high bit first, with no length in front. */
+function pqBitPackedMSB(c, bw, n, out, what) {
+  const bytes = Math.ceil(n * bw / 8);
+  pqNeed(c, bytes, what);
+  for (let i = 0; i < n; i++) {
+    let v = 0;
+    for (let k = 0; k < bw; k++) {
+      const bit = i * bw + k;
+      v = v * 2 + ((c.b[c.p + (bit >>> 3)] >> (7 - (bit & 7))) & 1);
+    }
+    out[i] = v;
+  }
+  c.p += bytes;
+}
+
+function pqBitWidth(max) { let w = 0; while (max >= 2 ** w) w++; return w; } // bits needed to hold 0..max
+
+/* ---------- decompression ---------- */
+
+/* Snappy, from scratch: a length, then a run of literal pieces and copies of earlier output. */
+function pqSnappy(src, what, expect) {
+  const fail = () => { throw new Error(`${what}: its compressed data is damaged, so it can’t be unpacked.`); };
+  let p = 0, len = 0, mul = 1;
+  for (let i = 0; ; i++) {
+    if (p >= src.length || i > 4) fail();
+    const b = src[p++]; len += (b & 127) * mul; mul *= 128;
+    if (b < 128) break;
+  }
+  if (expect != null && len !== expect) throw new Error(`${what} should unpack to ${expect} bytes, but its compressed data says ${len}.`);
+  const out = new Uint8Array(len);
+  let o = 0;
+  while (p < src.length) {
+    const tag = src[p++], kind = tag & 3;
+    if (kind === 0) { // literal bytes
+      let n = tag >> 2;
+      if (n >= 60) {
+        const k = n - 59; if (p + k > src.length) fail();
+        n = 0; for (let i = k - 1; i >= 0; i--) n = n * 256 + src[p + i];
+        p += k;
+      }
+      n += 1;
+      if (p + n > src.length || o + n > len) fail();
+      out.set(src.subarray(p, p + n), o); p += n; o += n;
+    } else { // a copy of bytes already written
+      let n, off;
+      if (kind === 1) { if (p + 1 > src.length) fail(); n = ((tag >> 2) & 7) + 4; off = ((tag >> 5) << 8) | src[p]; p += 1; }
+      else if (kind === 2) { if (p + 2 > src.length) fail(); n = (tag >> 2) + 1; off = src[p] | (src[p + 1] << 8); p += 2; }
+      else { if (p + 4 > src.length) fail(); n = (tag >> 2) + 1; off = (src[p] | (src[p + 1] << 8) | (src[p + 2] << 16)) + src[p + 3] * 16777216; p += 4; }
+      if (off === 0 || off > o || o + n > len) fail();
+      for (let i = 0; i < n; i++, o++) out[o] = out[o - off]; // byte by byte, since a copy may overlap itself
+    }
+  }
+  if (o !== len) fail();
+  return out;
+}
+
+/* Gzip, through the browser's own DecompressionStream. */
+async function pqGunzip(src, what) {
+  if (typeof DecompressionStream === 'undefined') throw new Error(`${what}: this browser can’t unpack its compression.`);
+  try {
+    const stream = new Blob([src]).stream().pipeThrough(new DecompressionStream('gzip'));
+    return new Uint8Array(await new Response(stream).arrayBuffer());
+  } catch (e) {
+    throw new Error(`${what}: its compressed data is damaged, so it can’t be unpacked.`);
+  }
+}
+
+/* Unpack one page body with the column's compression; it must come out at the size the page header says. */
+async function pqInflate(codec, src, size, col) {
+  let out;
+  if (codec === 0) out = src;
+  else if (codec === 1) out = pqSnappy(src, `A page in column "${col}"`, size);
+  else if (codec === 2) out = await pqGunzip(src, `A page in column "${col}"`);
+  else throw new Error(`Column "${col}" is compressed in a way this page can’t unpack, so the table can’t be shown here.`);
+  if (out.length !== size) throw new Error(`A page in column "${col}" should unpack to ${size} bytes, but it gives ${out.length}.`);
+  return out;
+}
+
+/* ---------- the file's own description: schema, row groups, column chunks ---------- */
+
+function pqSchemaElement(f) {
+  return {
+    type: f[1], typeLength: f[2], rep: f[3] == null ? 0 : f[3], name: pqStr(f[4]) ?? '',
+    numChildren: f[5], converted: f[6], scale: f[7], precision: f[8], logical: f[10] && typeof f[10] === 'object' ? f[10] : null,
+  };
+}
+
+/* Build the column tree from the flat, depth-first schema list and give back its leaf columns,
+   each with its path, definition and repetition levels and display name. */
+function pqLeaves(schema) {
+  const els = schema.map(pqSchemaElement);
+  let i = 0;
+  const bad = () => { throw new Error("The file’s footer has a column list that doesn’t hold together, so it can’t be read as a table."); };
+  const build = (parent, depth) => {
+    if (i >= els.length || depth > 100) bad();
+    const el = els[i++];
+    if (el.rep !== 0 && el.rep !== 1 && el.rep !== 2) bad();
+    if (el.numChildren != null && typeof el.numChildren !== 'number') bad();
+    const node = { el, parent, children: [] };
+    const n = el.numChildren;
+    if (n != null && n > 0) { for (let k = 0; k < n; k++) node.children.push(build(node, depth + 1)); }
+    else if (parent === null) { /* a table with no columns */ }
+    else if (el.type == null) bad(); // a leaf needs a stored type
+    return node;
+  };
+  if (!els.length) bad();
+  const root = build(null, 0);
+  if (i !== els.length) bad();
+  const isList = (el) => el.converted === 3 || !!(el.logical && el.logical[3]);
+  const isMap = (el) => el.converted === 1 || el.converted === 2 || !!(el.logical && el.logical[2]);
+  const leaves = [];
+  const walk = (node, path) => {
+    if (!node.children.length) {
+      if (node.parent === null) return;
+      let def = 0, rep = 0; const reps = [], names = [];
+      for (const n of path) {
+        if (n.el.rep === 1) def++;
+        if (n.el.rep === 2) { def++; rep++; reps.push(def); }
+        // the display name drops the wrapper levels inside a list or map column
+        const par = n.parent;
+        const wrapper = par && par.parent && (isList(par.el) || isMap(par.el)) && n.el.rep === 2 && n.children.length;
+        const inner = par && par.parent && par.parent.parent && isList(par.parent.el) && par.el.rep === 2 && par.children.length === 1;
+        if (!wrapper && !inner) names.push(n.el.name);
+      }
+      leaves.push({ el: node.el, path: path.map((n) => n.el.name), name: names.join('.') || node.el.name, maxDef: def, maxRep: rep, repDefs: reps });
+      return;
+    }
+    for (const c of node.children) walk(c, path.concat([c]));
+  };
+  walk(root, []);
+  return leaves;
+}
+
+/* ---------- turning stored values into shown values ---------- */
+
+function pqCivil(days) { // days since 1970-01-01 to [year, month, day] in the proleptic Gregorian calendar
+  const z = days + 719468, era = Math.floor(z / 146097), doe = z - era * 146097;
+  const yoe = Math.floor((doe - Math.floor(doe / 1460) + Math.floor(doe / 36524) - Math.floor(doe / 146096)) / 365);
+  const doy = doe - (365 * yoe + Math.floor(yoe / 4) - Math.floor(yoe / 100));
+  const mp = Math.floor((5 * doy + 2) / 153), d = doy - Math.floor((153 * mp + 2) / 5) + 1, m = mp < 10 ? mp + 3 : mp - 9;
+  return [yoe + era * 400 + (m <= 2 ? 1 : 0), m, d];
+}
+function pqDate(days) {
+  const [y, m, d] = pqCivil(days);
+  const ys = y >= 0 && y <= 9999 ? String(y).padStart(4, '0') : (y < 0 ? '-' : '+') + String(Math.abs(y)).padStart(6, '0');
+  return `${ys}-${String(m).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
+}
+function pqClock(units, digits) { // units since midnight (BigInt) at 10^digits per second, as HH:MM:SS[.fraction]
+  const per = 10n ** BigInt(digits), sign = units < 0n ? '-' : '';
+  if (units < 0n) units = -units;
+  const secs = units / per, frac = units % per;
+  const two = (x) => String(x).padStart(2, '0');
+  let s = `${sign}${two(secs / 3600n)}:${two((secs / 60n) % 60n)}:${two(secs % 60n)}`;
+  if (frac) s += '.' + String(frac).padStart(digits, '0');
+  return s;
+}
+function pqStamp(v, digits, utc) { // a count of units since 1970-01-01T00:00 as ISO date and time
+  const perDay = 86400n * 10n ** BigInt(digits);
+  let days = v / perDay, rem = v % perDay;
+  if (rem < 0n) { rem += perDay; days -= 1n; }
+  return pqDate(Number(days)) + 'T' + pqClock(rem, digits) + (utc ? 'Z' : '');
+}
+function pqDecimal(unscaled, scale) { // an exact decimal from its whole-number digits and scale, as text
+  const neg = unscaled < 0n; let s = String(neg ? -unscaled : unscaled);
+  scale = scale || 0;
+  if (scale > 0) { s = s.padStart(scale + 1, '0'); s = s.slice(0, s.length - scale) + '.' + s.slice(s.length - scale); }
+  else if (scale < 0) s += '0'.repeat(-scale);
+  return (neg ? '-' : '') + s;
+}
+function pqBigEndian(b) { // big-endian two's complement bytes as a BigInt
+  let v = 0n;
+  for (const x of b) v = (v << 8n) | BigInt(x);
+  if (b.length && b[0] & 128) v -= 1n << BigInt(8 * b.length);
+  return v;
+}
+function pqHalf(b) { // a 2-byte float, low byte first
+  const h = b[0] | (b[1] << 8), s = h & 0x8000 ? -1 : 1, e = (h >> 10) & 31, f = h & 1023;
+  if (e === 0) return s * f * 2 ** -24;
+  if (e === 31) return f ? NaN : s * Infinity;
+  return s * (1 + f / 1024) * 2 ** (e - 15);
+}
+const PQ_HEX = Array.from({ length: 256 }, (_, i) => i.toString(16).padStart(2, '0'));
+
+/* Work out how a leaf column's stored values should be shown: gives { type, conv }. */
+function pqConverter(leaf) {
+  const el = leaf.el, t = el.type, ct = el.converted, lt = el.logical || {};
+  const unit = (u) => (u && u[1] ? 3 : u && u[2] ? 6 : u && u[3] ? 9 : 3);
+  const id = (v) => v;
+  if (lt[11]) return { type: 'empty', conv: () => null };
+  if (t === 0) return { type: 'true/false', conv: id };
+  if (t === 1) {
+    if (lt[5] || ct === 5) { const sc = lt[5] ? lt[5][1] : el.scale; return { type: 'decimal number', conv: (v) => pqDecimal(BigInt(v), sc) }; }

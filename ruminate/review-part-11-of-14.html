@@ -1,0 +1,722 @@
+<!-- Review copy: lines 7434-8154 of ruminate/index.html, split so Copilot can review it. Not served. -->
+        F.push(rsF(`Track ${b[p + 8]}`, p, te, null, null, kids)); p = te;
+      }
+      if (p < e) F.push(rsF('After the tracks', p, e, rsBytesWord(e - p)));
+      return { what: rsPlural(nt, 'track', 'tracks'), F };
+    }
+    case 6: {
+      const bad = (p, why) => { F.push(rsF('Rest of the picture block', p, e, rsBytesWord(e - p), why)); return { F }; };
+      if (len < 32) return bad(a, 'Too short for a picture block.');
+      const pt = u32(a), ml = u32(a + 4);
+      F.push(rsF('Picture type', a, a + 4, `${pt}` + (RS_PIC_TYPES[pt] ? ` (${RS_PIC_TYPES[pt]})` : '')), rsF('MIME type length', a + 4, a + 8, rsBytesWord(ml)));
+      if (ml > e - a - 8) return bad(a + 8, 'The MIME type’s length runs past the end of the block.');
+      const mime = rsLatin1(b, a + 8, a + 8 + ml); let p = a + 8 + ml;
+      F.push(rsF('MIME type', a + 8, p, rsQuote(mime)));
+      if (e - p < 4) return bad(p, 'Too short for the description’s length.');
+      const dl = u32(p); F.push(rsF('Description length', p, p + 4, rsBytesWord(dl))); p += 4;
+      if (dl > e - p) return bad(p, 'The description’s length runs past the end of the block.');
+      F.push(rsF('Description', p, p + dl, rsQuoteBytes(b, p, p + dl, true))); p += dl;
+      if (e - p < 20) return bad(p, 'Too short for the picture’s sizes.');
+      F.push(rsF('Width', p, p + 4, `${rsNum(u32(p))} pixels`), rsF('Height', p + 4, p + 8, `${rsNum(u32(p + 4))} pixels`), rsF('Colour depth', p + 8, p + 12, `${u32(p + 8)} bits per pixel`),
+        rsF('Number of colours', p + 12, p + 16, u32(p + 12) ? rsNum(u32(p + 12)) : '0 (not an indexed-colour picture)'));
+      const pl = u32(p + 16), w = u32(p), h = u32(p + 4);
+      F.push(rsF('Picture data length', p + 16, p + 20, rsBytesWord(pl))); p += 20;
+      if (pl > e - p) return bad(p, 'The picture data’s length runs past the end of the block.');
+      F.push(rsF('Picture data', p, p + pl, rsBytesWord(pl), 'The picture itself isn’t shown here.')); p += pl;
+      if (p < e) F.push(rsF('After the picture', p, e, rsBytesWord(e - p)));
+      return { what: `${RS_PIC_TYPES[pt] || `type ${pt}`}, ${rsQuote(mime)}, ${rsNum(w)} × ${rsNum(h)}, ${rsBytesWord(pl)}`, F };
+    }
+    default: if (len) F.push(rsF('Block data', a, e, rsBytesWord(len))); return { what: null, F };
+  }
+}
+// One metadata block's header and body as fields: b[a, a + 4) is its header. Gives { what, F, last, type, end }.
+function rsFlacBlock(cx, b, a, lim) {
+  const last = !!(b[a] & 0x80), type = b[a] & 0x7f, len = rsBE(b, a + 1, 3), e = a + 4 + len;
+  const name = RS_FLAC_BLOCKS[type] || (type === 127 ? 'invalid' : 'reserved');
+  const head = [rsF('Last-block flag and block type', a, a + 1, `${last ? 'last block' : 'not the last block'}, type ${type} (${name})`), rsF('Block length', a + 1, a + 4, rsBytesWord(len))];
+  if (e > lim) return { bad: `The ${name} metadata block here says it holds ${rsBytesWord(len)}, which runs past the end.`, head, type, last, end: lim };
+  const r = rsFlacBody(cx, b, a + 4, e, type);
+  return { what: r.what, F: [rsF('Block header', a, a + 4, null, null, head), ...(len ? [rsF('Block data', a + 4, e, rsBytesWord(len), null, r.F)] : [])], last, type, name, end: e };
+}
+
+function rsFlac(cx) {
+  const { u8, n } = cx, items = [];
+  let p = 0;
+  const pre = rsId3Prefix(cx, items);
+  if (pre.stop) return { title: 'FLAC audio', items };
+  p = pre.p;
+  if (n - p < 4 || rsLatin1(u8, p, p + 4) !== 'fLaC') throw new Error(`It doesn’t begin with “fLaC”${p ? ' after its ID3v2 tag' : ''}, which is how the format starts.`);
+  items.push(rsI(cx, 'Stream marker', p, p + 4, '“fLaC”'));
+  p += 4;
+  let blocks = 0, last = false;
+  while (p < n && !last) {
+    if (n - p < 4) { items.push(rsStopItem(cx, p, n, 'The file ends partway through a metadata block header.')); return { title: 'FLAC audio', items }; }
+    const r = rsFlacBlock(cx, u8, p, n);
+    if (r.bad) { items.push(rsStopItem(cx, p, n, r.bad)); return { title: 'FLAC audio', items }; }
+    if (r.type === 127) { items.push(rsStopItem(cx, p, n, 'The metadata block here has type 127, which the format doesn’t allow.')); return { title: 'FLAC audio', items }; }
+    blocks++; last = r.last;
+    if (!rsRoom(cx)) {
+      const go = rsUnlisted(cx, items, p, r.end, 'metadata block', 'metadata blocks'); p = r.end;
+      if (!go && p < n) { items.push(rsTooLong(cx, p, n, 'metadata blocks')); return { title: 'FLAC audio', items }; }
+      continue;
+    }
+    items.push(rsI(cx, `Metadata block ${r.name}`, p, r.end, r.what, null, rsLayOne(cx, r.F, 0, n, 0)));
+    p = r.end;
+  }
+  if (!last) items.push(rsStopItem(cx, p, n, 'The file ends before a metadata block marked as the last one.'));
+  else if (p < n) {
+    const sync = n - p >= 2 && u8[p] === 0xff && (u8[p + 1] & 0xfe) === 0xf8;
+    items.push(rsI(cx, 'Audio frames', p, n, rsBytesWord(n - p), sync ? 'The frames aren’t listed one by one.' : 'These bytes don’t begin with a frame sync code (FF F8 or FF F9); the frames aren’t listed one by one.'));
+  }
+  return { title: `FLAC audio, ${rsPlural(blocks, 'metadata block', 'metadata blocks')}`, items };
+}
+
+/* Ogg */
+let rsOggTable = null;
+function rsOggCrc(u8, s, e, z) { // the page checksum, with the four bytes at z counted as zero
+  if (!rsOggTable) {
+    rsOggTable = new Uint32Array(256);
+    for (let i = 0; i < 256; i++) { let r = i << 24; for (let j = 0; j < 8; j++) r = r & 0x80000000 ? (r << 1) ^ 0x04c11db7 : r << 1; rsOggTable[i] = r >>> 0; }
+  }
+  const T = rsOggTable;
+  let c = 0;
+  for (let i = s; i < z; i++) c = ((c << 8) ^ T[((c >>> 24) ^ u8[i]) & 255]) >>> 0;
+  for (let i = 0; i < 4; i++) c = ((c << 8) ^ T[(c >>> 24) & 255]) >>> 0;
+  for (let i = z + 4; i < e; i++) c = ((c << 8) ^ T[((c >>> 24) ^ u8[i]) & 255]) >>> 0;
+  return c;
+}
+
+// What one packet of a stream is, when it is one of the stream's header packets: the stream's
+// first packet says which headers follow. Gives { what, F } or null.
+function rsOggHeader(cx, st, k, b) {
+  const L = b.length, F = [];
+  const sig = (t) => L >= t.length && rsLatin1(b, 0, t.length) === t;
+  const le = (p, w) => rsLE(b, p, w), be = (p, w) => rsBE(b, p, w);
+  const f = (label, a, e, v, note) => { if (e <= L && e > a) F.push(rsF(label, a, e, v, note)); };
+  const rest = (a, label = 'Rest of the packet') => { if (a < L) F.push(rsF(label, a, L, rsBytesWord(L - a))); };
+  if (k === 1) {
+    if (sig('\x01vorbis')) { st.codec = 'vorbis'; st.heads = 3; }
+    else if (sig('OpusHead')) { st.codec = 'opus'; st.heads = 2; }
+    else if (sig('\x80theora')) { st.codec = 'theora'; st.heads = 3; }
+    else if (sig('\x7fFLAC')) { st.codec = 'flac'; st.heads = L >= 9 && be(7, 2) ? 1 + be(7, 2) : Infinity; }
+    else if (sig('Speex   ')) { st.codec = 'speex'; st.heads = 2 + (L >= 72 ? le(68, 4) : 0); }
+    else return null;
+  }
+  if (!st.codec || k > st.heads) return null;
+  switch (st.codec) {
+    case 'vorbis': {
+      const t = b[0];
+      const want = [0, 1, 3, 5][k];
+      if (!sig(String.fromCharCode(want) + 'vorbis')) return null;
+      f('Packet type', 0, 1, `${t}`); f('Signature', 1, 7, '“vorbis”');
+      if (k === 1) {
+        if (L < 30) { rest(7); return { what: 'Vorbis identification header (too short)', F }; }
+        const sb = b[28];
+        f('Vorbis version', 7, 11, `${le(7, 4)}`); f('Channels', 11, 12, `${b[11]}`); f('Sample rate', 12, 16, `${rsNum(le(12, 4))} Hz`);
+        const sgn = (p) => { const x = le(p, 4); return x > 0x7fffffff ? x - 4294967296 : x; };
+        f('Maximum bitrate', 16, 20, `${rsNum(sgn(16))}`); f('Nominal bitrate', 20, 24, `${rsNum(sgn(20))}`); f('Minimum bitrate', 24, 28, `${rsNum(sgn(24))}`);
+        f('Block sizes', 28, 29, `${1 << (sb & 15)} and ${1 << (sb >> 4)} samples`); f('Framing flag', 29, 30, `${b[29]}`); rest(30);
+        return { what: `Vorbis identification header: ${rsPlural(b[11], 'channel', 'channels')}, ${rsNum(le(12, 4))} Hz`, F };
+      }
+      if (k === 2) {
+        const r = rsVcFields(cx, b, 7, L); rsPushAll(F, r.F);
+        if (r.end < L) {
+          f('Framing flag', r.end, r.end + 1, `${b[r.end]}`);
+          if (r.end + 1 < L) f('After the framing flag', r.end + 1, L, rsBytesWord(L - r.end - 1), rsAllZero(b, r.end + 1, L) ? 'All its bytes are zero.' : null);
+        }
+        return { what: 'Vorbis comment header', F };
+      }
+      rest(7, 'Codebooks, floors, residues and modes');
+      return { what: 'Vorbis setup header', F };
+    }
+    case 'opus': {
+      if (k === 1) {
+        f('Signature', 0, 8, '“OpusHead”');
+        if (L < 19) { rest(8); return { what: 'Opus identification header (too short)', F }; }
+        const g = le(16, 2); const gain = (g > 32767 ? g - 65536 : g) / 256;
+        f('Version', 8, 9, `${b[8]}`); f('Channels', 9, 10, `${b[9]}`); f('Pre-skip', 10, 12, `${rsNum(le(10, 2))} samples`);
+        f('Input sample rate', 12, 16, `${rsNum(le(12, 4))} Hz`); f('Output gain', 16, 18, `${gain} dB`); f('Channel mapping family', 18, 19, `${b[18]}`);
+        if (b[18] && L >= 21 + b[9]) { f('Stream count', 19, 20, `${b[19]}`); f('Coupled stream count', 20, 21, `${b[20]}`); f('Channel mapping', 21, 21 + b[9], [...b.subarray(21, 21 + b[9])].join(', ')); rest(21 + b[9]); }
+        else rest(19);
+        return { what: `Opus identification header: ${rsPlural(b[9], 'channel', 'channels')}, input ${rsNum(le(12, 4))} Hz`, F };
+      }
+      if (!sig('OpusTags')) return null;
+      f('Signature', 0, 8, '“OpusTags”');
+      const r = rsVcFields(cx, b, 8, L); rsPushAll(F, r.F); rest(r.end, 'Extra data after the comments');
+      return { what: 'Opus comment header', F };
+    }
+    case 'theora': {
+      const want = [0, 0x80, 0x81, 0x82][k];
+      if (b[0] !== want || !sig(String.fromCharCode(want) + 'theora')) return null;
+      f('Packet type', 0, 1, `0x${rsHexByte(want)}`); f('Signature', 1, 7, '“theora”');
+      if (k === 1) {
+        if (L < 42) { rest(7); return { what: 'Theora identification header (too short)', F }; }
+        f('Version', 7, 10, `${b[7]}.${b[8]}.${b[9]}`); f('Frame width in macroblocks', 10, 12, `${be(10, 2)}`); f('Frame height in macroblocks', 12, 14, `${be(12, 2)}`);
+        f('Picture width', 14, 17, `${rsNum(be(14, 3))} pixels`); f('Picture height', 17, 20, `${rsNum(be(17, 3))} pixels`); f('Picture x offset', 20, 21, `${b[20]}`); f('Picture y offset', 21, 22, `${b[21]}`);
+        f('Frame rate numerator', 22, 26, rsNum(be(22, 4))); f('Frame rate denominator', 26, 30, rsNum(be(26, 4)));
+        f('Pixel aspect numerator', 30, 33, rsNum(be(30, 3))); f('Pixel aspect denominator', 33, 36, rsNum(be(33, 3)));
+        f('Colour space', 36, 37, `${b[36]}`); f('Nominal bitrate', 37, 40, rsNum(be(37, 3))); f('Quality, keyframe shift and pixel format', 40, 42, rsHex(b, 40, 42)); rest(42);
+        return { what: `Theora identification header: ${rsNum(be(14, 3))} × ${rsNum(be(17, 3))}` + (be(26, 4) ? `, ${rsNum(Math.round(be(22, 4) / be(26, 4) * 1000) / 1000)} frames a second` : ''), F };
+      }
+      if (k === 2) { const r = rsVcFields(cx, b, 7, L); rsPushAll(F, r.F); rest(r.end); return { what: 'Theora comment header', F }; }
+      rest(7, 'Setup data');
+      return { what: 'Theora setup header', F };
+    }
+    case 'flac': {
+      if (k === 1) {
+        if (L < 13) { rest(0); return { what: 'FLAC mapping header (too short)', F }; }
+        f('Packet type', 0, 1, '0x7F'); f('Signature', 1, 5, '“FLAC”'); f('Mapping version', 5, 7, `${b[5]}.${b[6]}`);
+        f('Number of header packets', 7, 9, be(7, 2) ? rsNum(be(7, 2)) : '0 (not given)'); f('Stream marker', 9, 13, rsQuote(rsLatin1(b, 9, 13)));
+        if (L < 17) { rest(13); return { what: 'FLAC mapping header', F }; }
+        const r = rsFlacBlock(cx, b, 13, L);
+        if (r.bad) { rest(13); return { what: 'FLAC mapping header', F }; }
+        F.push(rsF(`Metadata block ${r.name}`, 13, r.end, r.what, null, r.F)); rest(r.end);
+        if (r.last) st.heads = 1;
+        return { what: `FLAC mapping header: ${r.what || ''}`, F };
+      }
+      if (L < 4 || (b[0] & 0x7f) > 6) return null;
+      const r = rsFlacBlock(cx, b, 0, L);
+      if (r.bad) return null;
+      rsPushAll(F, r.F); rest(r.end);
+      if (r.last) st.heads = k;
+      return { what: `FLAC metadata block ${r.name}` + (r.what ? `: ${r.what}` : ''), F };
+    }
+    case 'speex': {
+      if (k === 1) {
+        if (L < 80) { rest(0); return { what: 'Speex header (too short)', F }; }
+        const sgn = (p) => { const x = le(p, 4); return x > 0x7fffffff ? x - 4294967296 : x; };
+        f('Signature', 0, 8, '“Speex   ”'); f('Speex version', 8, 28, rsTagText(b, 8, 28)); f('Version ID', 28, 32, `${le(28, 4)}`); f('Header size', 32, 36, rsBytesWord(le(32, 4)));
+        f('Sample rate', 36, 40, `${rsNum(le(36, 4))} Hz`); f('Mode', 40, 44, `${le(40, 4)}` + ({ 0: ' (narrowband)', 1: ' (wideband)', 2: ' (ultra-wideband)' }[le(40, 4)] || ''));
+        f('Mode bitstream version', 44, 48, `${le(44, 4)}`); f('Channels', 48, 52, `${le(48, 4)}`); f('Bitrate', 52, 56, sgn(52) < 0 ? `${sgn(52)} (not given)` : rsNum(sgn(52)));
+        f('Frame size', 56, 60, `${rsNum(le(56, 4))} samples`); f('Variable bitrate', 60, 64, `${le(60, 4)}`); f('Frames per packet', 64, 68, `${le(64, 4)}`);
+        f('Extra headers', 68, 72, `${le(68, 4)}`); f('Reserved', 72, 80, rsHex(b, 72, 80)); rest(80);
+        return { what: `Speex header: ${rsPlural(le(48, 4), 'channel', 'channels')}, ${rsNum(le(36, 4))} Hz`, F };
+      }
+      if (k === 2) { const r = rsVcFields(cx, b, 0, L); rsPushAll(F, r.F); rest(r.end); return { what: 'Speex comment header', F }; }
+      rest(0, 'Extra header data');
+      return { what: 'Speex extra header', F };
+    }
+  }
+  return null;
+}
+
+function rsOgg(cx) {
+  const { u8, n } = cx;
+  if (n < 4 || rsLatin1(u8, 0, 4) !== 'OggS') throw new Error('It doesn’t begin with “OggS”, which is how the format starts.');
+  const items = [], streams = new Map();
+  let p = 0, pages = 0;
+  const hex8 = (x) => '0x' + x.toString(16).toUpperCase().padStart(8, '0');
+  // Finishes a packet: works out what it is, and gives each of its parts its fields.
+  const finish = (st, pk) => {
+    if (pk.len > (64 << 20)) return;
+    const b = new Uint8Array(pk.len);
+    let o = 0; const pcs = [];
+    for (const pc of pk.parts) { b.set(u8.subarray(pc.s, pc.e), o); pcs.push({ a: o, b: o + pc.e - pc.s, f: pc.s }); o += pc.e - pc.s; }
+    const r = rsOggHeader(cx, st, pk.k, b);
+    if (!r) return;
+    pk.parts.forEach((pc, j) => {
+      if (j === 0) pc.item.value = r.what;
+      const kids = rsLay(cx, r.F, pcs, j);
+      if (kids.length) pc.item.children = rsCover(kids, pc.s, pc.e);
+    });
+  };
+  while (p < n) {
+    if (n - p < 27) { items.push(rsStopItem(cx, p, n, `Only ${rsBytesWord(n - p)} remain, too few for a page header.`)); break; }
+    if (rsLatin1(u8, p, p + 4) !== 'OggS') { items.push(rsStopItem(cx, p, n, `No page begins here: the next four bytes are ${rsHex(u8, p, p + 4)}, not “OggS”.`)); break; }
+    const ver = u8[p + 4], ht = u8[p + 5], ns = u8[p + 26];
+    if (ver !== 0) { items.push(rsStopItem(cx, p, n, `The page here gives version ${ver}; only version 0 is defined.`)); break; }
+    if (p + 27 + ns > n) { items.push(rsStopItem(cx, p, n, 'The file ends partway through a page’s segment table.')); break; }
+    let body = 0; for (let i = 0; i < ns; i++) body += u8[p + 27 + i];
+    const bs = p + 27 + ns, be = bs + body;
+    if (be > n) { items.push(rsStopItem(cx, p, n, `The page here says its body holds ${rsBytesWord(body)}, which runs past the end of the file.`)); break; }
+    pages++;
+    const serial = rsLE(u8, p + 14, 4);
+    let st = streams.get(serial);
+    if (!st || (ht & 2)) { st = { no: (st ? st.no : streams.size + 1), count: 0, pending: null, codec: null, heads: 0 }; streams.set(serial, st); }
+    if (!rsRoom(cx)) {
+      st.pending = null;
+      const go = rsUnlisted(cx, items, p, be, 'page', 'pages'); p = be;
+      if (!go && p < n) { items.push(rsTooLong(cx, p, n, 'pages')); break; }
+      continue;
+    }
+    const gr = rsLE64(u8, p + 6), seq = rsLE(u8, p + 18, 4), crc = rsLE(u8, p + 22, 4), calc = rsOggCrc(u8, p, be, p + 22);
+    const grText = u8.subarray(p + 6, p + 14).every((x) => x === 0xff) ? '−1 (no packet ends on this page)' : rsNum(gr);
+    const fl = [[1, 'continues a packet'], [2, 'first page of its stream'], [4, 'last page of its stream']].filter(([m]) => ht & m).map(([, t]) => t);
+    const kids = [rsI(cx, 'Capture pattern', p, p + 4, '“OggS”'), rsI(cx, 'Version', p + 4, p + 5, `${ver}`),
+      rsI(cx, 'Header type', p + 5, p + 6, fl.length ? fl.join(', ') : 'none set'), rsI(cx, 'Granule position', p + 6, p + 14, grText),
+      rsI(cx, 'Stream serial number', p + 14, p + 18, `${hex8(serial)} (${rsNum(serial)})`), rsI(cx, 'Page sequence number', p + 18, p + 22, rsNum(seq)),
+      rsI(cx, 'CRC checksum', p + 22, p + 26, crc === calc ? `${hex8(crc)}, matches the page` : `${hex8(crc)}, doesn’t match the page (it gives ${hex8(calc)})`),
+      rsI(cx, 'Number of segments', p + 26, p + 27, `${ns}`)];
+    if (ns) kids.push(rsI(cx, 'Segment table', p + 27, bs, `${ns} lacing value${ns === 1 ? '' : 's'}`));
+    // the packets, or parts of packets, in the body
+    const pk = [], done = [];
+    let q = bs, ps = bs, first = true, notes = [];
+    if ((ht & 1) && !st.pending) notes.push('It says it continues a packet, but no earlier page of this stream left one unfinished.');
+    if (!(ht & 1) && st.pending) { notes.push('An earlier page of this stream left a packet unfinished, but this page doesn’t say it continues it.'); const lp = st.pending.parts[st.pending.parts.length - 1]; if (lp && lp.item) lp.item.note = (lp.item.note ? lp.item.note + ' ' : '') + 'It isn’t finished on a later page.'; st.pending = null; }
+    for (let i = 0; i < ns; i++) {
+      q += u8[p + 27 + i];
+      const ends = u8[p + 27 + i] < 255;
+      if (!ends && i < ns - 1) continue;
+      const cont = first && (ht & 1);
+      let P;
+      if (cont && st.pending) P = st.pending;
+      else if (cont) P = { k: 0, parts: [], len: 0, orphan: true };
+      else { st.count++; P = { k: st.count, parts: [], len: 0, orphan: false }; }
+      const part = { s: ps, e: q, item: null };
+      P.parts.push(part); P.len += q - ps;
+      const idx = P.parts.length;
+      let label, note = null;
+      if (idx === 1 && ends) label = P.orphan ? `End of a packet begun before the first page of this stream` : `Packet ${rsNum(P.k)}`;
+      else if (idx === 1) { label = `Packet ${rsNum(P.k)}, first part`; note = 'It goes on into the next page of this stream.'; }
+      else if (ends) { label = `Packet ${rsNum(P.k)}, part ${idx}, the last`; note = `It began ${idx === 2 ? 'on the page before' : `${idx - 1} pages before`} in this stream.`; }
+      else { label = `Packet ${rsNum(P.k)}, part ${idx}`; note = 'It goes on into the next page of this stream.'; }
+      part.item = rsI(cx, label, ps, q, rsBytesWord(q - ps), note);
+      pk.push(part.item);
+      if (ends) { st.pending = null; if (!P.orphan) done.push(P); } else st.pending = P;
+      ps = q; first = false;
+    }
+    if (body) kids.push(rsI(cx, 'Page body', bs, be, rsBytesWord(body), null, pk));
+    for (const P of done) if (P.k <= Math.max(st.heads, 1)) finish(st, P);
+    items.push(rsI(cx, `Page ${rsNum(pages)}`, p, be, `stream ${st.no}, page ${rsNum(seq)}, ${rsPlural(pk.length, 'packet or part', 'packets or parts')}`, notes.length ? notes.join(' ') : null, kids));
+    p = be;
+  }
+  for (const [, st] of streams) if (st.pending && st.pending.parts.length) { const it = st.pending.parts[st.pending.parts.length - 1].item; it.note = 'It isn’t finished: the file has no later page of this stream.'; }
+  return { title: `Ogg pages, ${rsPlural(pages, 'page', 'pages')} in ${rsPlural(streams.size, 'stream', 'streams')}`, items };
+}
+
+/* ---------- MP4 and QuickTime boxes ---------- */
+
+const RS_MP4_CONTAINERS = new Set(['moov', 'trak', 'mdia', 'minf', 'stbl', 'dinf', 'edts', 'udta', 'ilst', 'moof', 'traf', 'mvex', 'sinf', 'mfra', 'schi', 'tref', 'wave', 'gmhd', 'tapt']);
+const RS_MP4_NAMES = {
+  ftyp: 'file type', styp: 'segment type', moov: 'movie', mvhd: 'movie header', trak: 'track', tkhd: 'track header', mdia: 'media', mdhd: 'media header',
+  hdlr: 'handler', minf: 'media information', vmhd: 'video media header', smhd: 'sound media header', nmhd: 'null media header', gmhd: 'generic media header',
+  dinf: 'data information', dref: 'data reference', stbl: 'sample table', stsd: 'sample descriptions', stts: 'decoding times', ctts: 'composition offsets',
+  stsc: 'samples to chunks', stsz: 'sample sizes', stz2: 'compact sample sizes', stco: 'chunk offsets', co64: '64-bit chunk offsets', stss: 'sync samples',
+  sdtp: 'sample dependencies', edts: 'edits', elst: 'edit list', udta: 'user data', meta: 'metadata', ilst: 'metadata item list', keys: 'metadata keys',
+  mdat: 'media data', free: 'free space', skip: 'free space', wide: 'free space (reserved for a 64-bit size)', moof: 'movie fragment', mfhd: 'movie fragment header',
+  traf: 'track fragment', tfhd: 'track fragment header', tfdt: 'track fragment decode time', trun: 'track fragment run', mvex: 'movie extends', trex: 'track extends',
+  mehd: 'movie extends header', mfra: 'movie fragment random access', tfra: 'track fragment random access', mfro: 'movie fragment random access offset',
+  sidx: 'segment index', sinf: 'protection scheme information', frma: 'original format', schm: 'scheme type', schi: 'scheme information', tref: 'track references',
+  iods: 'object descriptor', uuid: 'extended type', pdin: 'progressive download information', sgpd: 'sample group description', sbgp: 'samples to groups',
+  esds: 'elementary stream descriptor', avcC: 'AVC configuration', hvcC: 'HEVC configuration', av1C: 'AV1 configuration', vpcC: 'VP codec configuration',
+  pasp: 'pixel aspect ratio', colr: 'colour information', btrt: 'bitrate', dOps: 'Opus configuration', dfLa: 'FLAC configuration', chan: 'channel layout',
+  tapt: 'track aperture modes', clef: 'clean aperture', prof: 'production aperture', enof: 'encoded pixels', gmin: 'generic media information', text: 'text',
+};
+const RS_ILST_NAMES = {
+  '\xa9nam': 'title', '\xa9ART': 'artist', aART: 'album artist', '\xa9alb': 'album', '\xa9cmt': 'comment', '\xa9day': 'year', '\xa9gen': 'genre', gnre: 'genre number',
+  '\xa9wrt': 'composer', '\xa9too': 'encoder', '\xa9lyr': 'lyrics', '\xa9grp': 'grouping', desc: 'description', ldes: 'long description', trkn: 'track number',
+  disk: 'disc number', covr: 'cover picture', cprt: 'copyright', tmpo: 'tempo', cpil: 'compilation', pgap: 'gapless playback', '----': 'custom item',
+  '\xa9enc': 'encoded by', '\xa9des': 'description', soal: 'album sort order', soar: 'artist sort order', sonm: 'title sort order', stik: 'media kind',
+};
+const RS_VIDEO_ENTRIES = new Set(['avc1', 'avc2', 'avc3', 'avc4', 'hvc1', 'hev1', 'mp4v', 'vp08', 'vp09', 'av01', 's263', 'h263', 'jpeg', 'mjpa', 'mjpb', 'png ', 'rle ', 'raw ', 'apcn', 'apch', 'apcs', 'apco', 'ap4h', 'encv', 'dvh1', 'dvhe', 'mjp2', 'SVQ3', 'cvid']);
+const RS_AUDIO_ENTRIES = new Set(['mp4a', 'ac-3', 'ec-3', 'Opus', 'fLaC', 'alac', 'samr', 'sawb', 'sowt', 'twos', 'lpcm', 'ipcm', 'fpcm', 'in24', 'in32', 'fl32', 'fl64', '.mp3', 'ulaw', 'alaw', 'ima4', 'enca', 'raw ', 'NONE', 'mp4s']);
+const RS_MP4_EPOCH = Date.UTC(1904, 0, 1);
+
+function rsMp4Type(u8, p) { const t = rsLatin1(u8, p, p + 4); return /^[\x20-\x7e\xa9]{4}$/.test(t) ? t : null; }
+function rsMp4TypeText(u8, p) { const t = rsMp4Type(u8, p); return t ? `“${t}”` : rsQuote(rsLatin1(u8, p, p + 4)); }
+function rsMp4Time(x) {
+  if (typeof x === 'bigint') return rsNum(x);
+  if (!x) return '0 (not set)';
+  const t = rsUtcFrom(RS_MP4_EPOCH, x);
+  return t ? `${rsNum(x)} (${t})` : rsNum(x);
+}
+function rsMp4Lang(v) {
+  if (v < 0x400) return `${v} (a Macintosh language code)`;
+  if (v === 0x7fff) return '0x7FFF (not given)';
+  const c = (s) => String.fromCharCode(((v >> s) & 31) + 0x60);
+  return `“${c(10)}${c(5)}${c(0)}”`;
+}
+function rsFixed(x, frac) { return rsNum(Math.round(x / Math.pow(2, frac) * 10000) / 10000); }
+
+// Walks the boxes in [s, e) into items. ctx carries what the boxes around this one say
+// (the handler of the track, and whether this list is inside an item list).
+function rsMp4Boxes(cx, s, e, depth, items, ctx) {
+  const { u8 } = cx;
+  let p = s;
+  const where = ctx.parent ? `the “${ctx.parent}” box` : 'the file';
+  while (p < e) {
+    if (e - p < 8) {
+      if (e - p === 4 && rsAllZero(u8, p, e) && ctx.parent) { items.push(rsI(cx, 'Terminator', p, e, '00 00 00 00', 'Four zero bytes, which QuickTime allows at the end of a list of atoms.')); break; }
+      items.push(rsStopItem(cx, p, e, `Only ${rsBytesWord(e - p)} remain in ${where}, too few for a box’s size and type.`)); break;
+    }
+    let size = rsBE(u8, p, 4), hl = 8, sizeText;
+    const type = rsLatin1(u8, p + 4, p + 8), tq = rsMp4TypeText(u8, p + 4);
+    if (size === 1) {
+      if (e - p < 16) { items.push(rsStopItem(cx, p, e, `The ${tq} box here has a 64-bit size, but too few bytes remain for it.`)); break; }
+      const big = rsBE64(u8, p + 8);
+      if (typeof big === 'bigint' || big > e - p) { items.push(rsStopItem(cx, p, e, `The ${tq} box here gives a 64-bit size of ${rsNum(big)}, which runs past the end of ${where}.`)); break; }
+      size = big; hl = 16; sizeText = '1 (the size follows as a 64-bit number)';
+    } else if (size === 0) { size = e - p; sizeText = `0 (the box runs to the end of ${where})`; }
+    else sizeText = rsBytesWord(size);
+    if (size < hl) { items.push(rsStopItem(cx, p, e, `The ${tq} box here gives a size of ${rsNum(size)}, too small for its own header.`)); break; }
+    if (p + size > e) { items.push(rsStopItem(cx, p, e, `The ${tq} box here says it holds ${rsBytesWord(size)}, which runs past the end of ${where}.`)); break; }
+    if (type === 'uuid') { if (size < hl + 16) { items.push(rsStopItem(cx, p, e, 'The “uuid” box here is too small for its extended type.')); break; } hl += 16; }
+    const be = p + size;
+    if (!rsRoom(cx)) {
+      const go = rsUnlisted(cx, items, p, be, 'box', 'boxes'); p = be;
+      if (!go && p < e) { items.push(rsTooLong(cx, p, e, 'boxes')); break; }
+      continue;
+    }
+    const kids = [rsI(cx, 'Size', p, p + 4, sizeText), rsI(cx, 'Type', p + 4, p + 8, tq)];
+    if (hl >= 16 && rsBE(u8, p, 4) === 1) kids.push(rsI(cx, 'Large size', p + 8, p + 16, rsBytesWord(size)));
+    if (type === 'uuid') kids.push(rsI(cx, 'Extended type', p + hl - 16, p + hl, rsUuid(u8, p + hl - 16)));
+    const r = rsMp4Inside(cx, type, p + hl, be, depth, ctx) || {};
+    if (r.kids && r.kids.length) rsPushAll(kids, rsCover(r.kids, p + hl, be));
+    let label = `Box ${tq}`;
+    if (ctx.ilst) label = `Item ${tq}`;
+    const nm = ctx.ilst ? RS_ILST_NAMES[type] : ctx.entries ? null : RS_MP4_NAMES[type];
+    items.push(rsI(cx, label, p, be, r.what !== undefined && r.what !== null ? r.what : nm || null, r.note || (ctx.entries ? 'A sample entry: its type gives the format of the samples.' : null), kids));
+    p = be;
+  }
+  return items;
+}
+
+// What one box holds, in [s, e). Gives { what, kids, note }.
+function rsMp4Inside(cx, type, s, e, depth, ctx) {
+  const { u8 } = cx, len = e - s, k = [];
+  const f = (label, a, b, v, note) => { if (b <= e && b > a) k.push(rsI(cx, label, a, b, v, note)); return b <= e; };
+  const u16 = (p) => rsBE(u8, p, 2), u32 = (p) => rsBE(u8, p, 4);
+  const vf = () => { // a full box's version and flags
+    if (len < 4) return -1;
+    f('Version', s, s + 1, `${u8[s]}`); f('Flags', s + 1, s + 4, rsHex(u8, s + 1, s + 4));
+    return u8[s];
+  };
+  const sub = (a, c2) => { // the boxes inside, from a
+    if (depth >= 32) { f('Boxes inside', a, e, rsBytesWord(e - a), 'Nested too deeply for this page to follow.'); return; }
+    rsMp4Boxes(cx, a, e, depth + 1, k, Object.assign({}, ctx, { ilst: false, entries: false, item: null }, c2 || {}, { parent: c2 && c2.parent ? c2.parent : type }));
+  };
+  const table = (a, count, w, what) => { // a table of `count` entries of w bytes
+    const te = a + count * w;
+    if (te > e) { f('Entries', a, e, rsBytesWord(e - a), `The box says it has ${rsPlural(count, 'entry', 'entries')} of ${rsBytesWord(w)}, more than fit.`); return; }
+    if (count) f(what || 'Entries', a, te, `${rsPlural(count, 'entry', 'entries')} of ${rsBytesWord(w)}`);
+    if (te < e) f('After the entries', te, e, rsBytesWord(e - te));
+  };
+  if (ctx.ilst) { sub(s, { item: type, parent: type }); return { kids: k, what: rsIlstValue(cx, k, type) }; }
+  if (ctx.entries) return rsMp4Entry(cx, type, s, e, depth, ctx);
+  if (ctx.item && type === 'data') return rsIlstData(cx, s, e, ctx.item);
+  if (ctx.item && (type === 'mean' || type === 'name')) { if (vf() < 0) return null; f('Text', s + 4, e, rsQuoteBytes(u8, s + 4, e, true)); return { kids: k, what: rsQuoteBytes(u8, s + 4, e, true) }; }
+  if (ctx.parent === 'udta' && type.charCodeAt(0) === 0xa9 && !ctx.item) { // QuickTime text: entries of size, language and text
+    let p = s, vals = [];
+    while (p + 4 <= e) {
+      const L = u16(p), lang = u16(p + 2);
+      if (p + 4 + L > e) break;
+      if (!rsRoom(cx)) { // too many to list: the rest are counted
+        let q = p, c = 0, go = true;
+        while (q + 4 <= e && q + 4 + u16(q) <= e) { q += 4 + u16(q); c++; if (!(go = rsWalk(cx, 1))) break; }
+        k.push(rsI(cx, 'Text entries not listed one by one', p, q, rsPlural(c, 'text entry', 'text entries'), 'There are too many to list here one by one; they were read like the others.'));
+        p = q;
+        if (!go && p < e) { k.push(rsI(cx, 'Rest of the box', p, e, rsBytesWord(e - p), 'There are more text entries than this page will follow.')); p = e; if (!cx.stopped) cx.stopped = 'There are more text entries than this page will follow.'; }
+        break;
+      }
+      k.push(rsI(cx, 'Text entry', p, p + 4 + L, rsQuoteBytes(u8, p + 4, p + 4 + L, true), null, [rsI(cx, 'Length', p, p + 2, rsBytesWord(L)), rsI(cx, 'Language', p + 2, p + 4, rsMp4Lang(lang)), rsI(cx, 'Text', p + 4, p + 4 + L, rsQuoteBytes(u8, p + 4, p + 4 + L, true))]));
+      vals.push(rsQuoteBytes(u8, p + 4, p + 4 + L, true)); p += 4 + L;
+    }
+    if (p < e) f('Rest of the box', p, e, rsBytesWord(e - p), 'This isn’t a text entry that fits the box.');
+    return { kids: k, what: vals.join(', ') || null };
+  }
+  if (RS_MP4_CONTAINERS.has(type)) {
+    const c2 = {};
+    if (type === 'trak') c2.handler = null;
+    if (type === 'ilst') c2.ilst = true;
+    const kidCtx = Object.assign({}, c2);
+    if (type === 'trak') { const t = { handler: null }; sub(s, Object.assign(kidCtx, { track: t })); }
+    else if (type === 'ilst') { // its children are items, each holding data atoms
+      if (depth >= 32) { f('Items', s, e, rsBytesWord(len), 'Nested too deeply for this page to follow.'); return { kids: k }; }
+      rsMp4Boxes(cx, s, e, depth + 1, k, Object.assign({}, ctx, { ilst: true, entries: false, item: null, parent: 'ilst' }));
+    } else sub(s, kidCtx);
+    return { kids: k };
+  }
+  switch (type) {
+    case 'meta': {
+      if (len >= 8 && rsLatin1(u8, s + 4, s + 8) === 'hdlr') { sub(s); return { kids: k, note: 'It has no version and flags, as in QuickTime files: its boxes start at once.' }; }
+      if (vf() < 0) return null; sub(s + 4); return { kids: k };
+    }
+    case 'ftyp': case 'styp': {
+      if (len < 8) return null;
+      const major = rsMp4TypeText(u8, s);
+      f('Major brand', s, s + 4, major); f('Minor version', s + 4, s + 8, rsNum(u32(s + 4)));
+      const br = [];
+      for (let p = s + 8; p + 4 <= e; p += 4) { if (br.length < 1000) br.push(rsMp4TypeText(u8, p)); }
+      if (len > 8) f('Compatible brands', s + 8, s + 8 + 4 * Math.floor((len - 8) / 4), br.join(', ') + (br.length >= 1000 ? ', …' : ''));
+      return { kids: k, what: `major brand ${major}` + (br.length ? `, compatible ${br.slice(0, 8).join(', ')}${br.length > 8 ? ', …' : ''}` : '') };
+    }
+    case 'mvhd': case 'mdhd': case 'tkhd': {
+      const v = vf(); if (v < 0) return null;
+      const w = v === 1 ? 8 : 4, rd = (p) => (w === 8 ? rsBE64(u8, p) : u32(p));
+      let p = s + 4;
+      if (!f('Creation time', p, p + w, rsMp4Time(rd(p)), 'Seconds since the start of 1904, UTC.')) return { kids: k };
+      p += w; f('Modification time', p, p + w, rsMp4Time(rd(p))); p += w;
+      let scale = null, what = [];
+      if (type === 'tkhd') { f('Track ID', p, p + 4, rsNum(u32(p))); what.push(`track ${u32(p)}`); f('Reserved', p + 4, p + 8, rsHex(u8, p + 4, p + 8)); p += 8; scale = ctx.timescale; }
+      else { scale = u32(p); f('Timescale', p, p + 4, `${rsNum(scale)} units a second`); p += 4; if (type === 'mvhd') ctx.timescale = scale; }
+      if (p + w > e) return { kids: k };
+      const d = rd(p), allOnes = u8.subarray(p, p + w).every((x) => x === 0xff);
+      const secs = typeof d === 'number' && scale ? d / scale : null;
+      f('Duration', p, p + w, allOnes ? 'all ones (not known)' : `${rsNum(d)} units` + (secs !== null ? ` (${rsSecs(secs)})` : ''));
+      if (secs !== null && !allOnes) what.push(rsSecs(secs));
+      p += w;
+      if (type === 'mdhd') {
+        if (p + 4 <= e) { f('Language', p, p + 2, rsMp4Lang(u16(p))); f('Quality', p + 2, p + 4, `${u16(p + 2)}`); what.push(`language ${rsMp4Lang(u16(p))}`); p += 4; }
+      } else if (type === 'mvhd') {
+        if (p + 80 <= e) {
+          f('Preferred rate', p, p + 4, rsFixed(u32(p), 16)); f('Preferred volume', p + 4, p + 6, rsFixed(u16(p + 4), 8)); f('Reserved', p + 6, p + 16, rsHex(u8, p + 6, p + 16));
+          f('Matrix', p + 16, p + 52, rsBytesWord(36)); f('Predefined', p + 52, p + 76, rsBytesWord(24)); f('Next track ID', p + 76, p + 80, rsNum(u32(p + 76))); p += 80;
+        }
+      } else if (p + 60 <= e) {
+        f('Reserved', p, p + 8, rsHex(u8, p, p + 8)); f('Layer', p + 8, p + 10, `${u16(p + 8)}`); f('Alternate group', p + 10, p + 12, `${u16(p + 10)}`);
+        f('Volume', p + 12, p + 14, rsFixed(u16(p + 12), 8)); f('Reserved', p + 14, p + 16, rsHex(u8, p + 14, p + 16)); f('Matrix', p + 16, p + 52, rsBytesWord(36));
+        const W = u32(p + 52), H = u32(p + 56);
+        f('Width', p + 52, p + 56, rsFixed(W, 16)); f('Height', p + 56, p + 60, rsFixed(H, 16));
+        if (W || H) what.push(`${rsFixed(W, 16)} × ${rsFixed(H, 16)}`);
+        p += 60;
+      }
+      if (p < e) f('More box data', p, e, rsBytesWord(e - p));
+      return { kids: k, what: what.join(', ') || null };
+    }
+    case 'hdlr': {
+      if (vf() < 0 || len < 24) return { kids: k };
+      const comp = rsLatin1(u8, s + 4, s + 8), ht = rsMp4TypeText(u8, s + 8);
+      f(comp === 'mhlr' || comp === 'dhlr' ? 'Component type' : 'Predefined', s + 4, s + 8, rsMp4Type(u8, s + 4) ? rsMp4TypeText(u8, s + 4) : rsHex(u8, s + 4, s + 8));
+      f('Handler type', s + 8, s + 12, ht); f('Reserved', s + 12, s + 24, rsHex(u8, s + 12, s + 24));
+      if (ctx.track && !ctx.track.handler) ctx.track.handler = rsLatin1(u8, s + 8, s + 12);
+      let name = null;
+      if (e > s + 24) {
+        if ((comp === 'mhlr' || comp === 'dhlr') && u8[s + 24] === e - s - 25) { name = rsQuoteBytes(u8, s + 25, e, true); f('Name length', s + 24, s + 25, rsBytesWord(u8[s + 24])); f('Name', s + 25, e, name); }
+        else {
+          const z = rsZText(u8, s + 24, e); name = rsQuoteBytes(u8, s + 24, z, true);
+          f('Name', s + 24, z, name);
+          if (z < e) f('Terminator', z, z + 1, '00');
+          if (z + 1 < e) f('After the name', z + 1, e, rsHex(u8, z + 1, e));
+        }
+      }
+      return { kids: k, what: `handler ${ht}` + (name ? `, ${name}` : '') };
+    }
+    case 'stsd': {
+      if (vf() < 0 || len < 8) return { kids: k };
+      const c = u32(s + 4); f('Number of entries', s + 4, s + 8, rsNum(c));
+      if (depth >= 32) { f('Sample entries', s + 8, e, rsBytesWord(e - s - 8), 'Nested too deeply for this page to follow.'); return { kids: k }; }
+      const ek = rsMp4Boxes(cx, s + 8, e, depth + 1, [], Object.assign({}, ctx, { entries: true, parent: 'stsd' }));
+      rsPushAll(k, ek);
+      const fm = ek.filter((x) => x.label.startsWith('Box ')).map((x) => x.label.slice(4));
+      return { kids: k, what: fm.length ? `format ${fm.join(', ')}` : null };
+    }
+    case 'sbgp': {
+      const v = vf(); if (v < 0 || len < (v === 1 ? 16 : 12)) return { kids: k };
+      f('Grouping type', s + 4, s + 8, rsMp4TypeText(u8, s + 4));
+      let p = s + 8;
+      if (v === 1) { f('Grouping type parameter', p, p + 4, rsNum(u32(p))); p += 4; }
+      const c = u32(p); f('Number of entries', p, p + 4, rsNum(c));
+      table(p + 4, c, 8);
+      return { kids: k, what: `grouping ${rsMp4TypeText(u8, s + 4)}, ${rsPlural(c, 'entry', 'entries')}` };
+    }
+    case 'stts': case 'ctts': case 'stsc': case 'stss': case 'stco': case 'co64': case 'elst': case 'dref': {
+      if (vf() < 0 || len < 8) return { kids: k };
+      const c = u32(s + 4); f('Number of entries', s + 4, s + 8, rsNum(c));
+      if (type === 'dref') { sub(s + 8, { parent: 'dref' }); return { kids: k, what: rsPlural(c, 'entry', 'entries') }; }
+      const w = { stts: 8, ctts: 8, stsc: 12, stss: 4, stco: 4, co64: 8, elst: u8[s] === 1 ? 20 : 12 }[type];
+      let what = rsPlural(c, 'entry', 'entries');
+      if (type === 'stts' && s + 8 + c * 8 <= e) { let t = 0; for (let i = 0; i < c; i++) t += u32(s + 8 + 8 * i); what += `, ${rsPlural(t, 'sample', 'samples')} in all`; }
+      if (type === 'elst' && s + 8 + c * w <= e && c <= 100) {
+        for (let i = 0, q = s + 8; i < c; i++, q += w) {
+          const v1 = w === 20, dur = v1 ? rsBE64(u8, q) : u32(q), mt = v1 ? rsBE64(u8, q + 8) : u32(q + 4), mti = typeof mt === 'number' && mt === (v1 ? -1 : 0xffffffff) ? -1 : mt;
+          const allOnes = u8.subarray(q + (v1 ? 8 : 4), q + (v1 ? 16 : 8)).every((x) => x === 0xff);
+          f(`Edit ${i + 1}`, q, q + w, `duration ${rsNum(dur)}, media time ${allOnes ? '−1 (empty edit)' : rsNum(mti)}, rate ${rsFixed(u32(q + w - 4), 16)}`);
+        }
+        const te = s + 8 + c * w; if (te < e) f('After the entries', te, e, rsBytesWord(e - te));
+      } else table(s + 8, c, w);
+      return { kids: k, what };
+    }
+    case 'stsz': {
+      if (vf() < 0 || len < 12) return { kids: k };
+      const sz = u32(s + 4), c = u32(s + 8);
+      f('Sample size', s + 4, s + 8, sz ? rsBytesWord(sz) + ' (every sample)' : '0 (each sample’s size is listed)'); f('Number of samples', s + 8, s + 12, rsNum(c));
+      if (!sz) table(s + 12, c, 4, 'Sample sizes'); else if (e > s + 12) f('After the fields', s + 12, e, rsBytesWord(e - s - 12));
+      return { kids: k, what: rsPlural(c, 'sample', 'samples') };
+    }
+    case 'mdat': if (len) f('Media data', s, e, rsBytesWord(len)); return { kids: k };
+    case 'free': case 'skip': case 'wide': if (len) f('Free space', s, e, rsBytesWord(len)); return { kids: k };
+    default:
+      if (len) f('Box data', s, e, rsBytesWord(len));
+      return { kids: k };
+  }
+}
+
+// One sample entry in a sample-description box: its common fields, then those for video or sound.
+function rsMp4Entry(cx, type, s, e, depth, ctx) {
+  const { u8 } = cx, k = [];
+  const f = (label, a, b, v, note) => { if (b <= e && b > a) k.push(rsI(cx, label, a, b, v, note)); return b <= e; };
+  const u16 = (p) => rsBE(u8, p, 2), u32 = (p) => rsBE(u8, p, 4);
+  if (e - s < 8) { if (e > s) f('Entry data', s, e, rsBytesWord(e - s)); return { kids: k }; }
+  f('Reserved', s, s + 6, rsHex(u8, s, s + 6)); f('Data reference index', s + 6, s + 8, `${u16(s + 6)}`);
+  const h = ctx.track && ctx.track.handler;
+  const video = h ? h === 'vide' : RS_VIDEO_ENTRIES.has(type), audio = h ? h === 'soun' : RS_AUDIO_ENTRIES.has(type) && !video;
+  let p = s + 8, what = null;
+  if (video && p + 70 <= e) {
+    f('Version and revision', p, p + 4, rsHex(u8, p, p + 4)); f('Vendor', p + 4, p + 8, rsMp4TypeText(u8, p + 4));
+    f('Temporal and spatial quality', p + 8, p + 16, rsHex(u8, p + 8, p + 16));
+    f('Width', p + 16, p + 18, `${u16(p + 16)} pixels`); f('Height', p + 18, p + 20, `${u16(p + 18)} pixels`);
+    f('Horizontal resolution', p + 20, p + 24, `${rsFixed(u32(p + 20), 16)} pixels per inch`); f('Vertical resolution', p + 24, p + 28, `${rsFixed(u32(p + 24), 16)} pixels per inch`);
+    f('Data size', p + 28, p + 32, rsNum(u32(p + 28))); f('Frames per sample', p + 32, p + 34, `${u16(p + 32)}`);
+    const cl = Math.min(31, u8[p + 34]);
+    f('Compressor name', p + 34, p + 66, rsQuoteBytes(u8, p + 35, p + 35 + cl, true), 'A counted string in 32 bytes.');
+    f('Depth', p + 66, p + 68, `${u16(p + 66)}`); f('Colour table ID', p + 68, p + 70, `${u16(p + 68) > 32767 ? u16(p + 68) - 65536 : u16(p + 68)}`);
+    what = `${u16(p + 16)} × ${u16(p + 18)}`; p += 70;
+  } else if (audio && p + 20 <= e) {
+    const ver = u16(p);
+    f('Version', p, p + 2, `${ver}`); f('Revision level', p + 2, p + 4, `${u16(p + 2)}`); f('Vendor', p + 4, p + 8, rsMp4TypeText(u8, p + 4));
+    f('Channels', p + 8, p + 10, `${u16(p + 8)}`); f('Sample size', p + 10, p + 12, `${u16(p + 10)} bits`); f('Compression ID', p + 12, p + 14, `${u16(p + 12)}`);
+    f('Packet size', p + 14, p + 16, `${u16(p + 14)}`); f('Sample rate', p + 16, p + 20, `${rsNum(u32(p + 16) / 65536)} Hz`);
+    what = `${rsPlural(u16(p + 8), 'channel', 'channels')}, ${rsNum(u32(p + 16) / 65536)} Hz`; p += 20;
+    if (ver === 1 && p + 16 <= e) {
+      f('Samples per packet', p, p + 4, rsNum(u32(p))); f('Bytes per packet', p + 4, p + 8, rsNum(u32(p + 4))); f('Bytes per frame', p + 8, p + 12, rsNum(u32(p + 8))); f('Bytes per sample', p + 12, p + 16, rsNum(u32(p + 12))); p += 16;
+    } else if (ver === 2 && p + 36 <= e) {
+      const dv = new DataView(u8.buffer, u8.byteOffset + p + 4, 8);
+      f('Size of the fields', p, p + 4, rsNum(u32(p))); f('Sample rate (64-bit)', p + 4, p + 12, `${rsNum(dv.getFloat64(0))} Hz`); f('Channels (32-bit)', p + 12, p + 16, rsNum(u32(p + 12)));
+      f('Always 7F000000', p + 16, p + 20, rsHex(u8, p + 16, p + 20)); f('Bits per channel', p + 20, p + 24, rsNum(u32(p + 20))); f('Format flags', p + 24, p + 28, rsHex(u8, p + 24, p + 28));
+      f('Bytes per packet', p + 28, p + 32, rsNum(u32(p + 28))); f('Frames per packet', p + 32, p + 36, rsNum(u32(p + 32)));
+      what = `${rsPlural(u32(p + 12), 'channel', 'channels')}, ${rsNum(dv.getFloat64(0))} Hz`; p += 36;
+    }
+  } else { if (e > p) f('Entry data', p, e, rsBytesWord(e - p)); return { kids: k, what }; }
+  if (p < e) {
+    if (depth >= 32) f('Boxes inside', p, e, rsBytesWord(e - p), 'Nested too deeply for this page to follow.');
+    else rsMp4Boxes(cx, p, e, depth + 1, k, Object.assign({}, ctx, { entries: false, ilst: false, item: null, parent: type }));
+  }
+  return { kids: k, what };
+}
+
+// A "data" atom inside an item-list item: its type, locale and value.
+function rsIlstData(cx, s, e, item) {
+  const { u8 } = cx, k = [];
+  if (e - s < 8) { if (e > s) k.push(rsI(cx, 'Atom data', s, e, rsBytesWord(e - s))); return { kids: k }; }
+  const tv = u8[s], tc = rsBE(u8, s + 1, 3);
+  const TN = { 0: 'implicit', 1: 'UTF-8 text', 2: 'UTF-16 text', 13: 'JPEG picture', 14: 'PNG picture', 21: 'signed integer', 22: 'unsigned integer', 27: 'BMP picture', 23: 'float', 24: 'double' };
+  k.push(rsI(cx, 'Type indicator', s, s + 4, `version ${tv}, type ${tc}` + (TN[tc] ? ` (${TN[tc]})` : '')), rsI(cx, 'Locale', s + 4, s + 8, rsHex(u8, s + 4, s + 8)));
+  const a = s + 8, L = e - a;
+  let v = null;
+  if (item === 'covr' || tc === 13 || tc === 14 || tc === 27) { if (L) k.push(rsI(cx, 'Picture data', a, e, rsBytesWord(L), 'The picture itself isn’t shown here.')); v = `${TN[tc] || `type ${tc}`}, ${rsBytesWord(L)}`; }
+  else if (tc === 1) { v = rsQuoteBytes(u8, a, e, true); if (L) k.push(rsI(cx, 'Text', a, e, v)); }
+  else if (tc === 2) { v = rsQuote(new TextDecoder('utf-16be').decode(u8.subarray(a, e))); if (L) k.push(rsI(cx, 'Text', a, e, v)); }
+  else if ((tc === 21 || tc === 22) && [1, 2, 3, 4, 8].includes(L)) {
+    let x = L === 8 ? BigInt.asIntN(64, BigInt(rsBE64(u8, a))) : rsBE(u8, a, L);
+    if (tc === 22 && L === 8) x = BigInt(rsBE64(u8, a)); else if (tc === 21 && L < 8 && x >= Math.pow(2, 8 * L - 1)) x -= Math.pow(2, 8 * L);
+    v = rsNum(x); k.push(rsI(cx, 'Number', a, e, v));
+  } else if (tc === 0 && (item === 'trkn' || item === 'disk') && L >= 6) {
+    v = `${rsBE(u8, a + 2, 2)} of ${rsBE(u8, a + 4, 2)}`;
+    k.push(rsI(cx, 'Reserved', a, a + 2, rsHex(u8, a, a + 2)), rsI(cx, item === 'trkn' ? 'Track' : 'Disc', a + 2, a + 4, `${rsBE(u8, a + 2, 2)}`), rsI(cx, 'Total', a + 4, a + 6, `${rsBE(u8, a + 4, 2)}`));
+    if (L > 6) k.push(rsI(cx, 'Reserved', a + 6, e, rsHex(u8, a + 6, e)));
+  } else if (tc === 0 && item === 'gnre' && L === 2) { v = `${rsBE(u8, a, 2)}`; k.push(rsI(cx, 'Genre number', a, e, v)); }
+  else if (L) { v = rsHex(u8, a, e, 24); k.push(rsI(cx, 'Value', a, e, v)); }
+  return { kids: k, what: v };
+}
+function rsIlstValue(cx, kids, type) {
+  const d = kids.filter((x) => x.label === 'Box “data”').map((x) => x.value).filter(Boolean);
+  const nm = kids.find((x) => x.label === 'Box “name”');
+  const name = RS_ILST_NAMES[type];
+  return (type === '----' && nm ? `${nm.value}: ` : name ? `${name}: ` : '') + (d.length ? d.join(', ') : '');
+}
+
+function rsMp4(cx) {
+  const { u8, n } = cx;
+  const t = n >= 8 ? rsMp4Type(u8, 4) : null, s0 = n >= 8 ? rsBE(u8, 0, 4) : 0;
+  const big = s0 === 1 && n >= 16 ? rsBE64(u8, 8) : null;
+  const fits = s0 === 0 || (s0 === 1 ? typeof big === 'number' && big >= 16 && big <= n : s0 >= 8 && s0 <= n);
+  if (!t || /\xa9/.test(t) || !fits) throw new Error('It doesn’t begin with a box: the first bytes don’t give a size that fits the file and a four-letter type, which is how the format starts.');
+  const items = rsMp4Boxes(cx, 0, n, 0, [], { parent: null, ilst: false, entries: false, item: null, track: null });
+  const top = items.filter((x) => /^Box /.test(x.label)).length;
+  return { title: `MP4 or QuickTime file, ${rsPlural(top, 'top-level box', 'top-level boxes')}`, items };
+}
+
+/* ---------- Matroska and WebM (EBML) ---------- */
+
+// The elements this page names: ID → [name, type, parent IDs]. Types: m master, u unsigned,
+// i signed, f float, s ASCII text, 8 UTF-8 text, d date, b binary. Parent 0 is the top level.
+const RS_EBML = new Map([
+  [0x1a45dfa3, ['EBML header', 'm', [0]]], [0x4286, ['EBMLVersion', 'u', [0x1a45dfa3]]], [0x42f7, ['EBMLReadVersion', 'u', [0x1a45dfa3]]],
+  [0x42f2, ['EBMLMaxIDLength', 'u', [0x1a45dfa3]]], [0x42f3, ['EBMLMaxSizeLength', 'u', [0x1a45dfa3]]], [0x4282, ['DocType', 's', [0x1a45dfa3]]],
+  [0x4287, ['DocTypeVersion', 'u', [0x1a45dfa3]]], [0x4285, ['DocTypeReadVersion', 'u', [0x1a45dfa3]]], [0x4281, ['DocTypeExtension', 'm', [0x1a45dfa3]]],
+  [0x4283, ['DocTypeExtensionName', 's', [0x4281]]], [0x4284, ['DocTypeExtensionVersion', 'u', [0x4281]]],
+  [0xec, ['Void', 'b', null]], [0xbf, ['CRC-32', 'b', null]],
+  [0x18538067, ['Segment', 'm', [0]]],
+  [0x114d9b74, ['SeekHead', 'm', [0x18538067]]], [0x4dbb, ['Seek', 'm', [0x114d9b74]]], [0x53ab, ['SeekID', 'b', [0x4dbb]]], [0x53ac, ['SeekPosition', 'u', [0x4dbb]]],
+  [0x1549a966, ['Info', 'm', [0x18538067]]], [0x73a4, ['SegmentUUID', 'b', [0x1549a966]]], [0x7384, ['SegmentFilename', '8', [0x1549a966]]],
+  [0x3cb923, ['PrevUUID', 'b', [0x1549a966]]], [0x3c83ab, ['PrevFilename', '8', [0x1549a966]]], [0x3eb923, ['NextUUID', 'b', [0x1549a966]]],
+  [0x3e83bb, ['NextFilename', '8', [0x1549a966]]], [0x4444, ['SegmentFamily', 'b', [0x1549a966]]], [0x6924, ['ChapterTranslate', 'm', [0x1549a966]]],
+  [0x2ad7b1, ['TimestampScale', 'u', [0x1549a966]]], [0x4489, ['Duration', 'f', [0x1549a966]]], [0x4461, ['DateUTC', 'd', [0x1549a966]]],
+  [0x7ba9, ['Title', '8', [0x1549a966]]], [0x4d80, ['MuxingApp', '8', [0x1549a966]]], [0x5741, ['WritingApp', '8', [0x1549a966]]],
+  [0x1f43b675, ['Cluster', 'm', [0x18538067]]], [0xe7, ['Timestamp', 'u', [0x1f43b675]]], [0x5854, ['SilentTracks', 'm', [0x1f43b675]]],
+  [0xa7, ['Position', 'u', [0x1f43b675]]], [0xab, ['PrevSize', 'u', [0x1f43b675]]], [0xa3, ['SimpleBlock', 'b', [0x1f43b675]]],
+  [0xa0, ['BlockGroup', 'm', [0x1f43b675]]], [0xa1, ['Block', 'b', [0xa0]]], [0x75a1, ['BlockAdditions', 'm', [0xa0]]], [0xa6, ['BlockMore', 'm', [0x75a1]]],
+  [0xee, ['BlockAddID', 'u', [0xa6]]], [0xa5, ['BlockAdditional', 'b', [0xa6]]], [0x9b, ['BlockDuration', 'u', [0xa0]]], [0xfa, ['ReferencePriority', 'u', [0xa0]]],
+  [0xfb, ['ReferenceBlock', 'i', [0xa0]]], [0xa4, ['CodecState', 'b', [0xa0]]], [0x75a2, ['DiscardPadding', 'i', [0xa0]]], [0xaf, ['EncryptedBlock', 'b', [0x1f43b675]]],
+  [0x1654ae6b, ['Tracks', 'm', [0x18538067]]], [0xae, ['TrackEntry', 'm', [0x1654ae6b]]], [0xd7, ['TrackNumber', 'u', [0xae]]], [0x73c5, ['TrackUID', 'u', [0xae]]],
+  [0x83, ['TrackType', 'u', [0xae]]], [0xb9, ['FlagEnabled', 'u', [0xae]]], [0x88, ['FlagDefault', 'u', [0xae]]], [0x55aa, ['FlagForced', 'u', [0xae]]],
+  [0x55ab, ['FlagHearingImpaired', 'u', [0xae]]], [0x55ac, ['FlagVisualImpaired', 'u', [0xae]]], [0x55ad, ['FlagTextDescriptions', 'u', [0xae]]],
+  [0x55ae, ['FlagOriginal', 'u', [0xae]]], [0x55af, ['FlagCommentary', 'u', [0xae]]], [0x9c, ['FlagLacing', 'u', [0xae]]],
+  [0x23e383, ['DefaultDuration', 'u', [0xae]]], [0x234e7a, ['DefaultDecodedFieldDuration', 'u', [0xae]]],
+  [0x23314f, ['TrackTimestampScale', 'f', [0xae]]], [0x55ee, ['MaxBlockAdditionID', 'u', [0xae]]], [0x41e4, ['BlockAdditionMapping', 'm', [0xae]]],
+  [0x536e, ['Name', '8', [0xae]]], [0x22b59c, ['Language', 's', [0xae]]], [0x22b59d, ['LanguageBCP47', 's', [0xae]]], [0x86, ['CodecID', 's', [0xae]]],
+  [0x63a2, ['CodecPrivate', 'b', [0xae]]], [0x258688, ['CodecName', '8', [0xae]]], [0x7446, ['AttachmentLink', 'u', [0xae]]], [0xaa, ['CodecDecodeAll', 'u', [0xae]]],
+  [0x6fab, ['TrackOverlay', 'u', [0xae]]], [0x56aa, ['CodecDelay', 'u', [0xae]]], [0x56bb, ['SeekPreRoll', 'u', [0xae]]], [0x6624, ['TrackTranslate', 'm', [0xae]]],
+  [0xe0, ['Video', 'm', [0xae]]], [0x9a, ['FlagInterlaced', 'u', [0xe0]]], [0x9d, ['FieldOrder', 'u', [0xe0]]], [0x53b8, ['StereoMode', 'u', [0xe0]]],
+  [0x53c0, ['AlphaMode', 'u', [0xe0]]], [0xb0, ['PixelWidth', 'u', [0xe0]]], [0xba, ['PixelHeight', 'u', [0xe0]]], [0x54aa, ['PixelCropBottom', 'u', [0xe0]]],
+  [0x54bb, ['PixelCropTop', 'u', [0xe0]]], [0x54cc, ['PixelCropLeft', 'u', [0xe0]]], [0x54dd, ['PixelCropRight', 'u', [0xe0]]], [0x54b0, ['DisplayWidth', 'u', [0xe0]]],
+  [0x54ba, ['DisplayHeight', 'u', [0xe0]]], [0x54b2, ['DisplayUnit', 'u', [0xe0]]], [0x54b3, ['AspectRatioType', 'u', [0xe0]]], [0x2eb524, ['UncompressedFourCC', 'b', [0xe0]]],
+  [0x55b0, ['Colour', 'm', [0xe0]]], [0x55b1, ['MatrixCoefficients', 'u', [0x55b0]]], [0x55b2, ['BitsPerChannel', 'u', [0x55b0]]], [0x55b3, ['ChromaSubsamplingHorz', 'u', [0x55b0]]],
+  [0x55b4, ['ChromaSubsamplingVert', 'u', [0x55b0]]], [0x55b5, ['CbSubsamplingHorz', 'u', [0x55b0]]], [0x55b6, ['CbSubsamplingVert', 'u', [0x55b0]]],
+  [0x55b7, ['ChromaSitingHorz', 'u', [0x55b0]]], [0x55b8, ['ChromaSitingVert', 'u', [0x55b0]]], [0x55b9, ['Range', 'u', [0x55b0]]], [0x55ba, ['TransferCharacteristics', 'u', [0x55b0]]],
+  [0x55bb, ['Primaries', 'u', [0x55b0]]], [0x55bc, ['MaxCLL', 'u', [0x55b0]]], [0x55bd, ['MaxFALL', 'u', [0x55b0]]], [0x55d0, ['MasteringMetadata', 'm', [0x55b0]]],
+  [0xe1, ['Audio', 'm', [0xae]]], [0xb5, ['SamplingFrequency', 'f', [0xe1]]], [0x78b5, ['OutputSamplingFrequency', 'f', [0xe1]]], [0x9f, ['Channels', 'u', [0xe1]]],
+  [0x6264, ['BitDepth', 'u', [0xe1]]], [0x52f1, ['Emphasis', 'u', [0xe1]]], [0xe2, ['TrackOperation', 'm', [0xae]]],
+  [0x6d80, ['ContentEncodings', 'm', [0xae]]], [0x6240, ['ContentEncoding', 'm', [0x6d80]]], [0x5031, ['ContentEncodingOrder', 'u', [0x6240]]],
+  [0x5032, ['ContentEncodingScope', 'u', [0x6240]]], [0x5033, ['ContentEncodingType', 'u', [0x6240]]], [0x5034, ['ContentCompression', 'm', [0x6240]]],
+  [0x4254, ['ContentCompAlgo', 'u', [0x5034]]], [0x4255, ['ContentCompSettings', 'b', [0x5034]]], [0x5035, ['ContentEncryption', 'm', [0x6240]]],
+  [0x1c53bb6b, ['Cues', 'm', [0x18538067]]], [0xbb, ['CuePoint', 'm', [0x1c53bb6b]]], [0xb3, ['CueTime', 'u', [0xbb]]], [0xb7, ['CueTrackPositions', 'm', [0xbb]]],
+  [0xf7, ['CueTrack', 'u', [0xb7]]], [0xf1, ['CueClusterPosition', 'u', [0xb7]]], [0xf0, ['CueRelativePosition', 'u', [0xb7]]], [0xb2, ['CueDuration', 'u', [0xb7]]],
+  [0x5378, ['CueBlockNumber', 'u', [0xb7]]], [0xea, ['CueCodecState', 'u', [0xb7]]], [0xdb, ['CueReference', 'm', [0xb7]]], [0x96, ['CueRefTime', 'u', [0xdb]]],
+  [0x1941a469, ['Attachments', 'm', [0x18538067]]], [0x61a7, ['AttachedFile', 'm', [0x1941a469]]], [0x467e, ['FileDescription', '8', [0x61a7]]],
+  [0x466e, ['FileName', '8', [0x61a7]]], [0x4660, ['FileMimeType', 's', [0x61a7]]], [0x465c, ['FileData', 'b', [0x61a7]]], [0x46ae, ['FileUID', 'u', [0x61a7]]],
+  [0x1043a770, ['Chapters', 'm', [0x18538067]]], [0x45b9, ['EditionEntry', 'm', [0x1043a770]]], [0x45bc, ['EditionUID', 'u', [0x45b9]]],
+  [0x45bd, ['EditionFlagHidden', 'u', [0x45b9]]], [0x45db, ['EditionFlagDefault', 'u', [0x45b9]]], [0x45dd, ['EditionFlagOrdered', 'u', [0x45b9]]],
+  [0x4520, ['EditionDisplay', 'm', [0x45b9]]], [0x4521, ['EditionString', '8', [0x4520]]], [0x45e4, ['EditionLanguageIETF', 's', [0x4520]]],
+  [0xb6, ['ChapterAtom', 'm', [0x45b9, 0xb6]]], [0x73c4, ['ChapterUID', 'u', [0xb6]]], [0x5654, ['ChapterStringUID', '8', [0xb6]]],
+  [0x91, ['ChapterTimeStart', 'u', [0xb6]]], [0x92, ['ChapterTimeEnd', 'u', [0xb6]]], [0x98, ['ChapterFlagHidden', 'u', [0xb6]]], [0x4598, ['ChapterFlagEnabled', 'u', [0xb6]]],
+  [0x6e67, ['ChapterSegmentUUID', 'b', [0xb6]]], [0x6ebc, ['ChapterSegmentEditionUID', 'u', [0xb6]]], [0x63c3, ['ChapterPhysicalEquiv', 'u', [0xb6]]],
+  [0x8f, ['ChapterTrack', 'm', [0xb6]]], [0x89, ['ChapterTrackUID', 'u', [0x8f]]], [0x80, ['ChapterDisplay', 'm', [0xb6]]], [0x85, ['ChapString', '8', [0x80]]],
+  [0x437c, ['ChapLanguage', 's', [0x80]]], [0x437d, ['ChapLanguageBCP47', 's', [0x80]]], [0x437e, ['ChapCountry', 's', [0x80]]], [0x6944, ['ChapProcess', 'm', [0xb6]]],
+  [0x1254c367, ['Tags', 'm', [0x18538067]]], [0x7373, ['Tag', 'm', [0x1254c367]]], [0x63c0, ['Targets', 'm', [0x7373]]], [0x68ca, ['TargetTypeValue', 'u', [0x63c0]]],
+  [0x63ca, ['TargetType', 's', [0x63c0]]], [0x63c5, ['TagTrackUID', 'u', [0x63c0]]], [0x63c9, ['TagEditionUID', 'u', [0x63c0]]], [0x63c4, ['TagChapterUID', 'u', [0x63c0]]],
+  [0x63c6, ['TagAttachmentUID', 'u', [0x63c0]]], [0x67c8, ['SimpleTag', 'm', [0x7373, 0x67c8]]], [0x45a3, ['TagName', '8', [0x67c8]]], [0x447a, ['TagLanguage', 's', [0x67c8]]],
+  [0x447b, ['TagLanguageBCP47', 's', [0x67c8]]], [0x4484, ['TagDefault', 'u', [0x67c8]]], [0x44b4, ['TagDefaultBogus', 'u', [0x67c8]]], [0x4487, ['TagString', '8', [0x67c8]]],
+  [0x4485, ['TagBinary', 'b', [0x67c8]]],
+]);
+const RS_TRACK_TYPES = { 1: 'video', 2: 'audio', 3: 'complex', 16: 'logo', 17: 'subtitle', 18: 'buttons', 32: 'control', 33: 'metadata' };
+const RS_MKV_EPOCH = Date.UTC(2001, 0, 1);
+
+// A variable-length number at p: { v, n, unknown } (v is null when it is too big to hold), or
+// { bad } when its first byte can't begin one, or null when it runs past e.
+function rsVint(u8, p, e, maxLen) {
+  if (p >= e) return null;
+  const b0 = u8[p];
+  if (!b0) return { bad: true };
+  let n = 1; while (!(b0 & (0x80 >> (n - 1)))) n++;
+  if (n > maxLen) return { bad: true, n };
+  if (p + n > e) return null;
+  let v = b0 & (0xff >> n), ones = v === (0xff >> n);
+  for (let i = 1; i < n; i++) { v = v * 256 + u8[p + i]; if (u8[p + i] !== 0xff) ones = false; }
+  return { v: v <= Number.MAX_SAFE_INTEGER ? v : null, n, unknown: ones, raw: rsBE(u8, p, Math.min(n, 6)) };
+}
+function rsEbmlId(id) { return '0x' + id.toString(16).toUpperCase(); }
+function rsEbmlAllowed(id, parent) {
+  const d = RS_EBML.get(id);
+  return !!d && (d[2] === null || d[2].includes(parent));
+}
+
+// Reads the elements in [s, e) whose parent is `parent`. When the parent's size is unknown, it
+// ends at the first element that can't be its child, as the Matroska specification says. Gives
+// where the elements ended, or -1 when reading stopped.
+function rsEbmlList(cx, s, e, parent, unknownParent, depth, items, info) {
+  const { u8 } = cx;
+  let p = s;
+  while (p < e) {
+    const idv = rsVint(u8, p, e, 4);
+    if (!idv) { items.push(rsStopItem(cx, p, e, 'The data ends partway through an element ID.')); return -1; }

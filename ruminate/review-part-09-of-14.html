@@ -1,0 +1,800 @@
+<!-- Review copy: lines 5862-6660 of ruminate/index.html, split so Copilot can review it. Not served. -->
+      case 7: { if (p + 8 > end) fail('it ends partway through'); const v = new DataView(u8.buffer, u8.byteOffset + p, 8).getFloat64(0, true); p += 8; return { t: 'double', start: s, end: p, v }; }
+      case 8: { const k = size(); const v = u8.subarray(p, p + k); p += k; return { t: 'bin', start: s, end: p, v, at: p - k }; }
+      case 9: case 10: {
+        const h = byte(); let k = h >> 4; const et = h & 15;
+        if (k === 15) k = size();
+        if (k > end - p && et !== 1 && et !== 2) fail('a list in it claims more entries than there is room for');
+        const out = [];
+        for (let i = 0; i < k; i++) {
+          if (et === 1 || et === 2) { if (++count > RS_THRIFT_MAX) fail('it holds more values than this page will read'); const q = p; const b = byte(); out.push({ t: 'bool', start: q, end: p, v: b === 1 }); }
+          else out.push(value(et, depth + 1));
+        }
+        return { t: 'list', start: s, end: p, v: out };
+      }
+      case 11: {
+        const k = size(); const out = [];
+        if (k) {
+          const h = byte(), kt = h >> 4, vt = h & 15;
+          for (let i = 0; i < k; i++) out.push([value(kt, depth + 1), value(vt, depth + 1)]);
+        }
+        return { t: 'map', start: s, end: p, v: out };
+      }
+      case 12: {
+        const fields = []; let last = 0;
+        for (;;) {
+          const fs = p, h = byte();
+          if (h === 0) break;
+          const t2 = h & 15, d = h >> 4;
+          let id;
+          if (d) id = last + d; else { const z = zig(); id = Number(z); }
+          last = id;
+          if (t2 < 1 || t2 > 12) fail(`a field in it has type ${t2}, which the encoding doesn’t have`);
+          const val = value(t2, depth + 1);
+          if (t2 === 1 || t2 === 2) { val.start = fs; val.end = p; }
+          fields.push({ id, start: fs, end: p, val });
+        }
+        return { t: 'struct', start: s, end: p, v: fields };
+      }
+      default: fail(`it uses type ${t}, which the encoding doesn’t have`);
+    }
+  };
+  return value(12, 0);
+}
+
+const RS_PQ_ENUMS = {
+  Type: ['BOOLEAN', 'INT32', 'INT64', 'INT96', 'FLOAT', 'DOUBLE', 'BYTE_ARRAY', 'FIXED_LEN_BYTE_ARRAY'],
+  Repetition: ['REQUIRED', 'OPTIONAL', 'REPEATED'],
+  Converted: ['UTF8', 'MAP', 'MAP_KEY_VALUE', 'LIST', 'ENUM', 'DECIMAL', 'DATE', 'TIME_MILLIS', 'TIME_MICROS', 'TIMESTAMP_MILLIS', 'TIMESTAMP_MICROS', 'UINT_8', 'UINT_16', 'UINT_32', 'UINT_64', 'INT_8', 'INT_16', 'INT_32', 'INT_64', 'JSON', 'BSON', 'INTERVAL'],
+  Encoding: ['PLAIN', '(1, unused)', 'PLAIN_DICTIONARY', 'RLE', 'BIT_PACKED', 'DELTA_BINARY_PACKED', 'DELTA_LENGTH_BYTE_ARRAY', 'DELTA_BYTE_ARRAY', 'RLE_DICTIONARY', 'BYTE_STREAM_SPLIT'],
+  Codec: ['UNCOMPRESSED', 'SNAPPY', 'GZIP', 'LZO', 'BROTLI', 'LZ4', 'ZSTD', 'LZ4_RAW'],
+  PageType: ['DATA_PAGE', 'INDEX_PAGE', 'DICTIONARY_PAGE', 'DATA_PAGE_V2'],
+  Boundary: ['UNORDERED', 'ASCENDING', 'DESCENDING'],
+};
+
+// Field names and kinds for each struct: [label, kind, more]. Kinds: i (number), s (text),
+// b (bytes), bool, d (double), e (enum, more = its list), st (struct, more = its name),
+// l (list, more = element kind as [kind, more]), u (union, more = its name).
+const RS_PQ = {
+  FileMetaData: { 1: ['Format version', 'i'], 2: ['Schema', 'l', ['st', 'SchemaElement']], 3: ['Number of rows', 'i'], 4: ['Row groups', 'l', ['st', 'RowGroup']],
+    5: ['Key-value metadata', 'l', ['st', 'KeyValue']], 6: ['Created by', 's'], 7: ['Column orders', 'l', ['u', 'ColumnOrder']], 8: ['Encryption algorithm', 'st', 'Any'], 9: ['Footer signing key metadata', 'b'] },
+  SchemaElement: { 1: ['Physical type', 'e', 'Type'], 2: ['Type length', 'i'], 3: ['Repetition', 'e', 'Repetition'], 4: ['Name', 's'], 5: ['Number of children', 'i'],
+    6: ['Converted type', 'e', 'Converted'], 7: ['Scale', 'i'], 8: ['Precision', 'i'], 9: ['Field ID', 'i'], 10: ['Logical type', 'u', 'LogicalType'] },
+  RowGroup: { 1: ['Column chunks', 'l', ['st', 'ColumnChunk']], 2: ['Total byte size', 'i'], 3: ['Number of rows', 'i'], 4: ['Sorting columns', 'l', ['st', 'SortingColumn']],
+    5: ['File offset', 'i'], 6: ['Total compressed size', 'i'], 7: ['Ordinal', 'i'] },
+  ColumnChunk: { 1: ['File path', 's'], 2: ['File offset', 'i'], 3: ['Column metadata', 'st', 'ColumnMetaData'], 4: ['Offset index offset', 'i'], 5: ['Offset index length', 'i'],
+    6: ['Column index offset', 'i'], 7: ['Column index length', 'i'], 8: ['Crypto metadata', 'st', 'Any'], 9: ['Encrypted column metadata', 'b'] },
+  ColumnMetaData: { 1: ['Physical type', 'e', 'Type'], 2: ['Encodings', 'l', ['e', 'Encoding']], 3: ['Path in schema', 'l', ['s']], 4: ['Compression codec', 'e', 'Codec'],
+    5: ['Number of values', 'i'], 6: ['Total uncompressed size', 'i'], 7: ['Total compressed size', 'i'], 8: ['Key-value metadata', 'l', ['st', 'KeyValue']],
+    9: ['Data page offset', 'i'], 10: ['Index page offset', 'i'], 11: ['Dictionary page offset', 'i'], 12: ['Statistics', 'st', 'Statistics'],
+    13: ['Encoding statistics', 'l', ['st', 'PageEncodingStats']], 14: ['Bloom filter offset', 'i'], 15: ['Bloom filter length', 'i'], 16: ['Size statistics', 'st', 'SizeStatistics'], 17: ['Geospatial statistics', 'st', 'Any'] },
+  Statistics: { 1: ['Maximum (old field)', 'stat'], 2: ['Minimum (old field)', 'stat'], 3: ['Null count', 'i'], 4: ['Distinct count', 'i'], 5: ['Maximum', 'stat'], 6: ['Minimum', 'stat'],
+    7: ['Maximum is exact', 'bool'], 8: ['Minimum is exact', 'bool'] },
+  KeyValue: { 1: ['Key', 's'], 2: ['Value', 's'] },
+  PageEncodingStats: { 1: ['Page type', 'e', 'PageType'], 2: ['Encoding', 'e', 'Encoding'], 3: ['Count', 'i'] },
+  SortingColumn: { 1: ['Column index', 'i'], 2: ['Descending', 'bool'], 3: ['Nulls first', 'bool'] },
+  SizeStatistics: { 1: ['Unencoded byte-array data bytes', 'i'], 2: ['Repetition level histogram', 'l', ['i']], 3: ['Definition level histogram', 'l', ['i']] },
+  PageHeader: { 1: ['Page type', 'e', 'PageType'], 2: ['Uncompressed page size', 'i'], 3: ['Compressed page size', 'i'], 4: ['CRC', 'i'],
+    5: ['Data page header', 'st', 'DataPageHeader'], 6: ['Index page header', 'st', 'Any'], 7: ['Dictionary page header', 'st', 'DictionaryPageHeader'], 8: ['Data page header (version 2)', 'st', 'DataPageHeaderV2'] },
+  DataPageHeader: { 1: ['Number of values', 'i'], 2: ['Encoding', 'e', 'Encoding'], 3: ['Definition level encoding', 'e', 'Encoding'], 4: ['Repetition level encoding', 'e', 'Encoding'], 5: ['Statistics', 'st', 'Statistics'] },
+  DictionaryPageHeader: { 1: ['Number of values', 'i'], 2: ['Encoding', 'e', 'Encoding'], 3: ['Is sorted', 'bool'] },
+  DataPageHeaderV2: { 1: ['Number of values', 'i'], 2: ['Number of nulls', 'i'], 3: ['Number of rows', 'i'], 4: ['Encoding', 'e', 'Encoding'],
+    5: ['Definition levels byte length', 'i'], 6: ['Repetition levels byte length', 'i'], 7: ['Is compressed', 'bool'], 8: ['Statistics', 'st', 'Statistics'] },
+  OffsetIndex: { 1: ['Page locations', 'l', ['st', 'PageLocation']], 2: ['Unencoded byte-array data bytes', 'l', ['i']] },
+  PageLocation: { 1: ['Offset', 'i'], 2: ['Compressed page size', 'i'], 3: ['First row index', 'i'] },
+  ColumnIndex: { 1: ['Null pages', 'l', ['bool']], 2: ['Minimum values', 'l', ['stat']], 3: ['Maximum values', 'l', ['stat']], 4: ['Boundary order', 'e', 'Boundary'],
+    5: ['Null counts', 'l', ['i']], 6: ['Repetition level histograms', 'l', ['i']], 7: ['Definition level histograms', 'l', ['i']] },
+  DecimalType: { 1: ['Scale', 'i'], 2: ['Precision', 'i'] },
+  TimeType: { 1: ['Adjusted to UTC', 'bool'], 2: ['Unit', 'u', 'TimeUnit'] },
+  IntType: { 1: ['Bit width', 'i'], 2: ['Signed', 'bool'] },
+  Any: {},
+};
+const RS_PQ_UNIONS = {
+  LogicalType: { 1: 'STRING', 2: 'MAP', 3: 'LIST', 4: 'ENUM', 5: ['DECIMAL', 'DecimalType'], 6: 'DATE', 7: ['TIME', 'TimeType'], 8: ['TIMESTAMP', 'TimeType'],
+    10: ['INTEGER', 'IntType'], 11: 'UNKNOWN', 12: 'JSON', 13: 'BSON', 14: 'UUID', 15: 'FLOAT16', 16: 'VARIANT', 17: 'GEOMETRY', 18: 'GEOGRAPHY' },
+  TimeUnit: { 1: 'MILLIS', 2: 'MICROS', 3: 'NANOS' },
+  ColumnOrder: { 1: 'TYPE_ORDER' },
+};
+
+// A statistics value, read by the column's physical type when it is known.
+// A field of a decoded struct, or undefined (also when the value isn't a struct at all).
+function rsPqGet(sv, id) { return sv && sv.t === 'struct' ? (sv.v.find((f) => f.id === id) || {}).val : undefined; }
+// A column's path in the schema, from its list of names, or null when the list isn't one of names.
+function rsPqPath(lv) {
+  if (!lv || lv.t !== 'list' || !lv.v.every((q) => q.t === 'bin')) return null;
+  return lv.v.slice(0, 1000).map((q) => new TextDecoder().decode(q.v)).join('.') + (lv.v.length > 1000 ? '.…' : '');
+}
+const rsPqKinds = { bool: 'a true-or-false value', int: 'an integer', double: 'a floating-point number', bin: 'a byte string', list: 'a list', map: 'a map', struct: 'a struct' };
+function rsPqStat(b, ptype) {
+  const dv = new DataView(b.buffer, b.byteOffset, b.length);
+  if (ptype === 1 && b.length === 4) return String(dv.getInt32(0, true));
+  if (ptype === 2 && b.length === 8) return String(dv.getBigInt64(0, true));
+  if (ptype === 4 && b.length === 4) return String(dv.getFloat32(0, true));
+  if (ptype === 5 && b.length === 8) return String(dv.getFloat64(0, true));
+  if (ptype === 0 && b.length === 1) return b[0] ? 'true' : 'false';
+  return rsTextOrHex(b, 0, b.length);
+}
+
+function rsPqScalar(val, kind, more, ptype) {
+  if (val.t === 'bool') return val.v ? 'true' : 'false';
+  if (val.t === 'int') {
+    if (kind === 'e') { const nm = RS_PQ_ENUMS[more][val.v]; return nm ? `${nm} (${val.v})` : `${val.v}`; }
+    return typeof val.v === 'bigint' ? val.v.toString() : String(val.v);
+  }
+  if (val.t === 'double') return String(val.v);
+  if (val.t === 'bin') {
+    if (kind === 'stat') return rsPqStat(val.v, ptype);
+    if (kind === 's') return rsQuote(new TextDecoder('utf-8').decode(val.v), 2000);
+    return rsTextOrHex(val.v, 0, val.v.length);
+  }
+  return null;
+}
+
+// Turns a decoded struct into items, by the names above. `ctx` carries the physical type, so
+// statistics can be shown as numbers.
+function rsPqItems(cx, sv, typeName, ctx = {}) {
+  const spec = RS_PQ[typeName] || {};
+  if (spec[1] && spec[1][2] === 'Type' && typeName !== 'SchemaElement') {
+    const f = sv.v.find((x) => x.id === 1); if (f && f.val.t === 'int') ctx = Object.assign({}, ctx, { ptype: f.val.v });
+  }
+  const out = [];
+  for (const f of sv.v) {
+    const d = spec[f.id] || [`Field ${f.id}`, '?'];
+    out.push(rsPqField(cx, f.start, f.end, f.val, d, ctx, `field ${f.id}`));
+  }
+  return out;
+}
+
+function rsPqField(cx, s, e, val, d, ctx, where) {
+  const [label, kind, more] = d;
+  if (!rsRoom(cx)) return rsI(cx, label, s, e);
+  if (val.t === 'struct') {
+    if (kind === 'u') { // a union: one field saying which choice, perhaps with settings
+      const u = RS_PQ_UNIONS[more] || {}, f = val.v[0];
+      if (!f) return rsI(cx, label, s, e, 'empty');
+      const c = u[f.id];
+      const name = Array.isArray(c) ? c[0] : c || `choice ${f.id}`;
+      const kids = Array.isArray(c) && f.val.t === 'struct' ? rsPqItems(cx, f.val, c[1], ctx) : null;
+      const inner = kids && kids.length ? ` (${kids.map((k) => `${k.label.toLowerCase()} ${k.value || ''}`.trim()).join(', ')})` : '';
+      return rsI(cx, label, s, e, name + inner, where, kids);
+    }
+    const kids = rsPqItems(cx, val, kind === 'st' ? more : 'Any', ctx);
+    return rsI(cx, label, s, e, null, where, kids);
+  }
+  if (val.t === 'list') {
+    const [ek, em] = more || ['?'];
+    if (ek === 'st' || ek === 'u') {
+      const kids = [];
+      for (let i = 0; i < val.v.length; i++) {
+        const x = val.v[i];
+        if (!rsRoom(cx)) { // past the item limit, the rest of the list is one item
+          kids.push(rsUnlistedRange(cx, x.start, val.v[val.v.length - 1].end, val.v.length - i, 'entry', 'entries'));
+          break;
+        }
+        let lb = `${label.replace(/s$/, '')} ${i}`, v = null;
+        if (em === 'SchemaElement') { const nm = rsPqGet(x, 4); lb = 'Schema element'; if (nm) v = rsPqScalar(nm, 's'); }
+        else if (em === 'KeyValue') { const k = rsPqGet(x, 1); lb = 'Key-value pair'; if (k) v = rsPqScalar(k, 's'); }
+        else if (em === 'ColumnChunk') { lb = `Column chunk ${i}`; v = rsPqPath(rsPqGet(rsPqGet(x, 3), 3)); }
+        else if (em === 'RowGroup') lb = `Row group ${i}`;
+        else if (em === 'PageLocation') lb = `Page location ${i}`;
+        const it = x.t === 'struct' ? rsPqField(cx, x.start, x.end, x, [lb, ek, em], ctx, null)
+          : rsI(cx, lb, x.start, x.end, rsPqScalar(x, '?') ?? `${rsPqKinds[x.t] || x.t}`, `This is ${rsPqKinds[x.t] || x.t}, where the format has a struct.`);
+        if (v !== null && v !== undefined) it.value = em === 'ColumnChunk' ? rsQuote(v) : v;
+        kids.push(it);
+      }
+      return rsI(cx, label, s, e, `${rsNum(val.v.length)} entr${val.v.length === 1 ? 'y' : 'ies'}`, where, kids);
+    }
+    const parts = val.v.slice(0, 65).map((x) => rsPqScalar(x, ek, em, ctx.ptype) ?? (rsPqKinds[x.t] || x.t));
+    const path = ek === 's' && label === 'Path in schema' ? rsPqPath(val) : null;
+    let shown = path !== null ? rsQuote(path) : parts.slice(0, 64).join(', ') + (val.v.length > 64 ? `, … (${rsNum(val.v.length)} in all)` : '');
+    if (!val.v.length) shown = 'empty';
+    return rsI(cx, label, s, e, shown, where);
+  }
+  if (val.t === 'map') return rsI(cx, label, s, e, `${val.v.length} pairs`, where);
+  return rsI(cx, label, s, e, rsPqScalar(val, kind, more, ctx.ptype), where);
+}
+
+function rsParquet(cx) {
+  const { u8, n } = cx;
+  if (n < 12) throw new Error('It is too short to hold the four-byte markers at both ends and the footer length.');
+  const items = [];
+  const head = rsLatin1(u8, 0, 4), tail = rsLatin1(u8, n - 4, n);
+  items.push(rsI(cx, 'Leading magic', 0, 4, head === 'PAR1' ? '“PAR1”' : `${rsQuote(head)}, not “PAR1”`));
+  const flen = rsLE(u8, n - 8, 4);
+  const lenItem = rsI(cx, 'Footer length', n - 8, n - 4, rsBytesWord(flen));
+  items.push(lenItem, rsI(cx, 'Trailing magic', n - 4, n, tail === 'PAR1' ? '“PAR1”' : `${rsQuote(tail)}, not “PAR1”`));
+  const title = 'Parquet table';
+  if (tail !== 'PAR1') { cx.stopped = 'The file doesn’t end with “PAR1”, so its footer can’t be located.'; items[2].note = 'Reading stopped here: without this marker the footer can’t be located.'; return { title, items }; }
+  if (flen > n - 12) {
+    lenItem.value = `${rsBytesWord(flen)}, more than the file has room for (at most ${rsBytesWord(n - 12)})`;
+    cx.stopped = 'The footer length is more than the file has room for, so the footer can’t be located.';
+    lenItem.note = 'Reading stopped here.';
+    return { title, items };
+  }
+  const fs = n - 8 - flen;
+  let md;
+  try { md = rsThrift(u8, fs, n - 8); } catch (e) {
+    items.push(rsStopItem(cx, fs, n - 8, `The file metadata couldn’t be read: ${e.message}.`));
+    return { title, items };
+  }
+  items.push(rsI(cx, 'File metadata', fs, md.end, rsBytesWord(md.end - fs), md.end < n - 8 ? `It ends ${rsBytesWord(n - 8 - md.end)} before the footer does.` : null, rsPqItems(cx, md, 'FileMetaData')));
+  // locate each column chunk's pages from the footer's offsets
+  const get = rsPqGet;
+  const num = (v) => v && v.t === 'int' ? Number(v.v) : null;
+  const groups = get(md, 4);
+  let rows = num(get(md, 3)), chunks = 0, skipped = 0, tooLong = false;
+  if (groups && groups.t === 'list') {
+    groups.v.forEach((rg, gi) => {
+      const cols = get(rg, 1);
+      if (!cols || cols.t !== 'list') return;
+      cols.v.forEach((cc, ci) => {
+        const meta = get(cc, 3);
+        if (!meta || meta.t !== 'struct') return;
+        const pathV = get(meta, 3);
+        const path = rsPqPath(pathV) ?? `column ${ci}`;
+        const codec = num(get(meta, 4));
+        const dpo = num(get(meta, 9)), dio = num(get(meta, 11)), size = num(get(meta, 7));
+        const where = `${rsQuote(path)} in row group ${gi}`;
+        // column and offset indexes and bloom filters, when the footer points to them
+        const extra = (oid, lid, label, type) => {
+          const o = type === 'Bloom' ? num(get(meta, oid)) : num(get(cc, oid)), l = type === 'Bloom' ? num(get(meta, lid)) : num(get(cc, lid));
+          if (o === null || o < 4 || o >= fs) return;
+          if (!rsRoom(cx) && cx.count >= cx.limit + RS_SCATTERED) return;
+          const e = l ? Math.min(o + l, fs) : null;
+          if (type === 'Bloom') { if (e) items.push(rsI(cx, `${label} for ${where}`, o, e, rsBytesWord(e - o))); return; }
+          try { const sv = rsThrift(u8, o, e || fs, cx); items.push(rsI(cx, `${label} for ${where}`, o, sv.end, rsBytesWord(sv.end - o), null, rsPqItems(cx, sv, type))); }
+          catch (err) { if (e) items.push(rsI(cx, `${label} for ${where}`, o, e, `couldn’t be read: ${err.message}`)); }
+        };
+        extra(6, 7, 'Column index', 'ColumnIndex'); extra(4, 5, 'Offset index', 'OffsetIndex'); extra(14, 15, 'Bloom filter', 'Bloom');
+        if (dpo === null || size === null) return;
+        // the chunk starts at its dictionary page or its first data page, whichever comes first;
+        // an offset that points into the leading magic means that page isn't there
+        const offs = [dio, dpo].filter((x) => x !== null && x >= 4);
+        const start = offs.length ? Math.min(...offs) : dpo;
+        const end = start + size;
+        chunks++;
+        if (!rsRoom(cx) && cx.count >= cx.limit + RS_SCATTERED) { skipped++; return; } // far past the item limit, a chunk's bytes show as not described
+        if (start < 4 || end > fs || size < 0) { items.push(rsStopItem(cx, Math.min(Math.max(start, 4), fs), Math.min(Math.max(end, 4), fs), `The footer places the column chunk for ${where} at bytes ${rsNum(start)} to ${rsNum(end)}, outside the space between the leading magic and the footer.`)); return; }
+        const kids = [];
+        let p = start, pages = 0;
+        while (p < end && !tooLong) {
+          let ph;
+          try { ph = rsThrift(u8, p, end, cx); } catch (err) { if (cx.walked >= RS_WALK_MAX) tooLong = true; kids.push(rsStopItem(cx, p, end, `A page header here couldn’t be read: ${err.message}.`)); break; }
+          const t = num(get(ph, 1)), csz = num(get(ph, 3));
+          if (csz === null || csz < 0 || ph.end + csz > end) { kids.push(rsStopItem(cx, p, end, `The page here says its data is ${rsBytesWord(csz || 0)}, which runs past the column chunk.`)); break; }
+          if (!rsRoom(cx)) { // past the item limit, pages are only counted
+            const go = rsUnlisted(cx, kids, p, ph.end + csz, 'page', 'pages');
+            p = ph.end + csz; pages++;
+            if (!go) { tooLong = true; if (p < end) kids.push(rsTooLong(cx, p, end, 'pages')); }
+            continue;
+          }
+          const tn = { 0: 'Data page', 1: 'Index page', 2: 'Dictionary page', 3: 'Data page (version 2)' }[t] || `Page of type ${t}`;
+          const pk = [rsI(cx, 'Page header', p, ph.end, rsBytesWord(ph.end - p), null, rsPqItems(cx, ph, 'PageHeader', { ptype: num(get(meta, 1)) }))];
+          const ds = ph.end, de = ds + csz, cname = RS_PQ_ENUMS.Codec[codec] || `codec ${codec}`;
+          const v2 = get(ph, 8);
+          if (t === 3 && v2) {
+            const rl = num(get(v2, 6)) || 0, dl = num(get(v2, 5)) || 0, comp = get(v2, 7);
+            const isC = comp ? comp.v : true;
+            if (rl + dl <= csz) {
+              if (rl) pk.push(rsI(cx, 'Repetition levels', ds, ds + rl, rsBytesWord(rl)));
+              if (dl) pk.push(rsI(cx, 'Definition levels', ds + rl, ds + rl + dl, rsBytesWord(dl)));
+              if (de > ds + rl + dl) pk.push(rsI(cx, 'Values', ds + rl + dl, de, rsBytesWord(de - ds - rl - dl) + (isC && codec ? `, compressed with ${cname}` : '')));
+            } else pk.push(rsI(cx, 'Page data', ds, de, rsBytesWord(csz), 'Its level lengths add up to more than the page holds.'));
+          } else if (csz) pk.push(rsI(cx, 'Page data', ds, de, rsBytesWord(csz) + (codec ? `, compressed with ${cname}` : '')));
+          const nv = num(get(get(ph, 5), 1)) ?? num(get(get(ph, 7), 1)) ?? num(get(v2, 1));
+          kids.push(rsI(cx, tn, p, de, nv !== null ? `${rsNum(nv)} value${nv === 1 ? '' : 's'}` : null, null, pk));
+          p = de; pages++;
+        }
+        items.push(rsI(cx, `Column chunk ${where}`, start, end, `${rsNum(pages)} page${pages === 1 ? '' : 's'}, ${RS_PQ_ENUMS.Codec[codec] || `codec ${codec}`}`, null, kids));
+      });
+    });
+  }
+  if (skipped) { const it = items.find((x) => x.label === 'File metadata'); if (it) it.note = (it.note ? it.note + ' ' : '') + `${rsNum(skipped)} of the column chunks it places aren’t listed, so their bytes show as not described.`; }
+  const ng = groups && groups.t === 'list' ? groups.v.length : 0;
+  return { title: `${title}, ${rows === null ? '' : `${rsNum(rows)} row${rows === 1 ? '' : 's'}, `}${rsNum(ng)} row group${ng === 1 ? '' : 's'}`, items };
+}
+
+/* ---------- Python pickles ---------- */
+// A disassembly in the manner of Python's pickletools.dis: one item per opcode, nothing run.
+
+// Python's repr of a str. `asciiOnly` gives ascii() instead, which escapes every non-ASCII character.
+function rsPyStr(s, asciiOnly) {
+  const q = s.includes("'") && !s.includes('"') ? '"' : "'";
+  const bad = /[\p{Cc}\p{Cf}\p{Co}\p{Cn}\p{Cs}\p{Zl}\p{Zp}\p{Zs}]/u;
+  let out = q;
+  for (const ch of s) {
+    const c = ch.codePointAt(0);
+    if (ch === q || ch === '\\') out += '\\' + ch;
+    else if (c === 9) out += '\\t'; else if (c === 10) out += '\\n'; else if (c === 13) out += '\\r';
+    else if (c < 32 || c === 127) out += '\\x' + c.toString(16).padStart(2, '0');
+    else if (c < 127) out += ch;
+    else if (!asciiOnly && c !== 0xa0 && !(c >= 0xd800 && c < 0xe000) && !bad.test(ch)) out += ch;
+    else if (c < 0x100) out += '\\x' + c.toString(16).padStart(2, '0');
+    else if (c < 0x10000) out += '\\u' + c.toString(16).padStart(4, '0');
+    else out += '\\U' + c.toString(16).padStart(8, '0');
+  }
+  return out + q;
+}
+// Python's repr of bytes
+function rsPyBytes(b) {
+  let has1 = false, has2 = false;
+  for (const x of b) { if (x === 39) has1 = true; if (x === 34) has2 = true; }
+  const q = has1 && !has2 ? '"' : "'";
+  let out = 'b' + q;
+  for (const x of b) {
+    if (x === q.charCodeAt(0) || x === 92) out += '\\' + String.fromCharCode(x);
+    else if (x === 9) out += '\\t'; else if (x === 10) out += '\\n'; else if (x === 13) out += '\\r';
+    else if (x < 32 || x >= 127) out += '\\x' + x.toString(16).padStart(2, '0');
+    else out += String.fromCharCode(x);
+  }
+  return out + q;
+}
+// Bytes for a reason: at most 40 of them, so a message stays short.
+function rsPyShort(b) { return b.length > 40 ? rsPyBytes(b.subarray(0, 40)) + ` … (${rsBytesWord(b.length)} in all)` : rsPyBytes(b); }
+// Python's repr of a float: the shortest text that reads back the same, in Python's layout
+function rsPyFloat(x) {
+  if (Number.isNaN(x)) return 'nan';
+  if (x === Infinity) return 'inf'; if (x === -Infinity) return '-inf';
+  if (x === 0) return Object.is(x, -0) ? '-0.0' : '0.0';
+  const [m, es] = x.toExponential().split('e');
+  const neg = m[0] === '-', digits = m.replace('-', '').replace('.', ''), exp = Number(es);
+  let t;
+  if (exp >= -4 && exp < 16) {
+    if (exp >= 0) {
+      const ip = digits.slice(0, exp + 1).padEnd(exp + 1, '0'), fp = digits.slice(exp + 1);
+      t = ip + '.' + (fp || '0');
+    } else t = '0.' + '0'.repeat(-exp - 1) + digits;
+  } else t = digits[0] + (digits.length > 1 ? '.' + digits.slice(1) : '') + 'e' + (exp < 0 ? '-' : '+') + String(Math.abs(exp)).padStart(2, '0');
+  return (neg ? '-' : '') + t;
+}
+
+// UTF-8 the way Python reads it: strict, optionally letting surrogate code points through.
+function rsUtf8Strict(b, surrogates) {
+  let out = '', i = 0;
+  const fail = (why) => { throw new Error(`its text isn’t valid UTF-8 (${why} at byte ${i})`); };
+  while (i < b.length) {
+    const c = b[i];
+    if (c < 0x80) { out += String.fromCharCode(c); i++; continue; }
+    let k, cp, min;
+    if (c >= 0xc2 && c <= 0xdf) { k = 1; cp = c & 0x1f; min = 0x80; }
+    else if (c >= 0xe0 && c <= 0xef) { k = 2; cp = c & 0x0f; min = 0x800; }
+    else if (c >= 0xf0 && c <= 0xf4) { k = 3; cp = c & 0x07; min = 0x10000; }
+    else fail('an invalid start byte');
+    if (i + k >= b.length) fail('text that ends partway through a character');
+    for (let j = 1; j <= k; j++) {
+      const d = b[i + j];
+      if (d === undefined || (d & 0xc0) !== 0x80) fail('a broken character');
+      cp = (cp << 6) | (d & 0x3f);
+    }
+    if (cp < min || cp > 0x10ffff) fail('a character written in too many bytes');
+    if (cp >= 0xd800 && cp < 0xe000 && !surrogates) fail('a surrogate');
+    out += String.fromCodePoint(cp);
+    i += k + 1;
+  }
+  return out;
+}
+
+// [name, argument kind, protocol, items popped, items pushed, mark use]. Mark use: null for none,
+// or how many items below the mark are also taken.
+const RS_PK_OPS = new Map([
+  ['I', ['INT', 'decnl_short', 0, 0, 1]], ['J', ['BININT', 'i4', 1, 0, 1]], ['K', ['BININT1', 'u1', 1, 0, 1]], ['M', ['BININT2', 'u2', 1, 0, 1]],
+  ['L', ['LONG', 'decnl_long', 0, 0, 1]], ['\x8a', ['LONG1', 'long1', 2, 0, 1]], ['\x8b', ['LONG4', 'long4', 2, 0, 1]],
+  ['S', ['STRING', 'stringnl', 0, 0, 1]], ['T', ['BINSTRING', 'string4', 1, 0, 1]], ['U', ['SHORT_BINSTRING', 'string1', 1, 0, 1]],
+  ['B', ['BINBYTES', 'bytes4', 3, 0, 1]], ['C', ['SHORT_BINBYTES', 'bytes1', 3, 0, 1]], ['\x8e', ['BINBYTES8', 'bytes8', 4, 0, 1]],
+  ['\x96', ['BYTEARRAY8', 'bytearray8', 5, 0, 1]], ['\x97', ['NEXT_BUFFER', null, 5, 0, 1]], ['\x98', ['READONLY_BUFFER', null, 5, 1, 1]],
+  ['N', ['NONE', null, 0, 0, 1]], ['\x88', ['NEWTRUE', null, 2, 0, 1]], ['\x89', ['NEWFALSE', null, 2, 0, 1]],
+  ['V', ['UNICODE', 'unicodenl', 0, 0, 1]], ['\x8c', ['SHORT_BINUNICODE', 'unicode1', 4, 0, 1]], ['X', ['BINUNICODE', 'unicode4', 1, 0, 1]], ['\x8d', ['BINUNICODE8', 'unicode8', 4, 0, 1]],
+  ['F', ['FLOAT', 'floatnl', 0, 0, 1]], ['G', ['BINFLOAT', 'float8', 1, 0, 1]],
+  [']', ['EMPTY_LIST', null, 1, 0, 1]], ['a', ['APPEND', null, 0, 2, 1]], ['e', ['APPENDS', null, 1, 0, 1, 1]], ['l', ['LIST', null, 0, 0, 1, 0]],
+  [')', ['EMPTY_TUPLE', null, 1, 0, 1]], ['t', ['TUPLE', null, 0, 0, 1, 0]], ['\x85', ['TUPLE1', null, 2, 1, 1]], ['\x86', ['TUPLE2', null, 2, 2, 1]], ['\x87', ['TUPLE3', null, 2, 3, 1]],
+  ['}', ['EMPTY_DICT', null, 1, 0, 1]], ['d', ['DICT', null, 0, 0, 1, 0]], ['s', ['SETITEM', null, 0, 3, 1]], ['u', ['SETITEMS', null, 1, 0, 1, 1]],
+  ['\x8f', ['EMPTY_SET', null, 4, 0, 1]], ['\x90', ['ADDITEMS', null, 4, 0, 1, 1]], ['\x91', ['FROZENSET', null, 4, 0, 1, 0]],
+  ['0', ['POP', null, 0, 1, 0]], ['2', ['DUP', null, 0, 1, 2]], ['(', ['MARK', null, 0, 0, 0]], ['1', ['POP_MARK', null, 1, 0, 0, 0]],
+  ['g', ['GET', 'decnl_short', 0, 0, 1]], ['h', ['BINGET', 'u1', 1, 0, 1]], ['j', ['LONG_BINGET', 'u4', 1, 0, 1]],
+  ['p', ['PUT', 'decnl_short', 0, 0, 0]], ['q', ['BINPUT', 'u1', 1, 0, 0]], ['r', ['LONG_BINPUT', 'u4', 1, 0, 0]], ['\x94', ['MEMOIZE', null, 4, 1, 1]],
+  ['\x82', ['EXT1', 'u1', 2, 0, 1]], ['\x83', ['EXT2', 'u2', 2, 0, 1]], ['\x84', ['EXT4', 'i4', 2, 0, 1]],
+  ['c', ['GLOBAL', 'pair_nl', 0, 0, 1]], ['\x93', ['STACK_GLOBAL', null, 4, 2, 1]],
+  ['R', ['REDUCE', null, 0, 2, 1]], ['b', ['BUILD', null, 0, 2, 1]], ['i', ['INST', 'pair_nl', 0, 0, 1, 0]], ['o', ['OBJ', null, 1, 0, 1, 0]],
+  ['\x81', ['NEWOBJ', null, 2, 2, 1]], ['\x92', ['NEWOBJ_EX', null, 4, 3, 1]],
+  ['\x80', ['PROTO', 'u1', 2, 0, 0]], ['.', ['STOP', null, 0, 1, 0]], ['\x95', ['FRAME', 'u8', 4, 0, 0]],
+  ['P', ['PERSID', 'nl_noescape', 0, 0, 1]], ['Q', ['BINPERSID', null, 1, 1, 1]],
+]);
+
+// What each opcode does to the stack and memo, in plain words.
+const RS_PK_SAYS = {
+  INT: 'Pushes a whole number (00 and 01 stand for False and True).', BININT: 'Pushes a signed four-byte whole number.', BININT1: 'Pushes a one-byte whole number.',
+  BININT2: 'Pushes a two-byte whole number.', LONG: 'Pushes a whole number written in decimal.', LONG1: 'Pushes a whole number stored in the bytes that follow.',
+  LONG4: 'Pushes a whole number stored in the bytes that follow.', STRING: 'Pushes a string, written with quotes and escapes.', BINSTRING: 'Pushes a string.',
+  SHORT_BINSTRING: 'Pushes a short string.', BINBYTES: 'Pushes a bytes object.', SHORT_BINBYTES: 'Pushes a short bytes object.', BINBYTES8: 'Pushes a bytes object.',
+  BYTEARRAY8: 'Pushes a bytearray.', NEXT_BUFFER: 'Pushes the next out-of-band buffer.', READONLY_BUFFER: 'Makes the buffer on top of the stack read-only.',
+  NONE: 'Pushes None.', NEWTRUE: 'Pushes True.', NEWFALSE: 'Pushes False.', UNICODE: 'Pushes a text string, written with escapes.', SHORT_BINUNICODE: 'Pushes a short text string.',
+  BINUNICODE: 'Pushes a text string.', BINUNICODE8: 'Pushes a text string.', FLOAT: 'Pushes a float written in decimal.', BINFLOAT: 'Pushes an eight-byte float.',
+  EMPTY_LIST: 'Pushes a new empty list.', APPEND: 'Pops a value and appends it to the list below it.', APPENDS: 'Pops everything above the mark, and the mark, and appends them to the list below.',
+  LIST: 'Pops everything above the mark, and the mark, and pushes them as a list.', EMPTY_TUPLE: 'Pushes an empty tuple.', TUPLE: 'Pops everything above the mark, and the mark, and pushes them as a tuple.',
+  TUPLE1: 'Pops one item and pushes it as a one-item tuple.', TUPLE2: 'Pops two items and pushes them as a tuple.', TUPLE3: 'Pops three items and pushes them as a tuple.',
+  EMPTY_DICT: 'Pushes a new empty dictionary.', DICT: 'Pops the key and value pairs above the mark, and the mark, and pushes them as a dictionary.',
+  SETITEM: 'Pops a key and value and sets them in the dictionary below.', SETITEMS: 'Pops the key and value pairs above the mark, and the mark, and sets them in the dictionary below.',
+  EMPTY_SET: 'Pushes a new empty set.', ADDITEMS: 'Pops everything above the mark, and the mark, and adds them to the set below.',
+  FROZENSET: 'Pops everything above the mark, and the mark, and pushes them as a frozenset.', POP: 'Pops the top item and discards it.', DUP: 'Pushes a copy of the top item.',
+  MARK: 'Pushes a mark, which a later opcode uses to take everything above it.', POP_MARK: 'Pops everything above the mark, and the mark, and discards them.',
+  GET: 'Pushes an item from the memo.', BINGET: 'Pushes an item from the memo.', LONG_BINGET: 'Pushes an item from the memo.',
+  PUT: 'Stores the top item in the memo; the stack is unchanged.', BINPUT: 'Stores the top item in the memo; the stack is unchanged.', LONG_BINPUT: 'Stores the top item in the memo; the stack is unchanged.',
+  MEMOIZE: 'Stores the top item in the memo, as the next entry; the stack is unchanged.', EXT1: 'Pushes an object from the extension registry, by its code.', EXT2: 'Pushes an object from the extension registry, by its code.',
+  EXT4: 'Pushes an object from the extension registry, by its code.', GLOBAL: 'Pushes a reference to an object named by module and name. (Nothing is imported here.)',
+  STACK_GLOBAL: 'Pops a module name and an object name and pushes a reference to that object. (Nothing is imported here.)',
+  REDUCE: 'Pops a callable and a tuple of arguments and pushes the result of the call. (Nothing is called here.)',
+  BUILD: 'Pops a state and sets it on the object below. (Nothing is run here.)', INST: 'Pops everything above the mark, and the mark, and pushes a new instance of the named class. (Nothing is run here.)',
+  OBJ: 'Pops a class and its arguments above the mark, and the mark, and pushes a new instance. (Nothing is run here.)',
+  NEWOBJ: 'Pops a class and a tuple of arguments and pushes a new instance. (Nothing is run here.)', NEWOBJ_EX: 'Pops a class, a tuple and a dictionary of arguments and pushes a new instance. (Nothing is run here.)',
+  PROTO: 'Gives the protocol version; the stack is unchanged.', STOP: 'Ends the pickle; the top item is its result.', FRAME: 'Gives the size of the frame that follows; the stack is unchanged.',
+  PERSID: 'Pushes an object found by a persistent ID. (Nothing is looked up here.)', BINPERSID: 'Pops a persistent ID and pushes the object it names. (Nothing is looked up here.)',
+};
+
+// Python's codecs.escape_decode, for the quoted strings of protocol 0.
+function rsEscapeDecode(b) {
+  const out = [];
+  for (let i = 0; i < b.length; i++) {
+    const c = b[i];
+    if (c !== 92) { out.push(c); continue; }
+    if (++i >= b.length) throw new Error('a string ends with a lone backslash');
+    const d = b[i];
+    const simple = { 10: null, 92: 92, 39: 39, 34: 34, 98: 8, 102: 12, 116: 9, 110: 10, 114: 13, 118: 11, 97: 7 };
+    if (d in simple) { if (simple[d] !== null) out.push(simple[d]); continue; }
+    if (d >= 48 && d <= 55) { // up to three octal digits
+      let v = d - 48;
+      for (let k = 0; k < 2 && i + 1 < b.length && b[i + 1] >= 48 && b[i + 1] <= 55; k++) v = v * 8 + b[++i] - 48;
+      out.push(v & 255); continue;
+    }
+    if (d === 120) {
+      const h = String.fromCharCode(b[i + 1] || 0, b[i + 2] || 0);
+      if (!/^[0-9a-fA-F]{2}$/.test(h)) throw new Error(`a string has an invalid \\x escape at position ${i - 1}`);
+      out.push(parseInt(h, 16)); i += 2; continue;
+    }
+    out.push(92, d); // any other escape is kept as it is
+  }
+  return Uint8Array.from(out);
+}
+// Python's raw-unicode-escape decoding, for protocol 0's text strings.
+function rsRawUnicodeEscape(b) {
+  let out = '';
+  for (let i = 0; i < b.length;) {
+    if (b[i] !== 92) { out += String.fromCharCode(b[i++]); continue; }
+    let k = 0; while (i + k < b.length && b[i + k] === 92) k++;
+    const nx = b[i + k];
+    if (k % 2 === 1 && (nx === 117 || nx === 85)) {
+      out += '\\'.repeat(k - 1);
+      const w = nx === 117 ? 4 : 8, h = String.fromCharCode(...b.subarray(i + k + 1, i + k + 1 + w));
+      if (h.length < w || !/^[0-9a-fA-F]+$/.test(h)) throw new Error(`a text string has a truncated \\${nx === 117 ? 'u' : 'U'} escape`);
+      const cp = parseInt(h, 16);
+      if (cp > 0x10ffff) throw new Error('a text string has a \\U escape beyond the last character');
+      out += String.fromCodePoint(cp); i += k + 1 + w;
+    } else { out += '\\'.repeat(k); i += k; }
+  }
+  return out;
+}
+
+function rsPickle(cx) {
+  const { u8, n } = cx;
+  if (!n) throw new Error('The file is empty.');
+  const items = [];
+  const stack = [], marks = [], memo = new Map();
+  const MARK = { mark: true };
+  let p = 0, maxProto = 0, ops = 0, unlisted = null, onStack = 0; // onStack counts the marks on the stack
+  const ws = (x) => x === 32 || (x >= 9 && x <= 13);
+  const line = (what) => { // up to and including the next newline
+    let e = p; while (e < n && u8[e] !== 10) e++;
+    if (e >= n) throw new Error(`no newline found when reading ${what}`);
+    const b = u8.subarray(p, e); p = e + 1; return b;
+  };
+  const need = (k, what) => { if (typeof k !== 'number' || p + k > n) throw new Error(`expected ${rsBytesWord(Number(k))} in ${what}, but only ${rsBytesWord(n - p)} ${n - p === 1 ? 'remains' : 'remain'}`); const b = u8.subarray(p, p + k); p += k; return b; };
+  const pyInt = (b) => { // Python's int() on bytes
+    let s = 0, e = b.length; while (s < e && ws(b[s])) s++; while (e > s && ws(b[e - 1])) e--;
+    const t = rsLatin1(b, s, e);
+    if (!/^[+-]?\d(?:_?\d)*$/.test(t)) throw new Error(`invalid literal for int() with base 10: ${rsPyShort(b)}`);
+    return BigInt(t.replace(/_/g, ''));
+  };
+  const pyFloat = (b) => {
+    let s = 0, e = b.length; while (s < e && ws(b[s])) s++; while (e > s && ws(b[e - 1])) e--;
+    const t = rsLatin1(b, s, e);
+    const m = /^([+-]?)(inf|infinity|nan)$/i.exec(t);
+    if (m) return m[2].toLowerCase() === 'nan' ? NaN : m[1] === '-' ? -Infinity : Infinity;
+    if (!/^[+-]?(?:\d(?:_?\d)*(?:\.(?:\d(?:_?\d)*)?)?|\.\d(?:_?\d)*)(?:[eE][+-]?\d(?:_?\d)*)?$/.test(t)) throw new Error(`could not convert string to float: ${rsPyShort(b)}`);
+    return Number(t.replace(/_/g, ''));
+  };
+  const signedLE = (b) => { // a two's-complement whole number, low byte first
+    if (!b.length) return 0n;
+    let x = 0n; for (let i = b.length - 1; i >= 0; i--) x = (x << 8n) | BigInt(b[i]);
+    if (b[b.length - 1] & 128) x -= 1n << BigInt(8 * b.length);
+    return x;
+  };
+  const quoted = (b) => {
+    for (const q of [34, 39]) {
+      if (b.length && b[0] === q) {
+        if (b.length < 2 || b[b.length - 1] !== q) throw new Error(`the string quote ${q === 34 ? '"' : "'"} isn’t at both ends of ${rsPyShort(b)}`);
+        return b.subarray(1, b.length - 1);
+      }
+    }
+    throw new Error(`there are no string quotes around ${rsPyShort(b)}`);
+  };
+  // reads an argument, giving [value, its text as pickletools writes it]
+  const arg = (kind) => {
+    switch (kind) {
+      case 'u1': { const v = need(1, 'a one-byte argument')[0]; return [v, String(v)]; }
+      case 'u2': { const b = need(2, 'a two-byte argument'); const v = b[0] | (b[1] << 8); return [v, String(v)]; }
+      case 'i4': { const b = need(4, 'a four-byte argument'); const v = new DataView(b.buffer, b.byteOffset, 4).getInt32(0, true); return [v, String(v)]; }
+      case 'u4': { const b = need(4, 'a four-byte argument'); const v = new DataView(b.buffer, b.byteOffset, 4).getUint32(0, true); return [v, String(v)]; }
+      case 'u8': { const b = need(8, 'an eight-byte argument'); const v = rsLE64(b, 0); return [v, String(v)]; }
+      case 'decnl_short': {
+        const b = line('a decimal number');
+        if (b.length === 2 && b[0] === 48 && b[1] === 48) return [false, 'False'];
+        if (b.length === 2 && b[0] === 48 && b[1] === 49) return [true, 'True'];
+        const v = pyInt(b); const nv = v >= BigInt(Number.MIN_SAFE_INTEGER) && v <= BigInt(Number.MAX_SAFE_INTEGER) ? Number(v) : v;
+        return [nv, v.toString()];
+      }
+      case 'decnl_long': { let b = line('a decimal number'); if (b.length && b[b.length - 1] === 76) b = b.subarray(0, b.length - 1); const v = pyInt(b); return [v, v.toString()]; }
+      case 'long1': { const k = need(1, 'a length')[0]; const v = signedLE(need(k, 'a long1')); return [v, v.toString()]; }
+      case 'long4': {
+        const b = need(4, 'a length'); const k = new DataView(b.buffer, b.byteOffset, 4).getInt32(0, true);
+        if (k < 0) throw new Error(`a long4 byte count is negative: ${k}`);
+        const v = signedLE(need(k, 'a long4')); return [v, v.toString()];
+      }
+      case 'stringnl': { const s = rsLatin1(...((b) => [b, 0, b.length])(rsEscapeDecode(quoted(line('a string'))))); return [s, rsPyStr(s, true)]; }
+      case 'string1': { const k = need(1, 'a length')[0]; const b = need(k, 'a string1'); const s = rsLatin1(b, 0, b.length); return [s, rsPyStr(s, true)]; }
+      case 'string4': {
+        const lb = need(4, 'a length'); const k = new DataView(lb.buffer, lb.byteOffset, 4).getInt32(0, true);
+        if (k < 0) throw new Error(`a string4 byte count is negative: ${k}`);
+        const b = need(k, 'a string4'); const s = rsLatin1(b, 0, b.length); return [s, rsPyStr(s, true)];
+      }
+      case 'bytes1': { const k = need(1, 'a length')[0]; const b = need(k, 'a bytes1'); return [b, rsPyBytes(b)]; }
+      case 'bytes4': { const k = rsLE(need(4, 'a length'), 0, 4); const b = need(k, 'a bytes4'); return [b, rsPyBytes(b)]; }
+      case 'bytes8': case 'bytearray8': {
+        const k = rsLE64(need(8, 'a length'), 0);
+        if (typeof k !== 'number') throw new Error('a byte count is too large');
+        const b = need(k, kind === 'bytes8' ? 'a bytes8' : 'a bytearray8');
+        return [b, kind === 'bytes8' ? rsPyBytes(b) : `bytearray(${rsPyBytes(b)})`];
+      }
+      case 'unicodenl': { const s = rsRawUnicodeEscape(line('a text string')); return [s, rsPyStr(s)]; }
+      case 'unicode1': { const k = need(1, 'a length')[0]; const s = rsUtf8Strict(need(k, 'a text string'), true); return [s, rsPyStr(s)]; }
+      case 'unicode4': { const k = rsLE(need(4, 'a length'), 0, 4); const s = rsUtf8Strict(need(k, 'a text string'), true); return [s, rsPyStr(s)]; }
+      case 'unicode8': {
+        const k = rsLE64(need(8, 'a length'), 0);
+        if (typeof k !== 'number') throw new Error('a byte count is too large');
+        const s = rsUtf8Strict(need(k, 'a text string'), true); return [s, rsPyStr(s)];
+      }
+      case 'floatnl': { const v = pyFloat(line('a float')); return [v, rsPyFloat(v)]; }
+      case 'float8': { const b = need(8, 'an eight-byte float'); const v = new DataView(b.buffer, b.byteOffset, 8).getFloat64(0, false); return [v, rsPyFloat(v)]; }
+      case 'nl_noescape': { const s = rsUtf8Strict(rsEscapeDecode(line('a name')), false); return [s, rsPyStr(s)]; }
+      case 'pair_nl': {
+        const a = rsUtf8Strict(rsEscapeDecode(line('a module name')), false), b = rsUtf8Strict(rsEscapeDecode(line('a name')), false);
+        return [a + ' ' + b, rsPyStr(a + ' ' + b)];
+      }
+    }
+    return [null, null];
+  };
+  let stoppedAt = -1;
+  for (;;) {
+    const pos = p;
+    if (p >= n) { items.push(rsStopItem(cx, Math.max(0, n - 1), n, 'The pickle ends before its STOP opcode.')); break; }
+    const code = String.fromCharCode(u8[p]);
+    const op = RS_PK_OPS.get(code);
+    if (!op) { items.push(rsStopItem(cx, pos, n, `At offset ${pos}, the byte ${rsHexByte(u8[p])} isn’t an opcode.`)); break; }
+    const [name, kind, proto, pops, pushes, markUse] = op;
+    p++;
+    let a = [null, null];
+    try { if (kind) a = arg(kind); } catch (err) { items.push(rsStopItem(cx, pos, n, `The ${name} opcode at offset ${pos} can’t be read: ${err.message}.`)); break; }
+    maxProto = Math.max(maxProto, proto);
+    // the stack and memo, followed the way pickletools follows them
+    let err = null, markMsg = null, take = pops, says = RS_PK_SAYS[name];
+    if (markUse !== undefined || (name === 'POP' && stack.length && stack[stack.length - 1] === MARK)) {
+      if (marks.length && !onStack) err = 'the mark it would use has already been taken off the stack';
+      else if (marks.length) {
+        const mp = marks.pop(); markMsg = `It uses the mark set at offset ${mp}.`;
+        while (stack[stack.length - 1] !== MARK) stack.pop();
+        stack.pop(); onStack--;
+        take = markUse === undefined ? 0 : markUse;
+        if (name === 'POP') says = 'Pops the mark on top of the stack.';
+      } else err = 'there is no mark on the stack for it to use';
+    }
+    let memoNote = '';
+    if (name === 'PUT' || name === 'BINPUT' || name === 'LONG_BINPUT' || name === 'MEMOIZE') {
+      const idx = name === 'MEMOIZE' ? memo.size : a[0];
+      const key = typeof idx === 'boolean' ? Number(idx) : idx;
+      if (memo.has(key)) err = `memo entry ${a[1] === null ? key : a[1]} is already defined`;
+      else if (!stack.length) err = 'the stack is empty, so there is nothing to store in the memo';
+      else if (stack[stack.length - 1] === MARK) err = 'a mark can’t be stored in the memo';
+      else memo.set(key, stack[stack.length - 1]);
+      memoNote = ` Memo entry ${key}.`;
+    } else if (name === 'GET' || name === 'BINGET' || name === 'LONG_BINGET') {
+      const key = typeof a[0] === 'boolean' ? Number(a[0]) : a[0];
+      if (!memo.has(key)) err = `memo entry ${a[1]} has never been stored`;
+      memoNote = ` Memo entry ${key}.`;
+    }
+    if (!err && stack.length < take) err = `it takes ${take} item${take === 1 ? '' : 's'} from a stack that holds ${stack.length}`;
+    if (err) { items.push(rsStopItem(cx, pos, n, `The ${name} opcode at offset ${pos} can’t be followed: ${err}.`)); break; }
+    for (let i = 0; i < take; i++) if (stack.pop() === MARK) onStack--;
+    if (name === 'MARK') { marks.push(pos); stack.push(MARK); onStack++; } else for (let i = 0; i < pushes; i++) stack.push(1);
+    ops++;
+    const value = name === 'MEMOIZE' ? `(as ${memo.size - 1})` : a[1];
+    if (rsRoom(cx) && !unlisted) {
+      const note = `${says}${memoNote}${markMsg ? ' ' + markMsg : ''} The stack then holds ${stack.length} item${stack.length === 1 ? '' : 's'}${marks.length ? `, with ${marks.length} mark${marks.length === 1 ? '' : 's'} set` : ''}.`;
+      items.push(rsI(cx, name, pos, p, value, note));
+    } else if (!unlisted) unlisted = { start: pos, k: 1 };
+    else unlisted.k++;
+    if (name === 'STOP') { stoppedAt = p; break; }
+  }
+  if (unlisted) items.push(rsI(cx, 'Opcodes not listed one by one', unlisted.start, stoppedAt >= 0 ? stoppedAt : unlisted.start + 1, `${rsNum(unlisted.k)} more opcodes`, 'There are too many to list here; they were read and followed like the others.'));
+  if (stoppedAt >= 0) {
+    if (stack.length) { const last = items[items.length - 1]; last.note = (last.note || '') + ` After it, the stack still holds ${stack.length} item${stack.length === 1 ? '' : 's'}.`; }
+    if (stoppedAt < n) items.push(rsI(cx, 'After the STOP opcode', stoppedAt, n, rsBytesWord(n - stoppedAt)));
+  }
+  return { title: `Python pickle, ${rsNum(ops)} opcode${ops === 1 ? '' : 's'}, highest protocol among them ${maxProto}`, items, maxProto };
+}
+
+/* ---------- sound and video files: shared pieces ---------- */
+
+// A field inside a run of bytes that may lie in more than one piece of the file, as a packet
+// split across pages does. a and b are offsets in the joined bytes; kids lie inside it.
+function rsF(label, a, b, value, note, kids) { return { label, a, b, value, note, kids }; }
+
+// Adds every item of src to the end of dst, one at a time, so a long list never becomes
+// a long list of call arguments.
+function rsPushAll(dst, src) { for (const x of src) dst.push(x); return dst; }
+
+// Makes items for the fields that lie in one piece of the joined bytes. Each piece is
+// { a, b, f }: the joined bytes [a, b) lie in the file from offset f on. A field that lies in
+// more than one piece gets an item in each, saying which part it is.
+function rsLay(cx, fields, pieces, k) {
+  const P = pieces[k], out = [];
+  // the fields are in order, so only those from the first that ends inside this piece are looked at
+  let lo = 0, hi = fields.length;
+  while (lo < hi) { const m = (lo + hi) >> 1; if (fields[m] && fields[m].b <= P.a) lo = m + 1; else hi = m; }
+  const first = (x) => { let l = 0, h = pieces.length - 1; while (l < h) { const m = (l + h) >> 1; if (pieces[m].b <= x) l = m + 1; else h = m; } return l; };
+  for (let i = lo; i < fields.length; i++) {
+    const fd = fields[i];
+    if (!fd) continue;
+    if (fd.a >= P.b) break;
+    const s = Math.max(fd.a, P.a), e = Math.min(fd.b, P.b);
+    if (e <= s) continue;
+    let parts = 1, idx = 0;
+    if (fd.a < P.a || fd.b > P.b) { const f0 = first(fd.a), f1 = first(fd.b - 1); parts = f1 - f0 + 1; idx = k - f0; }
+    const split = parts > 1;
+    const label = split ? `${fd.label}, part ${idx + 1} of ${parts}` : fd.label;
+    const note = split ? (idx === 0 ? (fd.note ? fd.note + ' ' : '') + 'It goes on in the next part of this packet, on a later page.' : 'It goes on from the part before, on an earlier page; its value is shown on part 1.') : fd.note;
+    const kids = fd.kids && fd.kids.length ? rsLay(cx, fd.kids, pieces, k) : null;
+    out.push(rsI(cx, label, P.f + s - P.a, P.f + e - P.a, split && idx ? null : fd.value, note, kids));
+  }
+  return out;
+}
+// Fields of a run of bytes that lies in one piece, from file offset f.
+function rsLayOne(cx, fields, a, b, f) { return rsLay(cx, fields, [{ a, b, f }], 0); }
+
+// Seconds as plain text: "3.5 s", or "1 h 2 min 3.25 s".
+function rsSecs(x) {
+  if (typeof x !== 'number' || !isFinite(x)) return '';
+  const r = (v) => String(Math.round(v * 1000) / 1000);
+  if (x < 60) return `${r(x)} s`;
+  const h = Math.floor(x / 3600), m = Math.floor((x % 3600) / 60), s = x % 60;
+  return (h ? `${h} h ` : '') + `${m} min ${r(s)} s`;
+}
+// A time given as seconds from a starting date, as UTC text, or null when it is out of range.
+function rsUtcFrom(baseMs, secs) {
+  const ms = baseMs + Number(secs) * 1000;
+  const d = new Date(ms);
+  if (!isFinite(d.getTime())) return null;
+  return d.toISOString().replace('T', ' ').replace(/\.000Z$/, ' UTC').replace(/Z$/, ' UTC');
+}
+function rsPlural(k, one, many) { return `${rsNum(k)} ${k === 1 ? one : many}`; }
+// An 80-bit extended-precision number, as AIFF stores its sample rate.
+function rsExt80(u8, p) {
+  const se = rsBE(u8, p, 2), sign = se & 0x8000 ? -1 : 1, ex = se & 0x7fff;
+  const mant = rsBE(u8, p + 2, 4) * 4294967296 + rsBE(u8, p + 6, 4);
+  if (ex === 0 && mant === 0) return 0;
+  if (ex === 0x7fff) return NaN;
+  return sign * mant * Math.pow(2, ex - 16383 - 63);
+}
+function rsGuid(u8, p) { // a GUID stored little-endian in its first three parts
+  const h = (a, b, le) => { let t = ''; if (le) for (let i = b - 1; i >= a; i--) t += rsHexByte(u8[p + i]); else for (let i = a; i < b; i++) t += rsHexByte(u8[p + i]); return t; };
+  return `${h(0, 4, true)}-${h(4, 6, true)}-${h(6, 8, true)}-${h(8, 10)}-${h(10, 16)}`;
+}
+function rsUuid(u8, p) { const h = rsHex(u8, p, p + 16, 16).replace(/ /g, ''); return `${h.slice(0, 8)}-${h.slice(8, 12)}-${h.slice(12, 16)}-${h.slice(16, 20)}-${h.slice(20)}`; }
+// Text that ends at its first zero byte, or at e.
+function rsZText(u8, s, e) { let z = s; while (z < e && u8[z]) z++; return z; }
+function rsAllZero(u8, s, e) { for (let i = s; i < e; i++) if (u8[i]) return false; return true; }
+// Text from a tag, quoted, or shown as hex when it isn't UTF-8. Zero bytes at its end are left out.
+function rsTagText(u8, s, e) { let t = e; while (t > s && u8[t - 1] === 0) t--; return t > s ? rsTextOrHex(u8, s, t) : 'empty'; }
+
+/* ---------- RIFF and IFF chunks (WAV and AIFF sound) ---------- */
+
+// Walks the chunks in [s, e): each is a four-letter name, a size (little-endian for RIFF,
+// big-endian for IFF) and data, with a padding byte after data of odd length. `inside(id, ds,
+// de, size)` describes one chunk's data and gives { what, kids }. Gives the items.
+function rsIffChunks(cx, s, e, le, inside, depth, items = [], sizeFor = null) {
+  const { u8 } = cx;
+  let p = s;
+  while (p < e) {
+    if (e - p < 8) { items.push(rsStopItem(cx, p, e, `Only ${rsBytesWord(e - p)} remain, too few for a chunk’s name and size.`)); break; }
+    const id = rsLatin1(u8, p, p + 4);
+    if (!rsAsciiWord(u8, p, p + 4)) { items.push(rsStopItem(cx, p, e, `The chunk name here, ${rsHex(u8, p, p + 4)}, isn’t four letters.`)); break; }
+    let size = le ? rsLE(u8, p + 4, 4) : rsBE(u8, p + 4, 4), big = null;
+    if (sizeFor) { const b = sizeFor(id, size); if (b !== null) { big = b; size = b; } }
+    const ds = p + 8, de = ds + size;
+    if (de > e) { items.push(rsStopItem(cx, p, e, `The “${id}” chunk here says it holds ${rsBytesWord(size)}, which runs past the end of the data it is in.`)); break; }
+    const next = size % 2 && de < e ? de + 1 : de;
+    if (!rsRoom(cx)) {
+      const go = rsUnlisted(cx, items, p, next, 'chunk', 'chunks');
+      p = next;
+      if (!go && p < e) { items.push(rsTooLong(cx, p, e, 'chunks')); break; }
+      continue;
+    }
+    const r = inside(id, ds, de, depth) || {};
+    const kids = [rsI(cx, 'Chunk name', p, p + 4, `“${id}”`),
+      rsI(cx, 'Chunk size', p + 4, p + 8, big !== null ? `${rsHex(u8, p + 4, p + 8)}; the size, ${rsBytesWord(big)}, is given in the “ds64” chunk` : rsBytesWord(size))];
+    if (size) kids.push(rsI(cx, 'Chunk data', ds, de, rsBytesWord(size), null, r.kids && r.kids.length ? rsCover(r.kids, ds, de) : null));
+    if (next > de) kids.push(rsI(cx, 'Padding byte', de, next, rsHexByte(u8[de])));
+    items.push(rsI(cx, `Chunk “${id}”`, p, next, r.what, r.note, kids));
+    p = next;
+  }
+  return items;
+}
+
+const RS_INFO_IDS = {
+  IARL: 'archival location', IART: 'artist', ICMS: 'commissioned by', ICMT: 'comment', ICOP: 'copyright', ICRD: 'creation date',
+  ICRP: 'cropped', IDIM: 'dimensions', IDPI: 'dots per inch', IENG: 'engineer', IGNR: 'genre', IKEY: 'keywords', ILGT: 'lightness',
+  IMED: 'medium', INAM: 'name', IPLT: 'palette setting', IPRD: 'product', ISBJ: 'subject', ISFT: 'software', ISHP: 'sharpness',
+  ISRC: 'source', ISRF: 'source form', ITCH: 'technician', ITRK: 'track number', IPRT: 'part', ILNG: 'language', ICNT: 'country',
+};
+const RS_WAVE_FORMATS = { 1: 'PCM', 2: 'Microsoft ADPCM', 3: 'IEEE floating point', 6: 'A-law', 7: 'µ-law', 0x11: 'IMA ADPCM', 0x31: 'GSM 6.10', 0x50: 'MPEG', 0x55: 'MPEG Layer III', 0xff: 'AAC', 0x2000: 'AC-3', 0xfffe: 'extensible' };
+
+function rsWav(cx) {
+  const { u8, n } = cx;
+  const sig = n >= 12 ? rsLatin1(u8, 0, 4) : '';
+  if (n < 12 || !['RIFF', 'RF64', 'BW64'].includes(sig) || rsLatin1(u8, 8, 12) !== 'WAVE') throw new Error('It doesn’t begin with “RIFF” (or “RF64”), a size and “WAVE”, which is how the format starts.');
+  const rf = sig !== 'RIFF';
+  let size = rsLE(u8, 4, 4), ds64 = null;
+  if (rf && n >= 48 && rsLatin1(u8, 12, 16) === 'ds64' && rsLE(u8, 16, 4) >= 28) ds64 = { riff: rsLE64(u8, 20), data: rsLE64(u8, 28), samples: rsLE64(u8, 36), table: new Map() };
+  if (ds64) {
+    const tl = rsLE(u8, 44, 4), te = 20 + rsLE(u8, 16, 4);
+    for (let i = 0, q = 48; i < tl && q + 12 <= Math.min(n, te); i++, q += 12) ds64.table.set(rsLatin1(u8, q, q + 4), rsLE64(u8, q + 4));
+  }
+  const riffBig = rf && size === 0xffffffff && ds64 && typeof ds64.riff === 'number';
+  if (riffBig) size = ds64.riff;
+  const end = Math.min(n, 8 + size);
+  const items = [rsI(cx, 'RIFF header', 0, 12, null, null, [rsI(cx, 'Signature', 0, 4, `“${sig}”`),
+    rsI(cx, 'RIFF size', 4, 8, (riffBig ? `FF FF FF FF; the size, ${rsBytesWord(size)}, is given in the “ds64” chunk` : rsBytesWord(size)) + (8 + size > n ? ` (the file ends ${rsBytesWord(8 + size - n)} sooner)` : '')), rsI(cx, 'Form type', 8, 12, '“WAVE”')])];
+  if (rf && !ds64) items.push(rsStopItem(cx, 12, n, 'The file begins with “RF64”, but its first chunk isn’t a “ds64” chunk giving the large sizes.'));
+  else {
+    const sizeFor = rf ? (id, sz) => sz !== 0xffffffff ? null : id === 'data' && typeof ds64.data === 'number' ? ds64.data : ds64.table.has(id) && typeof ds64.table.get(id) === 'number' ? ds64.table.get(id) : null : null;
+    rsIffChunks(cx, 12, end, true, (id, s, e, depth) => rsWavChunk(cx, id, s, e, depth), 0, items, sizeFor);
+  }
+  if (end < n && !cx.stopped) items.push(rsI(cx, 'After the RIFF data', end, n, rsBytesWord(n - end)));
+  const nch = items.filter((x) => /^Chunk /.test(x.label)).length;
+  return { title: `WAV sound, ${rsPlural(nch, 'chunk', 'chunks')}`, items };
+}
+
+function rsWavChunk(cx, id, s, e, depth) {
+  const { u8 } = cx, len = e - s, k = [];
+  const f = (label, a, b, v, note) => { if (b <= e && b > a) k.push(rsI(cx, label, a, b, v, note)); };
+  const u16 = (p) => rsLE(u8, p, 2), u32 = (p) => rsLE(u8, p, 4);
+  switch (id) {
+    case 'fmt ': {
+      if (len < 14) return { kids: [rsI(cx, 'Format data', s, e, rsBytesWord(len), 'Too short for the format fields.')] };
+      const tag = u16(s);
+      f('Format tag', s, s + 2, `${tag}` + (RS_WAVE_FORMATS[tag] ? ` (${RS_WAVE_FORMATS[tag]})` : ` (0x${tag.toString(16).toUpperCase().padStart(4, '0')})`));
+      f('Channels', s + 2, s + 4, `${u16(s + 2)}`); f('Sample rate', s + 4, s + 8, `${rsNum(u32(s + 4))} Hz`);
+      f('Byte rate', s + 8, s + 12, `${rsNum(u32(s + 8))} bytes a second`); f('Block align', s + 12, s + 14, rsBytesWord(u16(s + 12)));
+      if (len >= 16) f('Bits per sample', s + 14, s + 16, `${u16(s + 14)}`);
+      if (len >= 18) {
+        const cb = u16(s + 16);
+        f('Extra format size', s + 16, s + 18, rsBytesWord(cb));
+        if (tag === 0xfffe && len >= 40) {
+          f('Valid bits per sample', s + 18, s + 20, `${u16(s + 18)}`);
+          const mask = u32(s + 20);
+          f('Channel mask', s + 20, s + 24, `0x${mask.toString(16).toUpperCase().padStart(8, '0')}`);
+          const g = rsGuid(u8, s + 24), base = g.slice(8) === '-0000-0010-8000-00AA00389B71';
+          f('Subformat', s + 24, s + 40, g + (base ? ` (format tag ${parseInt(g.slice(0, 8), 16)}${RS_WAVE_FORMATS[parseInt(g.slice(0, 8), 16)] ? `, ${RS_WAVE_FORMATS[parseInt(g.slice(0, 8), 16)]}` : ''})` : ''));
+          if (s + 18 + cb > s + 40) f('More format data', s + 40, Math.min(e, s + 18 + cb), rsBytesWord(Math.min(e, s + 18 + cb) - s - 40));
+        } else if (cb) f('Extra format data', s + 18, Math.min(e, s + 18 + cb), rsBytesWord(Math.min(e, s + 18 + cb) - s - 18));
+      }
+      return { what: `${RS_WAVE_FORMATS[tag] || `format ${tag}`}, ${rsPlural(u16(s + 2), 'channel', 'channels')}, ${rsNum(u32(s + 4))} Hz` + (len >= 16 ? `, ${u16(s + 14)} bits` : ''), kids: k };
+    }
+    case 'data': f('Sample data', s, e, rsBytesWord(len)); return { what: 'sample data', kids: k };

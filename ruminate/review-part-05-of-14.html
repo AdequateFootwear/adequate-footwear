@@ -1,0 +1,1040 @@
+<!-- Review copy: lines 2014-3052 of ruminate/index.html, split so Copilot can review it. Not served. -->
+    if (lt[6] || ct === 6) return { type: 'date', conv: (v) => pqDate(v) };
+    if (lt[7] || ct === 7) return { type: 'time', conv: (v) => pqClock(BigInt(v), 3) };
+    const unsigned = lt[10] ? lt[10][2] === false : (ct >= 11 && ct <= 13);
+    return { type: 'whole number', conv: unsigned ? (v) => v >>> 0 : id };
+  }
+  if (t === 2) {
+    if (lt[5] || ct === 5) { const sc = lt[5] ? lt[5][1] : el.scale; return { type: 'decimal number', conv: (v) => pqDecimal(v, sc) }; }
+    if (lt[8] || ct === 9 || ct === 10) {
+      const d = lt[8] ? unit(lt[8][2]) : ct === 9 ? 3 : 6, utc = lt[8] ? lt[8][1] !== false : true;
+      return { type: 'date and time', conv: (v) => pqStamp(v, d, utc) };
+    }
+    if (lt[7] || ct === 8) { const d = lt[7] ? unit(lt[7][2]) : 6; return { type: 'time', conv: (v) => pqClock(v, d) }; }
+    const unsigned = lt[10] ? lt[10][2] === false : ct === 14;
+    return { type: 'whole number', conv: unsigned ? (v) => pqInt64Out(BigInt.asUintN(64, v)) : pqInt64Out };
+  }
+  if (t === 3) return { // 8 bytes of nanoseconds into the day, then a 4-byte Julian day number
+    type: 'date and time',
+    conv: (b) => {
+      const dv = new DataView(b.buffer, b.byteOffset, 12);
+      const ns = dv.getBigInt64(0, true), day = dv.getInt32(8, true) - 2440588;
+      return pqStamp(BigInt(day) * 86400000000000n + ns, 9, false);
+    },
+  };
+  if (t === 4 || t === 5) return { type: 'decimal number', conv: id };
+  if (t === 6 || t === 7) {
+    if (lt[5] || ct === 5) { const sc = lt[5] ? lt[5][1] : el.scale; return { type: 'decimal number', conv: (b) => pqDecimal(pqBigEndian(b), sc) }; }
+    if (lt[1] || lt[4] || lt[12] || ct === 0 || ct === 4 || ct === 19) return { type: 'text', conv: (b) => PQ_UTF8.decode(b) };
+    if (t === 7 && lt[14] && el.typeLength === 16) return {
+      type: 'identifier',
+      conv: (b) => { const h = Array.from(b, (x) => PQ_HEX[x]).join(''); return `${h.slice(0, 8)}-${h.slice(8, 12)}-${h.slice(12, 16)}-${h.slice(16, 20)}-${h.slice(20)}`; },
+    };
+    if (t === 7 && lt[15] && el.typeLength === 2) return { type: 'decimal number', conv: pqHalf };
+    if (t === 7 && ct === 21 && el.typeLength === 12) return {
+      type: 'time span',
+      conv: (b) => { const dv = new DataView(b.buffer, b.byteOffset, 12); return `${dv.getUint32(0, true)} months, ${dv.getUint32(4, true)} days, ${dv.getUint32(8, true)} ms`; },
+    };
+    return { type: 'bytes', conv: (b) => b.slice() };
+  }
+  throw new Error(`Column "${leaf.name}" has a stored type this page doesn’t know, so the table can’t be shown here.`);
+}
+
+/* ---------- decoding the values in a page ---------- */
+
+/* Read n values stored one after another in the plain way. */
+function pqPlain(c, t, n, tl, what) {
+  const out = new Array(n), b = c.b;
+  if (t === 0) { // booleans: one bit each, low bit first
+    pqNeed(c, Math.ceil(n / 8), what);
+    for (let i = 0; i < n; i++) out[i] = !!((b[c.p + (i >> 3)] >> (i & 7)) & 1);
+    c.p += Math.ceil(n / 8); return out;
+  }
+  if (t === 6) {
+    for (let i = 0; i < n; i++) {
+      pqNeed(c, 4, what);
+      const len = b[c.p] + b[c.p + 1] * 256 + b[c.p + 2] * 65536 + b[c.p + 3] * 16777216; c.p += 4;
+      pqNeed(c, len, what);
+      out[i] = b.subarray(c.p, c.p + len); c.p += len;
+    }
+    return out;
+  }
+  const size = { 1: 4, 2: 8, 3: 12, 4: 4, 5: 8, 7: tl }[t];
+  if (!(size >= 0)) throw new Error(`${what}: its fixed width is missing.`);
+  pqNeed(c, size * n, what);
+  const dv = new DataView(b.buffer, b.byteOffset, b.length);
+  for (let i = 0; i < n; i++, c.p += size) {
+    if (t === 1) out[i] = dv.getInt32(c.p, true);
+    else if (t === 2) out[i] = dv.getBigInt64(c.p, true);
+    else if (t === 4) out[i] = dv.getFloat32(c.p, true);
+    else if (t === 5) out[i] = dv.getFloat64(c.p, true);
+    else out[i] = b.subarray(c.p, c.p + size);
+  }
+  return out;
+}
+
+/* Delta-encoded whole numbers: a header, a first value, then blocks of bit-packed differences.
+   Gives BigInts, wrapped to the column's width (32 or 64 bits). */
+function pqDeltaInts(c, bits, limit, what) {
+  const blockSize = pqUvarint(c, what), minis = pqUvarint(c, what), total = pqUvarint(c, what);
+  let prev = pqZigzag64(c, what);
+  if (!blockSize || !minis || blockSize % 128 || blockSize % minis || (blockSize / minis) % 32) throw new Error(`${what}: a page’s block layout is invalid.`);
+  if (total > limit) throw new Error(`${what}: a page says it holds ${total} values, but it has room for only ${limit}.`);
+  const per = blockSize / minis, out = [];
+  const wrap = (v) => BigInt.asIntN(bits, v);
+  if (total > 0) out.push(wrap(prev));
+  const tmp = new Array(per);
+  while (out.length < total) {
+    const minDelta = pqZigzag64(c, what);
+    pqNeed(c, minis, what);
+    const widths = c.b.subarray(c.p, c.p + minis); c.p += minis;
+    for (let m = 0; m < minis && out.length < total; m++) {
+      const w = widths[m];
+      if (w > 64) throw new Error(`${what}: a page’s bit width is invalid.`);
+      const bytes = per * w / 8;
+      pqNeed(c, bytes, what);
+      pqUnpackBig(c.b, c.p, w, per, tmp, 0);
+      c.p += bytes;
+      for (let i = 0; i < per && out.length < total; i++) { prev = wrap(prev + minDelta + tmp[i]); out.push(prev); }
+    }
+  }
+  return out;
+}
+/* Byte strings stored as delta-encoded lengths, then all the bytes one after another. */
+function pqDeltaLengths(c, limit, what) {
+  const lens = pqDeltaInts(c, 32, limit, what), out = new Array(lens.length);
+  for (let i = 0; i < lens.length; i++) {
+    const n = Number(lens[i]);
+    if (n < 0) throw new Error(`${what}: a page holds a negative length.`);
+    pqNeed(c, n, what);
+    out[i] = c.b.subarray(c.p, c.p + n); c.p += n;
+  }
+  return out;
+}
+/* Byte strings stored as "keep this many bytes of the one before, then add these". */
+function pqDeltaStrings(c, limit, what) {
+  const pre = pqDeltaInts(c, 32, limit, what), suf = pqDeltaLengths(c, limit, what);
+  if (pre.length !== suf.length) throw new Error(`${what}: a page’s prefix and suffix counts differ.`);
+  const out = new Array(pre.length); let last = new Uint8Array(0);
+  for (let i = 0; i < pre.length; i++) {
+    const k = Number(pre[i]);
+    if (k < 0 || k > last.length) throw new Error(`${what}: a page refers to more of the previous value than there is.`);
+    const v = new Uint8Array(k + suf[i].length);
+    v.set(last.subarray(0, k)); v.set(suf[i], k);
+    out[i] = last = v;
+  }
+  return out;
+}
+/* Values split byte by byte into separate streams: all first bytes, then all second bytes, and so on. */
+function pqStreamSplit(c, t, n, tl, what) {
+  const k = { 1: 4, 2: 8, 4: 4, 5: 8, 7: tl }[t];
+  if (!k) throw new Error(`${what}: this way of storing values doesn’t suit its stored type.`);
+  const len = c.end - c.p;
+  if (len % k) throw new Error(`${what}: a page’s byte streams don’t divide evenly.`);
+  const stride = len / k;
+  if (stride < n) throw new Error(`${what}: the page ends before all its values.`);
+  const joined = new Uint8Array(n * k);
+  for (let i = 0; i < n; i++) for (let j = 0; j < k; j++) joined[i * k + j] = c.b[c.p + j * stride + i];
+  c.p = c.end;
+  return pqPlain(pqCursor(joined, 0), t, n, tl, what);
+}
+
+/* Decode n stored values from a data page, using the dictionary when the page refers to one. */
+function pqValues(c, enc, leaf, n, dict, what) {
+  const t = leaf.el.type, tl = leaf.el.typeLength;
+  if (n === 0) return [];
+  if (enc === 2 || enc === 8) { // indexes into the dictionary
+    if (!dict) throw new Error(`${what}: a page refers to a list of values that the column never gives.`);
+    pqNeed(c, 1, what);
+    const bw = c.b[c.p++];
+    if (bw > 32) throw new Error(`${what}: a page’s bit width is invalid.`);
+    const idx = new Array(n); pqHybrid(c, bw, n, idx, what);
+    const out = new Array(n);
+    for (let i = 0; i < n; i++) {
+      if (idx[i] >= dict.length) throw new Error(`${what}: a page refers to value ${idx[i] + 1} of a list that holds only ${dict.length}.`);
+      out[i] = dict[idx[i]];
+    }
+    return out;
+  }
+  if (enc === 0) return pqPlain(c, t, n, tl, what);
+  if (enc === 3 && t === 0) { // booleans run-length encoded, with a 4-byte length in front
+    pqNeed(c, 4, what);
+    const len = c.b[c.p] + c.b[c.p + 1] * 256 + c.b[c.p + 2] * 65536 + c.b[c.p + 3] * 16777216; c.p += 4;
+    pqNeed(c, len, what);
+    const sub = pqCursor(c.b, c.p, c.p + len), raw = new Array(n);
+    pqHybrid(sub, 1, n, raw, what); c.p += len;
+    return raw.map((v) => v === 1);
+  }
+  let vals;
+  if (enc === 5 && (t === 1 || t === 2)) {
+    vals = pqDeltaInts(c, t === 1 ? 32 : 64, n, what);
+    if (t === 1) vals = vals.map(Number);
+  } else if (enc === 6 && t === 6) vals = pqDeltaLengths(c, n, what);
+  else if (enc === 7 && (t === 6 || t === 7)) {
+    vals = pqDeltaStrings(c, n, what);
+    if (t === 7 && vals.some((v) => v.length !== tl)) throw new Error(`${what}: a page holds a value of the wrong width.`);
+  } else if (enc === 9) return pqStreamSplit(c, t, n, tl, what);
+  else throw new Error(`${what}: a page is stored in a way this page doesn’t know, so the table can’t be shown here.`);
+  if (vals.length < n) throw new Error(`${what}: the page ends before all its values.`);
+  return vals.slice(0, n);
+}
+
+/* Read a page's repetition or definition levels. */
+function pqLevels(c, enc, max, n, v2, what) {
+  const out = new Array(n);
+  if (max === 0) { out.fill(0); return out; }
+  const bw = pqBitWidth(max);
+  if (v2) pqHybrid(c, bw, n, out, what);
+  else if (enc === 3) {
+    pqNeed(c, 4, what);
+    const len = c.b[c.p] + c.b[c.p + 1] * 256 + c.b[c.p + 2] * 65536 + c.b[c.p + 3] * 16777216; c.p += 4;
+    pqNeed(c, len, what);
+    pqHybrid(pqCursor(c.b, c.p, c.p + len), bw, n, out, what); c.p += len;
+  } else if (enc === 4) pqBitPackedMSB(c, bw, n, out, what);
+  else throw new Error(`${what}: a page’s levels are stored in a way this page doesn’t know.`);
+  for (let i = 0; i < n; i++) if (out[i] > max) throw new Error(`${what}: a page holds a level higher than the column allows.`);
+  return out;
+}
+
+/* ---------- reading one column chunk ---------- */
+
+async function pqReadChunk(u8, leaf, cc, g, conv) {
+  const col = leaf.name, what = `Column "${col}"`;
+  const md = cc[3];
+  if (cc[8] != null || cc[9] != null) throw new Error(`${what} is encrypted, so the table can’t be shown here.`);
+  if (!md || typeof md !== 'object') throw new Error(`${what} in row group ${g + 1} has no description in the footer.`);
+  if (cc[1] != null) throw new Error(`${what} says its data is kept in another file, so the table can’t be shown here.`);
+  const codec = md[4] ?? 0, numValues = pqNum(md[5]), size = pqNum(md[7]);
+  const dataOff = pqNum(md[9]), dictOff = md[11] == null ? null : pqNum(md[11]);
+  if (md[1] !== leaf.el.type) throw new Error(`${what} in row group ${g + 1} has a different stored type from the one the footer’s column list gives.`);
+  if (numValues === 0) return { defs: [], reps: [], vals: [] };
+  if (numValues > 20000000) throw new Error(`${what} holds ${numValues} values in row group ${g + 1}, more than this page can show.`);
+  if (![numValues, size, dataOff].every((x) => Number.isSafeInteger(x) && x >= 0)) throw new Error(`${what} in row group ${g + 1} has a damaged description in the footer.`);
+  const start = dictOff != null && dictOff > 0 && dictOff < dataOff ? dictOff : dataOff;
+  const stop = start + size;
+  if (stop > u8.length) throw new Error(`${what} in row group ${g + 1} says its data runs to byte ${stop}, but the file is only ${u8.length} bytes long.`);
+  let p = start, got = 0, dict = null;
+  const defs = [], reps = [], vals = [];
+  while (got < numValues) {
+    if (p >= stop) throw new Error(`${what} in row group ${g + 1} says it holds ${numValues} values, but its pages hold only ${got}.`);
+    const { value: h, end } = pqThrift(u8, p, stop, `A page header in column "${col}"`);
+    const type = h[1], usize = pqNum(h[2]), csize = pqNum(h[3]);
+    if (!Number.isSafeInteger(usize) || !Number.isSafeInteger(csize) || usize < 0 || csize < 0) throw new Error(`A page header in column "${col}" gives an impossible size.`);
+    if (end + csize > stop) {
+      throw new Error(`A page in column "${col}" says it holds ${csize} bytes, but only ${stop - end} are left in the column’s data, so it can’t be read.`);
+    }
+    const body = u8.subarray(end, end + csize);
+    p = end + csize;
+    if (type === 2) { // the dictionary: values listed once, that data pages then refer to by number
+      const dh = h[7] || {};
+      if (dict) throw new Error(`${what} in row group ${g + 1} has more than one list of values.`);
+      if (dh[2] != null && dh[2] !== 0 && dh[2] !== 2) throw new Error(`${what}: its list of values is stored in a way this page doesn’t know.`);
+      const raw = await pqInflate(codec, body, usize, col);
+      const n = pqNum(dh[1]);
+      if (!Number.isSafeInteger(n) || n < 0) throw new Error(`A page header in column "${col}" gives an impossible count.`);
+      dict = pqPlain(pqCursor(raw, 0), leaf.el.type, n, leaf.el.typeLength, what).map(conv);
+      continue;
+    }
+    if (type !== 0 && type !== 3) continue; // other kinds of page (indexes) hold no values
+    let n, enc, lc, valsCur;
+    let rl, dl;
+    if (type === 0) {
+      const dh = h[5];
+      if (!dh) throw new Error(`A page header in column "${col}" is missing its details.`);
+      n = pqNum(dh[1]); enc = dh[2];
+      if (!Number.isSafeInteger(n) || n < 0) throw new Error(`A page header in column "${col}" gives an impossible count.`);
+      const raw = await pqInflate(codec, body, usize, col);
+      lc = pqCursor(raw, 0);
+      rl = pqLevels(lc, dh[4], leaf.maxRep, n, false, what);
+      dl = pqLevels(lc, dh[3], leaf.maxDef, n, false, what);
+      valsCur = lc;
+    } else {
+      const dh = h[8];
+      if (!dh) throw new Error(`A page header in column "${col}" is missing its details.`);
+      n = pqNum(dh[1]); enc = dh[4];
+      const rlen = pqNum(dh[6]) || 0, dlen = pqNum(dh[5]) || 0;
+      if (!Number.isSafeInteger(n) || n < 0 || rlen < 0 || dlen < 0 || rlen + dlen > body.length) throw new Error(`A page header in column "${col}" gives impossible sizes.`);
+      // in this kind of page the levels come first and are never compressed
+      rl = pqLevels(pqCursor(body, 0, rlen), 3, leaf.maxRep, n, true, what);
+      dl = pqLevels(pqCursor(body, rlen, rlen + dlen), 3, leaf.maxDef, n, true, what);
+      const rest = body.subarray(rlen + dlen);
+      const raw = dh[7] === false ? rest : await pqInflate(codec, rest, usize - rlen - dlen, col);
+      if (dh[7] === false && rest.length !== usize - rlen - dlen) throw new Error(`A page in column "${col}" should hold ${usize - rlen - dlen} bytes of values, but it holds ${rest.length}.`);
+      valsCur = pqCursor(raw, 0);
+    }
+    if (got + n > numValues) throw new Error(`${what} in row group ${g + 1} says it holds ${numValues} values, but its pages hold more.`);
+    let present = 0;
+    for (let i = 0; i < n; i++) if (dl[i] === leaf.maxDef) present++;
+    const pv = pqValues(valsCur, enc, leaf, present, dict, what);
+    const fromDict = enc === 2 || enc === 8;
+    for (let i = 0; i < n; i++) { defs.push(dl[i]); reps.push(rl[i]); }
+    for (const v of pv) vals.push(fromDict ? v : conv(v));
+    got += n;
+  }
+  if (got !== numValues) throw new Error(`${what} in row group ${g + 1} says it holds ${numValues} values, but its pages hold ${got}.`);
+  return { defs, reps, vals };
+}
+
+/* Put a column's levels and values back together into one value per row.
+   A column with no repeated levels gives a plain value or null. A repeated column gives
+   arrays (nested once per repeated level), with null where a level above is missing. */
+function pqAssemble(leaf, { defs, reps, vals }) {
+  const rows = []; let vi = 0;
+  const maxDef = leaf.maxDef, D = leaf.repDefs, k = D.length;
+  if (k === 0) {
+    for (let i = 0; i < defs.length; i++) rows.push(defs[i] === maxDef ? vals[vi++] : null);
+    return rows;
+  }
+  let stack = [];
+  for (let i = 0; i < defs.length; i++) {
+    const r = reps[i], d = defs[i];
+    let j; // the depth of the list that gets a new entry
+    if (r === 0) {
+      if (d < D[0] - 1) { rows.push(null); stack = []; continue; }
+      const top = []; rows.push(top); stack = [top];
+      if (d < D[0]) continue; // an empty list
+      j = 1;
+    } else {
+      if (r > stack.length) throw new Error(`Column "${leaf.name}" has a repeated value with nothing to belong to.`);
+      stack.length = r; j = r;
+    }
+    for (;;) {
+      const list = stack[j - 1];
+      if (j === k) { list.push(d === maxDef ? vals[vi++] : null); break; }
+      if (d < D[j] - 1) { list.push(null); break; }
+      const inner = []; list.push(inner); stack.push(inner);
+      if (d < D[j]) break;
+      j++;
+    }
+  }
+  return rows;
+}
+
+/* ---------- the whole file ---------- */
+
+async function parquetRead(u8) {
+  const L = u8.length;
+  const tag = (q) => String.fromCharCode(u8[q], u8[q + 1], u8[q + 2], u8[q + 3]);
+  const num = (n) => n.toLocaleString('en-US'); // sizes written the way the page writes them, like 2,181
+  if (L < 12) throw new Error(`The file is only ${num(L)} bytes long, too short to hold a table, so it can’t be read as one.`);
+  if (tag(0) !== 'PAR1') throw new Error("The file doesn’t start with the marker PAR1 that this kind of table starts with, so it can’t be read as a table.");
+  if (tag(L - 4) === 'PARE') throw new Error("The file’s footer is encrypted, so it can’t be read here.");
+  if (tag(L - 4) !== 'PAR1') throw new Error("The file doesn’t end with the marker PAR1 that this kind of table ends with, so it can’t be read as a table.");
+  const flen = u8[L - 8] + u8[L - 7] * 256 + u8[L - 6] * 65536 + u8[L - 5] * 16777216;
+  if (flen >= L) throw new Error(`The file says its footer is ${num(flen)} bytes long, but the whole file is only ${num(L)} bytes, so it can’t be read as a table.`);
+  if (flen > L - 12) throw new Error(`The file says its footer is ${num(flen)} bytes long, but there are only ${num(L - 12)} bytes between its start and end markers, so it can’t be read as a table.`);
+  const fstart = L - 8 - flen;
+  const { value: fm } = pqThrift(u8, fstart, L - 8, "The file’s footer (its description of the table)");
+  if (fm[8] != null) throw new Error("The file’s columns are encrypted, so the table can’t be shown here.");
+  if (!Array.isArray(fm[2]) || !fm[2].length || !fm[2].every((x) => x && typeof x === 'object' && !(x instanceof Uint8Array))) throw new Error("The file’s footer has no list of columns, so it can’t be read as a table.");
+  const leaves = pqLeaves(fm[2]);
+  const convs = leaves.map(pqConverter);
+  const rgs = fm[4] == null ? [] : fm[4];
+  if (!Array.isArray(rgs)) throw new Error("The file’s footer has a damaged list of row groups, so it can’t be read as a table.");
+  const columns = leaves.map((lf, i) => {
+    const c = { name: lf.name, type: lf.maxRep ? 'list' : convs[i].type };
+    if (lf.maxRep) c.of = convs[i].type;
+    return c;
+  });
+  // every column's data has to lie between the start marker and the footer, checked before any is read
+  for (let g = 0; g < rgs.length; g++) {
+    const ccs = rgs[g] && rgs[g][1];
+    if (!Array.isArray(ccs)) continue;
+    ccs.forEach((cc, i) => {
+      const md = cc && cc[3], lf = leaves[i];
+      if (!md || !lf || md[5] === 0) return; // a chunk with no values has nothing to read
+      const dataOff = pqNum(md[9]), dictOff = md[11] == null ? null : pqNum(md[11]), size = pqNum(md[7]);
+      const start = dictOff != null && dictOff > 0 && dictOff < dataOff ? dictOff : dataOff;
+      if (!Number.isSafeInteger(start) || !Number.isSafeInteger(size) || start < 4 || size < 0) throw new Error(`Column "${lf.name}" in row group ${g + 1} has a damaged description in the footer.`);
+      if (start + size > L) throw new Error(`Column "${lf.name}" in row group ${g + 1} says its data runs to byte ${start + size}, but the file is only ${L} bytes long.`);
+      if (start + size > fstart) throw new Error(`Column "${lf.name}" in row group ${g + 1} says its data runs to byte ${start + size}, but the footer starts at byte ${fstart}.`);
+    });
+  }
+  const rows = [];
+  for (let g = 0; g < rgs.length; g++) {
+    const rg = rgs[g];
+    const ccs = rg && rg[1];
+    const nrows = rg ? pqNum(rg[3]) : NaN;
+    if (!Array.isArray(ccs) || !Number.isSafeInteger(nrows) || nrows < 0) throw new Error(`Row group ${g + 1} has a damaged description in the footer, so the table can’t be shown.`);
+    if (ccs.length !== leaves.length) throw new Error(`Row group ${g + 1} has ${ccs.length} columns, but the footer’s column list has ${leaves.length}.`);
+    const cols = [];
+    for (let i = 0; i < leaves.length; i++) {
+      const lf = leaves[i];
+      const chunk = await pqReadChunk(u8, lf, ccs[i] || {}, g, convs[i].conv);
+      const vals = pqAssemble(lf, chunk);
+      if (vals.length !== nrows) throw new Error(`Column "${lf.name}" has ${vals.length} rows in row group ${g + 1}, but the row group says it has ${nrows}.`);
+      cols.push(vals);
+    }
+    for (let r = 0; r < nrows; r++) rows.push(cols.map((c) => c[r]));
+  }
+  const nr = pqNum(fm[3]);
+  return { columns, rows, numRows: Number.isFinite(nr) ? nr : rows.length, createdBy: pqStr(fm[6]), rowGroups: rgs.length };
+}
+return { parquetRead };
+})();
+const FM = (() => {
+/* ---------- reading the page's other files, written from scratch ----------
+   tiffRead, tiffToRGBA, tiffPixel   tagged image files (pictures and grids of numbers)
+   pickleLoad, pyRepr                saved Python values, read by a small machine that never runs code
+   csvParse                          comma-separated tables
+   mdRender                          formatted text turned into safe HTML
+   highlight                         colouring for C and R code
+   bytesAsText                       any bytes, shown the way a plain text viewer shows them
+   Every reader is strict: anything malformed stops it with a short plain reason. Every string
+   they give back comes from a file, so the page escapes it before showing it (mdRender and
+   highlight escape it themselves). */
+
+/* Escape text for HTML, attribute values included. */
+function fmtEsc(s) {
+  return String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
+}
+
+/* The characters Windows-1252 gives bytes 0x80 to 0x9f; the five bytes it leaves undefined are null. */
+const FMT_1252 = [0x20ac, null, 0x201a, 0x0192, 0x201e, 0x2026, 0x2020, 0x2021, 0x02c6, 0x2030, 0x0160, 0x2039, 0x0152, null, 0x017d, null,
+  null, 0x2018, 0x2019, 0x201c, 0x201d, 0x2022, 0x2013, 0x2014, 0x02dc, 0x2122, 0x0161, 0x203a, 0x0153, null, 0x017e, 0x0178];
+
+/* Decode bytes as UTF-8 when they are valid UTF-8, or else one Windows-1252 character per byte. */
+function fmtText(u8) {
+  try { return new TextDecoder('utf-8', { fatal: true, ignoreBOM: true }).decode(u8); } catch (e) { /* not UTF-8 */ }
+  let s = '';
+  for (const b of u8) s += String.fromCharCode(b >= 0x80 && b < 0xa0 ? (FMT_1252[b - 0x80] ?? b) : b);
+  return s;
+}
+
+/* ====================================================================================
+   Tagged image files
+   ==================================================================================== */
+
+/* Bytes per value for each tag value type (1 BYTE ... 13 IFD); other types are skipped. */
+const TIF_SIZE = { 1: 1, 2: 1, 3: 2, 4: 4, 5: 8, 6: 1, 7: 1, 8: 2, 9: 4, 10: 8, 11: 4, 12: 8, 13: 4 };
+
+/* Show the first few bytes as hex, for an error message. */
+function tifHex(u8, a, b) {
+  return Array.from(u8.subarray(a, b), (x) => x.toString(16).padStart(2, '0')).join(' ');
+}
+
+/* Read one image directory at byte off: a Map from tag number to { type, count, at },
+   where `at` is where the values are, plus the offset of the next directory. */
+function tifDirectory(u8, dv, le, off, which) {
+  const n = u8.length;
+  if (off + 2 > n) throw new Error(`The ${which} image directory is said to start at byte ${off}, but the file is only ${n} bytes long.`);
+  const count = dv.getUint16(off, le);
+  const endAt = off + 2 + count * 12 + 4;
+  if (endAt > n) throw new Error(`The ${which} image directory at byte ${off} says it has ${count} entries, which would run to byte ${endAt}, past the end of the file (${n} bytes).`);
+  const tags = new Map();
+  for (let i = 0; i < count; i++) {
+    const e = off + 2 + i * 12;
+    const tag = dv.getUint16(e, le), type = dv.getUint16(e + 2, le), cnt = dv.getUint32(e + 4, le);
+    const size = TIF_SIZE[type];
+    if (!size) continue; // a value type this reader doesn't know: skipped, as standard readers do
+    const bytes = size * cnt;
+    let at = e + 8;
+    if (bytes > 4) {
+      at = dv.getUint32(e + 8, le);
+      if (at + bytes > n) throw new Error(`Tag ${tag} says its ${cnt} values are at bytes ${at} to ${at + bytes}, past the end of the file (${n} bytes).`);
+    }
+    if (!tags.has(tag)) tags.set(tag, { type, count: cnt, at });
+  }
+  return { tags, next: dv.getUint32(off + 2 + count * 12, le) };
+}
+
+/* The values of one tag, as numbers (rationals divided out), or a string for text. */
+function tifValues(u8, dv, le, e) {
+  if (!e) return null;
+  const { type, count, at } = e;
+  if (type === 2) {
+    let end = at; const lim = at + count;
+    while (end < lim && u8[end] !== 0) end++; // text stops at its first NUL, as a C string does
+    return fmtText(u8.subarray(at, end));
+  }
+  const out = new Array(count);
+  for (let i = 0; i < count; i++) {
+    switch (type) {
+      case 1: case 7: out[i] = u8[at + i]; break;
+      case 6: out[i] = dv.getInt8(at + i); break;
+      case 3: out[i] = dv.getUint16(at + 2 * i, le); break;
+      case 8: out[i] = dv.getInt16(at + 2 * i, le); break;
+      case 4: case 13: out[i] = dv.getUint32(at + 4 * i, le); break;
+      case 9: out[i] = dv.getInt32(at + 4 * i, le); break;
+      case 5: out[i] = dv.getUint32(at + 8 * i, le) / dv.getUint32(at + 8 * i + 4, le); break;
+      case 10: out[i] = dv.getInt32(at + 8 * i, le) / dv.getInt32(at + 8 * i + 4, le); break;
+      case 11: out[i] = dv.getFloat32(at + 4 * i, le); break;
+      case 12: out[i] = dv.getFloat64(at + 8 * i, le); break;
+    }
+  }
+  return out;
+}
+
+/* Unpack LZW-compressed data (the variant with codes from 9 to 12 bits, most significant bit
+   first, widening one code early) until `expected` bytes are out. */
+function tifLzw(src, expected, what) {
+  const out = new Uint8Array(expected);
+  const prefix = new Int16Array(4096), suffix = new Uint8Array(4096), first = new Uint8Array(4096), len = new Uint16Array(4096);
+  for (let i = 0; i < 256; i++) { prefix[i] = -1; suffix[i] = i; first[i] = i; len[i] = 1; }
+  const nbits = src.length * 8;
+  let width = 9, next = 258, old = -1, op = 0, bp = 0;
+  const read = () => {
+    if (bp + width > nbits) return 257; // the data runs out: treated as its end, as standard readers do
+    const p = bp >> 3;
+    const v = ((src[p] << 16) | ((src[p + 1] | 0) << 8) | (src[p + 2] | 0)) >>> (24 - (bp & 7) - width);
+    bp += width;
+    return v & ((1 << width) - 1);
+  };
+  const put = (code) => { // write out the string for a code, cut short if the output is full
+    const L = len[code], room = expected - op;
+    let c = code;
+    for (let k = L - 1; k >= 0; k--) { if (k < room) out[op + k] = suffix[c]; c = prefix[c]; }
+    op += Math.min(L, room);
+  };
+  const bad = (code) => { throw new Error(`${what} has compressed data that can’t be unpacked: code ${code} comes where only codes up to ${next} can.`); };
+  while (op < expected) {
+    let code = read();
+    if (code === 257) break;
+    if (code === 256) {
+      width = 9; next = 258;
+      code = read();
+      if (code === 257) break;
+      if (code > 255) bad(code);
+      put(code); old = code;
+      continue;
+    }
+    if (old < 0) { // no clear code at the start
+      if (code > 255) bad(code);
+      put(code); old = code;
+      continue;
+    }
+    if (code > next || (code === next && next >= 4096)) bad(code);
+    if (next < 4096) {
+      prefix[next] = old; suffix[next] = first[code < next ? code : old]; first[next] = first[old]; len[next] = len[old] + 1;
+    }
+    put(code);
+    if (next < 4096) next++;
+    if (next >= (1 << width) - 1 && width < 12) width++;
+    old = code;
+  }
+  if (op < expected) throw new Error(`${what} unpacks to only ${op} of the ${expected} bytes it should hold.`);
+  return out;
+}
+
+/* Unpack PackBits run-length data until `expected` bytes are out. */
+function tifPackBits(src, expected, what) {
+  const out = new Uint8Array(expected);
+  let ip = 0, op = 0;
+  while (op < expected && ip < src.length) {
+    const h = src[ip++];
+    if (h < 128) {
+      const k = Math.min(h + 1, src.length - ip, expected - op);
+      out.set(src.subarray(ip, ip + k), op); op += k; ip += h + 1;
+    } else if (h > 128) {
+      if (ip >= src.length) break;
+      const k = Math.min(257 - h, expected - op);
+      out.fill(src[ip++], op, op + k); op += k;
+    } // 128 does nothing
+  }
+  if (op < expected) throw new Error(`${what} unpacks to only ${op} of the ${expected} bytes it should hold.`);
+  return out;
+}
+
+/* Unpack zlib (Deflate) data until `expected` bytes are out. Reading stops once the output is
+   full, the way standard readers stop, so bytes after that point are never looked at. */
+async function tifInflate(src, expected, what) {
+  const ds = new DecompressionStream('deflate');
+  const w = ds.writable.getWriter();
+  w.write(src.slice()).catch(() => {});
+  w.close().catch(() => {});
+  const r = ds.readable.getReader();
+  const out = new Uint8Array(expected);
+  let op = 0, broken = false;
+  try {
+    while (op < expected) {
+      const { value, done } = await r.read();
+      if (done) break;
+      const k = Math.min(value.length, expected - op);
+      out.set(value.subarray(0, k), op); op += k;
+    }
+  } catch (e) { broken = true; }
+  r.cancel().catch(() => {});
+  if (op < expected) {
+    throw new Error(broken ? `${what} has compressed data that can’t be unpacked (it is damaged or cut short after ${op} of the ${expected} bytes it should hold).`
+      : `${what} unpacks to only ${op} of the ${expected} bytes it should hold.`);
+  }
+  return out;
+}
+
+/* A 16-bit float to a number. */
+function tifHalf(h) {
+  const s = h & 0x8000 ? -1 : 1, e = (h >> 10) & 31, f = h & 1023;
+  if (e === 0) return s * f * 2 ** -24;
+  if (e === 31) return f ? NaN : s * Infinity;
+  return s * (1 + f / 1024) * 2 ** (e - 15);
+}
+
+/* An empty typed array for one band of samples. */
+function tifBand(bits, fmt, n) {
+  if (fmt === 3) return bits === 64 ? new Float64Array(n) : new Float32Array(n);
+  if (fmt === 2) return bits <= 8 ? new Int8Array(n) : bits <= 16 ? new Int16Array(n) : bits <= 32 ? new Int32Array(n) : new BigInt64Array(n);
+  return bits <= 8 ? new Uint8Array(n) : bits <= 16 ? new Uint16Array(n) : bits <= 32 ? new Uint32Array(n) : new BigUint64Array(n);
+}
+
+/* Undo horizontal differencing (predictor 2) on one decoded strip or tile, row by row. */
+function tifUndoDiff(buf, le, rows, rowBytes, perRow, s, bits) {
+  const dv = new DataView(buf.buffer, buf.byteOffset, buf.byteLength);
+  for (let r = 0; r < rows; r++) {
+    const o = r * rowBytes;
+    if (bits === 8) for (let i = s; i < perRow; i++) buf[o + i] = (buf[o + i] + buf[o + i - s]) & 255;
+    else if (bits === 16) for (let i = s; i < perRow; i++) dv.setUint16(o + 2 * i, (dv.getUint16(o + 2 * i, le) + dv.getUint16(o + 2 * (i - s), le)) & 0xffff, le);
+    else if (bits === 32) for (let i = s; i < perRow; i++) dv.setUint32(o + 4 * i, (dv.getUint32(o + 4 * i, le) + dv.getUint32(o + 4 * (i - s), le)) >>> 0, le);
+    else for (let i = s; i < perRow; i++) dv.setBigUint64(o + 8 * i, BigInt.asUintN(64, dv.getBigUint64(o + 8 * i, le) + dv.getBigUint64(o + 8 * (i - s), le)), le);
+  }
+}
+
+/* Undo the floating-point predictor (predictor 3): bytes were differenced with a stride of the
+   samples per pixel, after each row's values were split into byte planes, most significant first.
+   The values are put back in the file's byte order so they can be read like any others. */
+function tifUndoFloat(buf, le, rows, rowBytes, perRow, s, bytes) {
+  const tmp = new Uint8Array(perRow * bytes);
+  for (let r = 0; r < rows; r++) {
+    const o = r * rowBytes;
+    for (let i = s; i < perRow * bytes; i++) buf[o + i] = (buf[o + i] + buf[o + i - s]) & 255;
+    tmp.set(buf.subarray(o, o + perRow * bytes));
+    for (let k = 0; k < perRow; k++) {
+      for (let j = 0; j < bytes; j++) buf[o + k * bytes + (le ? bytes - 1 - j : j)] = tmp[j * perRow + k];
+    }
+  }
+}
+
+/* Read the first image of a tagged image file, in either byte order. */
+async function tiffRead(u8) {
+  const n = u8.length;
+  if (n < 8) throw new Error(`The file is ${n} bytes long, too short for the 8-byte header it should start with.`);
+  let le;
+  if (u8[0] === 0x49 && u8[1] === 0x49) le = true;
+  else if (u8[0] === 0x4d && u8[1] === 0x4d) le = false;
+  else throw new Error(`The file should start with “II” or “MM” (49 49 or 4d 4d) to give its byte order, but it starts with ${tifHex(u8, 0, 2)}.`);
+  const dv = new DataView(u8.buffer, u8.byteOffset, u8.byteLength);
+  const ver = dv.getUint16(2, le);
+  if (ver === 43) throw new Error('The header gives version 43, the layout for very large files, which this reader doesn’t handle (it reads version 42).');
+  if (ver !== 42) throw new Error(`The header should give version 42 after the byte order, but it gives ${ver}.`);
+  const first = dv.getUint32(4, le);
+  const ifd = tifDirectory(u8, dv, le, first, 'first');
+
+  // count the images by following the chain of directories
+  let images = 1;
+  const seen = new Set([first]);
+  for (let off = ifd.next; off !== 0;) {
+    if (seen.has(off)) throw new Error(`The chain of image directories loops back to byte ${off}.`);
+    seen.add(off);
+    images++;
+    off = tifDirectory(u8, dv, le, off, `image ${images}’s`).next;
+  }
+
+  const T = ifd.tags;
+  const vals = (tag) => tifValues(u8, dv, le, T.get(tag));
+  const one = (tag, dflt) => { const v = vals(tag); return v && v.length ? v[0] : dflt; };
+  const text = (tag) => { const v = vals(tag); return typeof v === 'string' ? v : null; };
+  const same = (tag, dflt, spp, what) => {
+    const v = vals(tag);
+    if (!v || !v.length) return dflt;
+    for (let i = 1; i < Math.min(v.length, spp); i++) if (v[i] !== v[0]) throw new Error(`The samples have different ${what} (${v.slice(0, spp).join(', ')}), which this reader doesn’t handle.`);
+    return v[0];
+  };
+
+  const width = one(256), height = one(257);
+  if (width == null) throw new Error('The image doesn’t say how wide it is (tag 256 is missing).');
+  if (height == null) throw new Error('The image doesn’t say how tall it is (tag 257 is missing).');
+  if (!width || !height) throw new Error(`The image is ${width} × ${height} pixels, so there is nothing to show.`);
+  const spp = one(277, 1);
+  if (!spp) throw new Error('The image says it has 0 samples per pixel.');
+  const bits = same(258, 1, spp, 'bit depths');
+  const fmt = same(339, 1, spp, 'sample formats');
+  const compression = one(259, 1), planar = one(284, 1), predictor = one(317, 1), fillOrder = one(266, 1);
+  const palVals = vals(320);
+  const photometric = one(262, palVals ? 3 : spp >= 3 ? 2 : 1);
+  if (![1, 2, 3, 4].includes(fmt)) throw new Error(`The sample format is ${fmt}, which isn’t one of the four that exist (1 to 4).`);
+  if (fmt === 3 ? ![16, 32, 64].includes(bits) : (bits < 1 || bits > 64 || (bits > 32 && bits !== 64))) {
+    throw new Error(`The samples are ${bits}-bit ${fmt === 3 ? 'floating-point numbers' : 'whole numbers'}, which this reader doesn’t handle.`);
+  }
+  if (planar !== 1 && planar !== 2) throw new Error(`The planar configuration is ${planar}, but only 1 and 2 exist.`);
+  if (width * height * spp > 1e8) throw new Error(`The image is ${width} × ${height} pixels with ${spp} samples each, too large to show here.`);
+  if (photometric === 6) {
+    const sub = vals(530);
+    if (sub && (sub[0] !== 1 || (sub[1] ?? 1) !== 1)) throw new Error('The image stores its colour at reduced resolution (subsampled), which this reader doesn’t handle.');
+  }
+
+  const tiled = T.has(322);
+  const tw = tiled ? one(322) : width;
+  const th = tiled ? one(323) : Math.min(one(278, 0xffffffff) || height, height);
+  if (tiled && (!tw || !th)) throw new Error('The image is stored in tiles but doesn’t say how big they are.');
+  if (tw * th * spp > 1e8) throw new Error(`The image’s tiles are said to be ${tw} × ${th} pixels, too large to unpack here.`);
+  const across = Math.ceil(width / tw), down = Math.ceil(height / th);
+  const perPlane = across * down;
+  const nChunks = planar === 2 ? perPlane * spp : perPlane;
+  const chunkSpp = planar === 2 ? 1 : spp;
+  const rowBytes = Math.ceil(tw * chunkSpp * bits / 8);
+  const word = tiled ? 'tile' : 'strip';
+  const offsets = vals(tiled ? 324 : 273);
+  let counts = vals(tiled ? 325 : 279);
+  if (!offsets) throw new Error(`The image doesn’t say where its ${word}s are (tag ${tiled ? 324 : 273} is missing).`);
+  if (offsets.length < nChunks) throw new Error(`The image needs ${nChunks} ${word}s, but the file lists only ${offsets.length}.`);
+  if (!counts) {
+    if (compression !== 1) throw new Error(`The image doesn’t say how long its ${word}s are (tag ${tiled ? 325 : 279} is missing).`);
+    counts = Array.from({ length: nChunks }, (_, i) => (tiled ? th : Math.min(th, height - (i % perPlane) * th)) * rowBytes);
+  }
+  if (counts.length < nChunks) throw new Error(`The image needs ${nChunks} ${word} lengths, but the file lists only ${counts.length}.`);
+  if (![1, 5, 8, 32946, 32773].includes(compression)) throw new Error(`The image uses compression scheme number ${compression}, which this reader doesn’t handle.`);
+  if (predictor !== 1 && predictor !== 2 && predictor !== 3) throw new Error(`The image uses predictor ${predictor}, but only 1, 2 and 3 exist.`);
+  if (predictor === 2 && (fmt === 3 || ![8, 16, 32, 64].includes(bits))) throw new Error(`The image uses predictor 2 on ${bits}-bit ${fmt === 3 ? 'floating-point ' : ''}samples, which it can’t apply to.`);
+  if (predictor === 3 && fmt !== 3) throw new Error('The image uses the floating-point predictor (3) on samples that aren’t floating-point numbers.');
+
+  const bands = Array.from({ length: spp }, () => tifBand(bits, fmt, width * height));
+  for (let c = 0; c < nChunks; c++) {
+    const plane = planar === 2 ? Math.floor(c / perPlane) : 0;
+    const idx = c % perPlane;
+    const cx = (idx % across) * tw, cy = Math.floor(idx / across) * th;
+    const rows = tiled ? th : Math.min(th, height - cy);
+    const expected = rows * rowBytes;
+    const what = `${word[0].toUpperCase() + word.slice(1)} ${c + 1}`;
+    const off = offsets[c], cnt = counts[c];
+    if (off + cnt > n) throw new Error(`${what} is said to be at bytes ${off} to ${off + cnt}, past the end of the file (${n} bytes).`);
+    let src = u8.subarray(off, off + cnt);
+    if (fillOrder === 2) src = src.map((b) => { let r = 0; for (let k = 0; k < 8; k++) r |= ((b >> k) & 1) << (7 - k); return r; });
+    let buf;
+    if (compression === 1) {
+      if (cnt < expected) throw new Error(`${what} should hold ${expected} bytes, but the file gives it only ${cnt}.`);
+      buf = src.slice(0, expected);
+    } else if (compression === 5) buf = tifLzw(src, expected, what);
+    else if (compression === 32773) buf = tifPackBits(src, expected, what);
+    else buf = await tifInflate(src, expected, what);
+
+    const perRow = tw * chunkSpp;
+    if (predictor === 2) tifUndoDiff(buf, le, rows, rowBytes, perRow, chunkSpp, bits);
+    else if (predictor === 3) tifUndoFloat(buf, le, rows, rowBytes, perRow, chunkSpp, bits / 8);
+
+    // copy the visible part into the bands
+    const bdv = new DataView(buf.buffer, buf.byteOffset, buf.byteLength);
+    const visW = Math.min(tw, width - cx), visH = Math.min(rows, height - cy);
+    for (let r = 0; r < visH; r++) {
+      const rowStart = r * rowBytes, outRow = (cy + r) * width + cx;
+      for (let x = 0; x < visW; x++) {
+        for (let s = 0; s < chunkSpp; s++) {
+          const band = bands[planar === 2 ? plane : s], k = x * chunkSpp + s;
+          let v;
+          if (bits === 8) v = fmt === 2 ? (buf[rowStart + k] << 24) >> 24 : buf[rowStart + k];
+          else if (bits === 16) v = fmt === 3 ? tifHalf(bdv.getUint16(rowStart + 2 * k, le)) : fmt === 2 ? bdv.getInt16(rowStart + 2 * k, le) : bdv.getUint16(rowStart + 2 * k, le);
+          else if (bits === 32) v = fmt === 3 ? bdv.getFloat32(rowStart + 4 * k, le) : fmt === 2 ? bdv.getInt32(rowStart + 4 * k, le) : bdv.getUint32(rowStart + 4 * k, le);
+          else if (bits === 64) v = fmt === 3 ? bdv.getFloat64(rowStart + 8 * k, le) : fmt === 2 ? bdv.getBigInt64(rowStart + 8 * k, le) : bdv.getBigUint64(rowStart + 8 * k, le);
+          else { // packed samples, most significant bit first, each row starting on a whole byte
+            let bp = rowStart * 8 + k * bits;
+            v = 0;
+            for (let q = 0; q < bits; q++, bp++) v = v * 2 + ((buf[bp >> 3] >> (7 - (bp & 7))) & 1);
+            if (fmt === 2 && v >= 2 ** (bits - 1)) v -= 2 ** bits;
+          }
+          band[outRow + x] = v;
+        }
+      }
+    }
+  }
+
+  let palette = null;
+  if (photometric === 3) {
+    const k = 2 ** Math.min(bits, 16);
+    if (!palVals) throw new Error('The image is a palette image but has no colour map (tag 320).');
+    if (palVals.length < 3 * k) throw new Error(`The colour map should have ${3 * k} entries for ${bits}-bit samples, but it has ${palVals.length}.`);
+    palette = Array.from({ length: k }, (_, i) => [palVals[i], palVals[k + i], palVals[2 * k + i]]);
+  }
+
+  const nodText = text(42113);
+  let nodata = null;
+  if (nodText != null) {
+    const t = nodText.trim();
+    if (/^[+-]?nan$/i.test(t)) nodata = NaN;
+    else if (/^[+-]?inf(inity)?$/i.test(t)) nodata = t[0] === '-' ? -Infinity : Infinity;
+    else if (t !== '' && Number.isFinite(Number(t))) nodata = Number(t);
+  }
+
+  return {
+    width, height, samples: spp, bits, sampleFormat: fmt, photometric, bands, palette,
+    extraSamples: vals(338) || [],
+    description: text(270), software: text(305), datetime: text(306), nodata, nodataText: nodText,
+    geo: tifGeo(u8, dv, le, T, width, height),
+    images,
+  };
+}
+
+/* The geographic tags: tie points, pixel scale or a transformation matrix, and the key
+   directory. Gives null when the image has none of them. */
+function tifGeo(u8, dv, le, T, width, height) {
+  const vals = (tag) => tifValues(u8, dv, le, T.get(tag));
+  const tie = vals(33922), scale = vals(33550), mat = vals(34264), dir = vals(34735);
+  if (!tie && !scale && !mat && !dir) return null;
+  const dbl = vals(34736) || [], asc = vals(34737);
+  const ascii = T.has(34737) ? fmtText(u8.subarray(T.get(34737).at, T.get(34737).at + T.get(34737).count)) : '';
+  const keys = [];
+  const key = new Map();
+  if (dir) {
+    if (dir.length < 4) throw new Error(`The geographic key directory should start with 4 numbers, but it has only ${dir.length}.`);
+    const nk = dir[3];
+    if (dir.length < 4 + 4 * nk) throw new Error(`The geographic key directory says it holds ${nk} keys, which need ${4 + 4 * nk} numbers, but it has ${dir.length}.`);
+    for (let i = 0; i < nk; i++) {
+      const [id, loc, count, off] = dir.slice(4 + 4 * i, 8 + 4 * i);
+      let value;
+      if (loc === 0) value = off;
+      else if (loc === 34736) {
+        if (off + count > dbl.length) throw new Error(`Geographic key ${id} points past the end of the list of decimal values.`);
+        value = count === 1 ? dbl[off] : dbl.slice(off, off + count);
+      } else if (loc === 34737) {
+        if (asc == null || off + count > ascii.length) throw new Error(`Geographic key ${id} points past the end of the list of text values.`);
+        value = ascii.slice(off, off + count).replace(/[|\0]$/, '');
+      } else if (loc === 34735) {
+        if (off + count > dir.length) throw new Error(`Geographic key ${id} points past the end of the key directory.`);
+        value = count === 1 ? dir[off] : dir.slice(off, off + count);
+      } else throw new Error(`Geographic key ${id} says its value is in tag ${loc}, which can’t hold key values.`);
+      keys.push({ id, value });
+      if (!key.has(id)) key.set(id, value);
+    }
+  }
+  const modelType = key.get(1024) ?? null, rasterType = key.get(1025) ?? 1;
+  const code = (v) => (typeof v === 'number' && v > 0 && v < 32767 ? v : null);
+  const epsg = code(key.get(3072)) ?? code(key.get(2048));
+  const citation = [1026, 3073, 2049].map((k) => key.get(k)).find((v) => typeof v === 'string') ?? null;
+  const tiepoints = [];
+  if (tie) for (let i = 0; i + 6 <= tie.length; i += 6) tiepoints.push({ i: tie[i], j: tie[i + 1], k: tie[i + 2], x: tie[i + 3], y: tie[i + 4], z: tie[i + 5] });
+
+  // the affine transform from pixel corners (column, row) to the model's coordinates:
+  // x = t[0] + col*t[1] + row*t[2], y = t[3] + col*t[4] + row*t[5]
+  let transform = null;
+  if (mat && mat.length >= 16) transform = [mat[3], mat[0], mat[1], mat[7], mat[4], mat[5]];
+  else if (tiepoints.length && scale && scale.length >= 2) {
+    const p = tiepoints[0];
+    transform = [p.x - p.i * scale[0], scale[0], 0, p.y + p.j * scale[1], 0, -scale[1]];
+  }
+  if (transform && rasterType === 2) { // the tie point names a pixel's centre: move to its corner
+    transform[0] -= 0.5 * (transform[1] + transform[2]);
+    transform[3] -= 0.5 * (transform[4] + transform[5]);
+  }
+  let bounds = null;
+  if (transform) {
+    const xs = [], ys = [];
+    for (const [c, r] of [[0, 0], [width, 0], [0, height], [width, height]]) {
+      xs.push(transform[0] + c * transform[1] + r * transform[2]);
+      ys.push(transform[3] + c * transform[4] + r * transform[5]);
+    }
+    bounds = { west: Math.min(...xs), south: Math.min(...ys), east: Math.max(...xs), north: Math.max(...ys) };
+  }
+  return {
+    modelType, rasterType, epsg, citation, tiepoints, pixelScale: scale || null, transform, matrix: mat || null,
+    bounds, geographic: modelType === 2, keys,
+  };
+}
+
+/* The image as RGBA pixels for a canvas. With {band}, that one band is shown in grey;
+   otherwise palette and colour images show their colours and others show the first band.
+   8-bit samples are used as they are, fewer bits are scaled to the full range, and other depths
+   are stretched from their smallest to their largest value. No-data and NaN pixels are clear. */
+function tiffToRGBA(t, opts = {}) {
+  const { width, height } = t, N = width * height;
+  const data = new Uint8ClampedArray(N * 4);
+  const nod = t.nodata;
+  const isNod = (v) => {
+    if (typeof v === 'bigint') return nod != null && Number.isFinite(nod) && v === BigInt(Math.trunc(nod)) && Number.isInteger(nod);
+    return Number.isNaN(v) || (nod != null && v === nod);
+  };
+  const intLike = t.sampleFormat !== 3;
+  const scaler = (arrs, forAlpha) => { // a function from a sample to 0..255, shared by the given bands
+    if (intLike && t.bits === 8 && t.sampleFormat !== 2) return (v) => v;
+    if (intLike && t.bits < 8 && t.sampleFormat !== 2) { const m = 2 ** t.bits - 1; return (v) => v * 255 / m; }
+    if (forAlpha) {
+      if (!intLike) return (v) => v * 255;
+      const m = 2 ** t.bits - 1; return (v) => Number(v) * 255 / m;
+    }
+    let lo = Infinity, hi = -Infinity;
+    for (const a of arrs) for (let i = 0; i < N; i++) { const v = a[i]; if (isNod(v)) continue; const x = Number(v); if (x < lo) lo = x; if (x > hi) hi = x; }
+    if (!(hi > lo)) return () => 0;
+    return (v) => (Number(v) - lo) * 255 / (hi - lo);
+  };
+  const band = opts.band;
+  if (band == null && t.photometric === 3 && t.palette) {
+    const pal = t.palette, idx = t.bands[0];
+    const eight = pal.every(([r, g, b]) => r < 256 && g < 256 && b < 256); // an 8-bit colour map, as standard readers allow
+    for (let i = 0; i < N; i++) {
+      const c = pal[idx[i]] || [0, 0, 0];
+      const o = 4 * i;
+      data[o] = eight ? c[0] : c[0] >> 8; data[o + 1] = eight ? c[1] : c[1] >> 8; data[o + 2] = eight ? c[2] : c[2] >> 8;
+      data[o + 3] = isNod(idx[i]) ? 0 : 255;
+    }
+  } else if (band == null && t.photometric === 2 && t.samples >= 3) {
+    const [R, G, B] = t.bands, f = scaler([R, G, B]);
+    const alpha = t.samples >= 4 && (t.extraSamples[0] === 1 || t.extraSamples[0] === 2) ? t.bands[3] : null;
+    const fa = alpha ? scaler([alpha], true) : null, assoc = t.extraSamples[0] === 1;
+    for (let i = 0; i < N; i++) {
+      const o = 4 * i;
+      let a = alpha ? fa(alpha[i]) : 255;
+      if (isNod(R[i]) && isNod(G[i]) && isNod(B[i])) a = 0;
+      const un = assoc && a > 0 ? 255 / a : 1; // colours stored already multiplied by alpha
+      data[o] = f(R[i]) * un; data[o + 1] = f(G[i]) * un; data[o + 2] = f(B[i]) * un; data[o + 3] = a;
+    }
+  } else {
+    const b = band ?? 0, A = t.bands[b];
+    if (!A) throw new Error(`There is no band ${b + 1}; the image has ${t.samples}.`);
+    const f = scaler([A]), inv = t.photometric === 0;
+    for (let i = 0; i < N; i++) {
+      const o = 4 * i, v = A[i];
+      const g = f(v);
+      data[o] = data[o + 1] = data[o + 2] = inv ? 255 - g : g;
+      data[o + 3] = isNod(v) ? 0 : 255;
+    }
+  }
+  return { width, height, data };
+}
+
+/* The values of every band at one pixel, or null outside the image. */
+function tiffPixel(t, x, y) {
+  if (!(x >= 0 && y >= 0 && x < t.width && y < t.height)) return null;
+  const i = Math.floor(y) * t.width + Math.floor(x);
+  return t.bands.map((b) => b[i]);
+}
+
+/* ====================================================================================
+   Saved Python values (pickles)
+   ==================================================================================== */
+
+/* A float that is a whole number is wrapped, so 1.0 stays apart from the int 1. */
+function pkFloat(x) { return Number.isInteger(x) ? { __py: 'float', v: x } : x; }
+
+/* A whole number: a plain number when it is exactly representable, else a BigInt. */
+function pkInt(b) { return b >= -9007199254740991n && b <= 9007199254740991n ? Number(b) : b; }
+
+/* A tuple is an array marked _tuple. */
+function pkTuple(a) { a._tuple = true; return a; }
+
+/* An empty dict or set; a hidden index keeps keys unique, as Python's do. */
+function pkDict() { const d = { __py: 'dict', entries: [] }; Object.defineProperty(d, '_keys', { value: new Map() }); return d; }
+function pkSet(kind) { const s = { __py: kind, items: [] }; Object.defineProperty(s, '_keys', { value: new Map() }); return s; }
+
+/* What kind of Python value a node is, in Python's words. */
+function pkKind(v) {
+  if (v === null) return 'None';
+  if (typeof v === 'boolean') return 'bool';
+  if (typeof v === 'bigint') return 'int';
+  if (typeof v === 'number') return Number.isInteger(v) ? 'int' : 'float';
+  if (typeof v === 'string') return 'str';
+  if (Array.isArray(v)) return v._tuple ? 'tuple' : 'list';
+  if (v.__py === 'call' || v.__py === 'persid' || v.__py === 'ext') return 'object';
+  return v.__py;
+}
+
+/* "a list", "an int": the kind with its article, for messages. */
+function pkA(v) { const k = pkKind(v); return (/^[aeiou]/i.test(k) ? 'an ' : 'a ') + k; }
+
+/* A key that is equal for values Python treats as equal dict keys (1, 1.0 and True alike),
+   or throws for values Python can't use as keys. Objects compare by identity. */
+const PK_IDS = new WeakMap();
+let pkNextId = 0;
+function pkHash(v) {
+  const num = (x) => (Number.isNaN(x) ? 'x' + (pkNextId++) : Number.isInteger(x) ? 'n' + BigInt(x) : 'f' + x);
+  if (v === null) return 'N';
+  if (typeof v === 'boolean') return v ? 'n1' : 'n0';
+  if (typeof v === 'number') return num(v);
+  if (typeof v === 'bigint') return 'n' + v;
+  if (typeof v === 'string') return 's' + v;
+  if (Array.isArray(v)) {
+    if (!v._tuple) throw new Error('A list is used as a dict key or set member, which Python doesn’t allow.');
+    return JSON.stringify(['t', ...v.map(pkHash)]);
+  }
+  switch (v.__py) {
+    case 'float': return num(v.v);
+    case 'bytes': return 'b' + Array.from(v.v, (b) => b.toString(16).padStart(2, '0')).join('');
+    case 'frozenset': return JSON.stringify(['F', ...v.items.map(pkHash).sort()]);
+    case 'global': return JSON.stringify(['g', v.module, v.name]);
+    case 'dict': case 'set': case 'bytearray':
+      throw new Error(`${v.__py === 'dict' ? 'A dict' : v.__py === 'set' ? 'A set' : 'A bytearray'} is used as a dict key or set member, which Python doesn’t allow.`);
+  }
+  if (!PK_IDS.has(v)) PK_IDS.set(v, pkNextId++);
+  return 'o' + PK_IDS.get(v);
+}
+
+function pkDictSet(d, k, v) {
+  const h = pkHash(k);
+  if (d._keys.has(h)) d.entries[d._keys.get(h)][1] = v; // a repeated key keeps its place and takes the new value
+  else { d._keys.set(h, d.entries.length); d.entries.push([k, v]); }
+}
+function pkSetAdd(s, v) {
+  const h = pkHash(v);
+  if (!s._keys.has(h)) { s._keys.set(h, s.items.length); s.items.push(v); }
+}
+
+/* Decode UTF-8 strictly, letting encoded surrogates through as Python's 'surrogatepass' does. */
+function pkUtf8(b, where) {
+  try { return new TextDecoder('utf-8', { fatal: true, ignoreBOM: true }).decode(b); } catch (e) { /* maybe surrogates */ }
+  let s = '';
+  for (let i = 0; i < b.length;) {
+    const c = b[i];
+    let cp = -1, L = 1;
+    const cont = (k) => i + k < b.length && (b[i + k] & 0xc0) === 0x80;
+    if (c < 0x80) cp = c;
+    else if (c >= 0xc2 && c < 0xe0 && cont(1)) { cp = ((c & 31) << 6) | (b[i + 1] & 63); L = 2; }
+    else if (c >= 0xe0 && c < 0xf0 && cont(1) && cont(2)) { cp = ((c & 15) << 12) | ((b[i + 1] & 63) << 6) | (b[i + 2] & 63); L = 3; if (cp < 0x800) cp = -1; }
+    else if (c >= 0xf0 && c < 0xf5 && cont(1) && cont(2) && cont(3)) { cp = ((c & 7) << 18) | ((b[i + 1] & 63) << 12) | ((b[i + 2] & 63) << 6) | (b[i + 3] & 63); L = 4; if (cp < 0x10000 || cp > 0x10ffff) cp = -1; }
+    if (cp < 0) throw new Error(`The text at ${where} isn’t valid UTF-8 (byte ${i} of it is ${c.toString(16).padStart(2, '0')}).`);
+    s += cp >= 0x10000 ? String.fromCodePoint(cp) : String.fromCharCode(cp);
+    i += L;
+  }
+  return s;
+}
+
+/* Python's raw-unicode-escape: bytes are Latin-1 characters, except \uXXXX and \UXXXXXXXX
+   after an odd number of backslashes. */
+function pkRawUnicode(b, where) {
+  let s = '';
+  for (let i = 0; i < b.length;) {
+    if (b[i] !== 0x5c) { s += String.fromCharCode(b[i++]); continue; }
+    let k = i;
+    while (k < b.length && b[k] === 0x5c) k++;
+    const run = k - i;
+    s += '\\'.repeat(run);
+    i = k;
+    if (run % 2 === 0 || i >= b.length || (b[i] !== 0x75 && b[i] !== 0x55)) continue;
+    s = s.slice(0, -1);
+    const nd = b[i] === 0x75 ? 4 : 8;
+    const hex = pkLatin1(b.subarray(i + 1, i + 1 + nd));
+    if (hex.length < nd || !/^[0-9a-fA-F]+$/.test(hex)) throw new Error(`The text at ${where} has a cut-short \\${nd === 4 ? 'u' : 'U'} escape.`);
+    const cp = parseInt(hex, 16);
+    if (cp > 0x10ffff) throw new Error(`The text at ${where} has an escape for a character beyond U+10FFFF.`);
+    s += cp >= 0x10000 ? String.fromCodePoint(cp) : String.fromCharCode(cp);
+    i += 1 + nd;
+  }
+  return s;
+}
+
+/* Python's escape_decode for a quoted string: the usual backslash escapes, to bytes. */
+function pkEscapes(b, where) {
+  const out = [];
+  for (let i = 0; i < b.length; i++) {
+    const c = b[i];
+    if (c !== 0x5c) { out.push(c); continue; }
+    if (++i >= b.length) throw new Error(`The quoted text at ${where} ends with a lone backslash.`);
+    const e = String.fromCharCode(b[i]);
+    const simple = { '\n': -1, '\\': 0x5c, "'": 0x27, '"': 0x22, b: 8, f: 12, t: 9, n: 10, r: 13, v: 11, a: 7 }[e];
+    if (simple !== undefined) { if (simple >= 0) out.push(simple); continue; }
+    if (e >= '0' && e <= '7') {
+      let v = b[i] - 48;
+      for (let k = 0; k < 2 && i + 1 < b.length && b[i + 1] >= 48 && b[i + 1] <= 55; k++) v = v * 8 + (b[++i] - 48);
+      out.push(v & 255); continue;
+    }
+    if (e === 'x') {
+      const h = String.fromCharCode(b[i + 1] ?? 0, b[i + 2] ?? 0);
+      if (!/^[0-9a-fA-F]{2}$/.test(h)) throw new Error(`The quoted text at ${where} has a \\x escape without two hex digits.`);
+      out.push(parseInt(h, 16)); i += 2; continue;
+    }
+    out.push(0x5c, b[i]); // an unknown escape keeps its backslash
+  }
+  return Uint8Array.from(out);
+}
+
+/* Bytes as Latin-1 text, a piece at a time so long ones don't overflow the call. */
+function pkLatin1(b) {
+  let s = '';
+  for (let i = 0; i < b.length; i += 8192) s += String.fromCharCode(...b.subarray(i, i + 8192));
+  return s;
+}
+

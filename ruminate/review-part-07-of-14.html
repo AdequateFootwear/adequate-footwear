@@ -1,0 +1,937 @@
+<!-- Review copy: lines 4149-5084 of ruminate/index.html, split so Copilot can review it. Not served. -->
+function hlC(s) {
+  let h = '', i = 0, lineStart = true, pp = false;
+  const n = s.length;
+  // the end of a // comment or a preprocessor line: the newline that isn't after a backslash
+  const lineEnd = (k) => { for (;;) { const e = s.indexOf('\n', k); if (e < 0) return n; if (s[e - 1] === '\\' || (s[e - 1] === '\r' && s[e - 2] === '\\')) { k = e + 1; continue; } return e; } };
+  let ppEnd = -1;
+  while (i < n) {
+    if (pp && i >= ppEnd) pp = false;
+    const c = s[i];
+    if (c === '\n') { h += '\n'; i++; lineStart = true; continue; }
+    if (lineStart && (c === ' ' || c === '\t' || c === '\r' || c === '\f' || c === '\v')) { h += c; i++; continue; }
+    if (lineStart && c === '#' && !pp) { pp = true; ppEnd = lineEnd(i); }
+    lineStart = false;
+    if (c === '/' && s[i + 1] === '/') { const e = lineEnd(i); h += hlSpan('tk-com', s.slice(i, e)); i = e; continue; }
+    if (c === '/' && s[i + 1] === '*') { let e = s.indexOf('*/', i + 2); e = e < 0 ? n : e + 2; h += hlSpan('tk-com', s.slice(i, e)); i = e; continue; }
+    if (pp) { // the rest of a preprocessor line, up to a comment or its end
+      let e = i;
+      while (e < ppEnd && !(s[e] === '/' && (s[e + 1] === '/' || s[e + 1] === '*'))) e++;
+      if (e === i) e = i + 1;
+      h += hlSpan('tk-pp', s.slice(i, e)); i = e; continue;
+    }
+    const pre = /^(?:u8|u|U|L)?(?=["'])/.exec(s.slice(i, i + 3));
+    if (pre && /[A-Za-z0-9_]/.test(s[i - 1] || '') === false) {
+      const q = s[i + pre[0].length];
+      let e = i + pre[0].length + 1;
+      while (e < n && s[e] !== q && s[e] !== '\n') { if (s[e] === '\\') e++; e++; }
+      if (s[e] === q) e++;
+      h += hlSpan('tk-str', s.slice(i, Math.min(e, n))); i = Math.min(e, n); continue;
+    }
+    if (/[0-9]/.test(c) || (c === '.' && /[0-9]/.test(s[i + 1] || ''))) {
+      const m = /^\.?[0-9](?:[eEpP][+-]|'[0-9A-Za-z_]|[0-9A-Za-z_.])*/.exec(s.slice(i));
+      h += hlSpan('tk-num', m[0]); i += m[0].length; continue;
+    }
+    if (/[A-Za-z_]/.test(c)) {
+      const m = /^[A-Za-z_][A-Za-z0-9_]*/.exec(s.slice(i));
+      h += HL_C_KW.has(m[0]) ? hlSpan('tk-kw', m[0]) : fmtEsc(m[0]); i += m[0].length; continue;
+    }
+    h += fmtEsc(c); i++;
+  }
+  return h;
+}
+
+function hlR(s) {
+  let h = '', i = 0;
+  const n = s.length;
+  while (i < n) {
+    const c = s[i];
+    if (c === '#') { let e = s.indexOf('\n', i); if (e < 0) e = n; h += hlSpan('tk-com', s.slice(i, e)); i = e; continue; }
+    const raw = /^[rR](["'])(-*)([(\[{])/.exec(s.slice(i, i + 200));
+    if (raw && !/[A-Za-z0-9._]/.test(s[i - 1] || '')) { // a raw string: r"(...)", r"[...]", r"{...}", with optional dashes
+      const close = { '(': ')', '[': ']', '{': '}' }[raw[3]] + raw[2] + raw[1];
+      let e = s.indexOf(close, i + raw[0].length);
+      e = e < 0 ? n : e + close.length;
+      h += hlSpan('tk-str', s.slice(i, e)); i = e; continue;
+    }
+    if (c === '"' || c === "'") {
+      let e = i + 1;
+      while (e < n && s[e] !== c) { if (s[e] === '\\') e++; e++; }
+      e = Math.min(e + 1, n);
+      h += hlSpan('tk-str', s.slice(i, e)); i = e; continue;
+    }
+    if (c === '`') { let e = s.indexOf('`', i + 1); e = e < 0 ? n : e + 1; h += fmtEsc(s.slice(i, e)); i = e; continue; }
+    if (/[0-9]/.test(c) || (c === '.' && /[0-9]/.test(s[i + 1] || ''))) {
+      const m = /^(?:0[xX][0-9a-fA-F]*(?:\.[0-9a-fA-F]*)?(?:[pP][+-]?[0-9]+)?|(?:[0-9]+\.?[0-9]*|\.[0-9]+)(?:[eE][+-]?[0-9]+)?)[Li]?/.exec(s.slice(i));
+      h += hlSpan('tk-num', m[0]); i += m[0].length; continue;
+    }
+    if (/[\p{L}.]/u.test(c)) {
+      const m = /^[\p{L}.][\p{L}\p{N}._]*/u.exec(s.slice(i));
+      h += HL_R_KW.has(m[0]) ? hlSpan('tk-kw', m[0]) : fmtEsc(m[0]); i += m[0].length; continue;
+    }
+    const a = /^(?:<<-|->>|<-|->)/.exec(s.slice(i, i + 3));
+    if (a) { h += hlSpan('tk-kw', a[0]); i += a[0].length; continue; }
+    h += fmtEsc(c); i++;
+  }
+  return h;
+}
+
+/* ====================================================================================
+   Bytes as a plain text viewer shows them
+   ==================================================================================== */
+
+/* The length of the valid UTF-8 character starting at i (1 to 4), or 0 if the bytes there
+   aren't one. The whole character must be in the file. */
+function btSeq(u8, i) {
+  const b = u8[i], n = u8.length;
+  if (b < 0x80) return 1;
+  const cont = (k, lo = 0x80, hi = 0xbf) => i + k < n && u8[i + k] >= lo && u8[i + k] <= hi;
+  if (b >= 0xc2 && b <= 0xdf) return cont(1) ? 2 : 0;
+  if (b === 0xe0) return cont(1, 0xa0) && cont(2) ? 3 : 0;
+  if ((b >= 0xe1 && b <= 0xec) || b === 0xee || b === 0xef) return cont(1) && cont(2) ? 3 : 0;
+  if (b === 0xed) return cont(1, 0x80, 0x9f) && cont(2) ? 3 : 0;
+  if (b === 0xf0) return cont(1, 0x90) && cont(2) && cont(3) ? 4 : 0;
+  if (b >= 0xf1 && b <= 0xf3) return cont(1) && cont(2) && cont(3) ? 4 : 0;
+  if (b === 0xf4) return cont(1, 0x80, 0x8f) && cont(2) && cont(3) ? 4 : 0;
+  return 0;
+}
+
+/* Bytes start to end as runs of text, [{s, odd}]. Valid UTF-8 is shown as it is (tab, LF and CR
+   kept). Each byte of a NUL or other control character becomes one '·', and each byte that isn't
+   valid UTF-8 becomes its Windows-1252 character (or '·' for the five it leaves undefined); both
+   are marked odd, and an odd run always has one character per byte. A character that starts before
+   `start` belongs to the run before it, and one that starts before `end` is finished, so pieces
+   read one after another join up exactly. The array's start and end say which bytes it covers. */
+function btText(u8, start, end) {
+  const n = u8.length;
+  start = Math.max(0, Math.min(n, start ?? 0));
+  end = Math.max(start, Math.min(n, end ?? n));
+  // step past the tail of a character that began before start
+  if (start > 0 && start < n && (u8[start] & 0xc0) === 0x80) {
+    for (let k = 1; k <= 3 && start - k >= 0; k++) {
+      const L = btSeq(u8, start - k);
+      if (L > k) { start = start - k + L; break; }
+      if ((u8[start - k] & 0xc0) !== 0x80) break;
+    }
+  }
+  end = Math.max(start, end);
+  const dec = new TextDecoder('utf-8', { ignoreBOM: true });
+  const runs = [];
+  let odd = '', good = -1, i = start;
+  const flushGood = (to) => { if (good >= 0 && to > good) { if (odd) { runs.push({ s: odd, odd: true }); odd = ''; } runs.push({ s: dec.decode(u8.subarray(good, to)), odd: false }); } good = -1; };
+  while (i < end) {
+    const b = u8[i];
+    if (b >= 0x20 && b < 0x7f) { if (good < 0) good = i; i++; continue; } // the common case
+    if (b === 9 || b === 10 || b === 13) { if (good < 0) good = i; i++; continue; }
+    if (b < 0x20 || b === 0x7f) { flushGood(i); odd += '·'; i++; continue; }
+    const L = btSeq(u8, i);
+    if (L === 2 && b === 0xc2 && u8[i + 1] < 0xa0) { flushGood(i); odd += '··'; i += 2; continue; } // a C1 control character: one '·' per byte
+    if (L) { if (good < 0) good = i; i += L; continue; }
+    flushGood(i);
+    const ch = b < 0xa0 ? FMT_1252[b - 0x80] : b;
+    odd += ch == null ? '·' : String.fromCharCode(ch);
+    i++;
+  }
+  flushGood(i);
+  if (odd) runs.push({ s: odd, odd: true });
+  runs.start = start; runs.end = i;
+  return runs;
+}
+
+/* bytesAsText is the name the page uses. */
+function bytesAsText(u8, start, end) { return btText(u8, start, end); }
+return { tiffRead, tiffToRGBA, tiffPixel, pickleLoad, pyRepr, csvParse, mdRender, highlight, bytesAsText };
+})();
+const RS = (() => {
+/* ---------- how a file is built, written from scratch ----------
+   structureOf(kind, u8) describes how a file of the given kind is laid out, byte by byte, and
+   gives back { title, items, stopped? }. Each item is
+     { label, start, end, value?, note?, children? }
+   where start and end are byte offsets (end is one past the last byte), value is a short plain
+   value and note a sentence in plain words. The top-level items cover every byte of the file, in
+   order: a range no structure describes is an item labelled "Not described by the format".
+   Children, when there are any, lie inside their parent.
+   It is strict: a file that can't be read as the kind at all throws an Error with a plain reason,
+   and one that goes wrong partway gives what was read so far, with an item saying where reading
+   stopped and why (and `stopped` holding that reason). It never repairs or guesses.
+   structureKinds() lists the kinds, with the name endings that choose each one by default.
+   Every name, text and value in the result comes from the file, so the page must escape it
+   before showing it. Nothing here runs anything found in a file or fetches anything. */
+
+function structureKinds() {
+  return [
+    { kind: 'sqlite', label: 'SQLite database', exts: ['sqlite', 'sqlite3', 'db', 'gpkg'] },
+    { kind: 'png', label: 'PNG image', exts: ['png'] },
+    { kind: 'jpeg', label: 'JPEG image', exts: ['jpg', 'jpeg'] },
+    { kind: 'gif', label: 'GIF image', exts: ['gif'] },
+    { kind: 'bmp', label: 'BMP image', exts: ['bmp'] },
+    { kind: 'webp', label: 'WebP image', exts: ['webp'] },
+    { kind: 'tiff', label: 'TIFF image', exts: ['tif', 'tiff', 'geotiff'] },
+    { kind: 'parquet', label: 'Parquet table', exts: ['parquet'] },
+    { kind: 'pickle', label: 'Python pickle', exts: ['pickle', 'pkl'] },
+    { kind: 'wav', label: 'WAV sound', exts: ['wav', 'wave', 'rf64', 'bwf'] },
+    { kind: 'aiff', label: 'AIFF sound', exts: ['aif', 'aiff', 'aifc'] },
+    { kind: 'mp3', label: 'MP3 audio', exts: ['mp3', 'mp2', 'mpga'] },
+    { kind: 'flac', label: 'FLAC audio', exts: ['flac'] },
+    { kind: 'ogg', label: 'Ogg media', exts: ['ogg', 'oga', 'ogv', 'ogx', 'opus', 'spx'] },
+    { kind: 'mp4', label: 'MP4 or QuickTime movie', exts: ['mp4', 'm4a', 'm4v', 'm4b', 'mov', 'qt', '3gp', '3g2'] },
+    { kind: 'ebml', label: 'Matroska or WebM media', exts: ['mkv', 'mka', 'mk3d', 'mks', 'webm', 'weba'] },
+  ];
+}
+
+async function structureOf(kind, u8) {
+  if (!(u8 instanceof Uint8Array)) throw new Error('There are no bytes to describe.');
+  const cx = { u8, n: u8.length, count: 0, limit: 200000, stopped: null, runs: new Map(), walked: 0, inflate: RS_INFLATE_ALL };
+  let r;
+  switch (kind) {
+    case 'sqlite': r = rsSqlite(cx); break;
+    case 'png': r = await rsPng(cx); break;
+    case 'jpeg': r = rsJpeg(cx); break;
+    case 'gif': r = rsGif(cx); break;
+    case 'bmp': r = rsBmp(cx); break;
+    case 'webp': r = rsWebp(cx); break;
+    case 'tiff': r = rsTiff(cx); break;
+    case 'parquet': r = rsParquet(cx); break;
+    case 'pickle': r = rsPickle(cx); break;
+    case 'wav': r = rsWav(cx); break;
+    case 'aiff': r = rsAiff(cx); break;
+    case 'mp3': r = rsMp3(cx); break;
+    case 'flac': r = rsFlac(cx); break;
+    case 'ogg': r = rsOgg(cx); break;
+    case 'mp4': r = rsMp4(cx); break;
+    case 'ebml': r = rsEbml(cx); break;
+    default: throw new Error('There is no structure description for that kind of file.');
+  }
+  rsRunsDone(cx);
+  const out = { title: r.title, items: rsCover(r.items, 0, cx.n) };
+  if (cx.stopped) out.stopped = cx.stopped;
+  return out;
+}
+
+/* ---------- shared pieces ---------- */
+
+// One item. Values are kept as plain strings; empty ones are left out.
+function rsI(cx, label, start, end, value, note, children) {
+  cx.count++;
+  const it = { label, start, end };
+  if (value !== undefined && value !== null && value !== '') it.value = String(value);
+  if (note) it.note = note;
+  if (children && children.length) it.children = children;
+  return it;
+}
+
+// Whether there is still room for small detail items. Big files would otherwise make far more
+// items than a page can show, so past the limit only the larger items are made.
+function rsRoom(cx) { return cx.count < cx.limit; }
+
+// Past the item limit, the records of a long run (chunks, markers, blocks, entries) aren't listed
+// one by one either: each joins the item for the unlisted records just before it, or starts one,
+// so every byte is still covered and the number of items stays near the limit. Each record still
+// counts towards how far the walk goes: it gives false once the walk has gone so far that reading
+// should stop there.
+const RS_WALK_MAX = 2000000;
+function rsUnlisted(cx, items, s, e, one, many) {
+  const last = items[items.length - 1], r = last && cx.runs.get(last);
+  if (r && last.end === s && r.many === many) { last.end = e; r.k++; }
+  else {
+    const it = rsI(cx, `${many[0].toUpperCase()}${many.slice(1)} not listed one by one`, s, e);
+    cx.runs.set(it, { k: 1, one, many });
+    items.push(it);
+  }
+  return rsWalk(cx, 1);
+}
+// The same, in one go, for the last k records of a run, which together lie in [s, e).
+function rsUnlistedRange(cx, s, e, k, one, many) {
+  const it = rsI(cx, `${many[0].toUpperCase()}${many.slice(1)} not listed one by one`, s, e);
+  cx.runs.set(it, { k, one, many });
+  return it;
+}
+// Counts work done without making items (records passed over, values read), and says whether
+// there is still room for more.
+function rsWalk(cx, k) { cx.walked += k; return cx.walked < RS_WALK_MAX; }
+// The stop item for a walk that went on too long.
+function rsTooLong(cx, s, e, many) { return rsStopItem(cx, s, e, `There are more ${many} than this page will follow.`); }
+// Gives each unlisted run its count, once the runs inside a part are complete.
+function rsRunsDone(cx) {
+  for (const [it, r] of cx.runs) {
+    it.value = `${rsNum(r.k)} ${r.k === 1 ? r.one : r.many}`;
+    it.note = 'There are too many to list here one by one; they were read like the others.';
+  }
+}
+
+// Puts items in byte order inside [start, end) and fills every gap with a neutral item.
+// An item that overlaps the one before it is trimmed to start where that one ends, or, when it
+// lies wholly inside it, shown as a child of it, so the list never goes backwards.
+function rsCover(items, start, end) {
+  const list = items.filter((x) => x && x.end > x.start).map((x, i) => [x, i]);
+  list.sort((a, b) => a[0].start - b[0].start || b[0].end - a[0].end || a[1] - b[1]);
+  const out = [];
+  let at = start, nested = 0;
+  const extra = new Map(); // past a limit, overlapping items are only counted, on the item they fall in
+  const gap = (s, e) => { if (e > s) out.push({ label: 'Not described by the format', start: s, end: e }); };
+  for (const [it0] of list) {
+    let it = it0;
+    if (it.end <= start || it.start >= end) continue;
+    if (it.start < start || it.end > end) it = Object.assign({}, it, { start: Math.max(it.start, start), end: Math.min(it.end, end) });
+    if (it.start < at) {
+      if (it.end <= at) {
+        let k = out.length - 1;
+        while (k >= 0 && out[k].start > it.start) k--;
+        const host = out[k];
+        const placed = host && it.end <= host.end && nested < 1000 && rsNest(host, it);
+        if (placed) nested++;
+        else if (host) extra.set(host, (extra.get(host) || 0) + 1);
+        continue;
+      }
+      const cut = at - it.start;
+      it = Object.assign({}, it, { start: at });
+      delete it.children;
+      it.note = (it.note ? it.note + ' ' : '') + `Its first ${cut} byte${cut === 1 ? ' is' : 's are'} also part of the item before it, and shown there.`;
+    }
+    gap(at, it.start);
+    out.push(it);
+    at = it.end;
+  }
+  gap(at, end);
+  for (const [host, k] of extra) host.note = (host.note ? host.note + ' ' : '') + `${rsNum(k)} other item${k === 1 ? '' : 's'} also cover${k === 1 ? 's' : ''} bytes inside it, and ${k === 1 ? 'isn’t' : 'aren’t'} shown separately.`;
+  return out;
+}
+
+// Puts an item inside the deepest item that holds it, and says whether it could. A stop item that
+// covers exactly the same bytes as an item already there wraps that item. Any other item that
+// covers the same bytes as one already there, or would cut across items, isn't placed.
+function rsNest(host, it) {
+  for (;;) {
+    const kids = host.children || [];
+    const c = kids.find((x) => x.start <= it.start && it.end <= x.end);
+    if (c && c.start === it.start && c.end === it.end) {
+      if (it.label !== 'Reading stopped here') return false;
+      host.children = kids.map((x) => x === c ? Object.assign({}, it, { children: (it.children || []).concat([c]) }) : x);
+      return true;
+    }
+    if (c) { host = c; continue; }
+    if (kids.some((x) => x.start < it.end && it.start < x.end)) return false;
+    host.children = kids.concat([it]).sort((x, y) => x.start - y.start);
+    return true;
+  }
+}
+
+// When a file that should end with a marker doesn't, and reading didn't stop, says so on the last item.
+function rsNoEnd(items, endLabel, note) {
+  if (items.some((x) => x.label === endLabel || x.label === 'Reading stopped here')) return;
+  const last = items[items.length - 1];
+  if (last) last.note = (last.note ? last.note + ' ' : '') + note;
+}
+
+// A stop item: where reading stopped, and why. It is also recorded for the whole result.
+function rsStopItem(cx, start, end, why) {
+  if (!cx.stopped) cx.stopped = why;
+  return rsI(cx, 'Reading stopped here', start, Math.max(end, start), why);
+}
+
+function rsBE(u8, p, k) { let x = 0; for (let i = 0; i < k; i++) x = x * 256 + u8[p + i]; return x; }
+function rsLE(u8, p, k) { let x = 0; for (let i = k - 1; i >= 0; i--) x = x * 256 + u8[p + i]; return x; }
+function rsLE64(u8, p) { // unsigned, as a plain number when it is small enough, else a BigInt
+  let x = 0n; for (let i = 7; i >= 0; i--) x = (x << 8n) | BigInt(u8[p + i]);
+  return x <= BigInt(Number.MAX_SAFE_INTEGER) ? Number(x) : x;
+}
+function rsBE64(u8, p) {
+  let x = 0n; for (let i = 0; i < 8; i++) x = (x << 8n) | BigInt(u8[p + i]);
+  return x <= BigInt(Number.MAX_SAFE_INTEGER) ? Number(x) : x;
+}
+function rsNum(x) { return typeof x === 'bigint' ? x.toString() : Number.isInteger(x) ? x.toLocaleString('en-US') : String(x); }
+function rsBytesWord(k) { return `${rsNum(k)} byte${k === 1 ? '' : 's'}`; }
+function rsHexByte(b) { return b.toString(16).toUpperCase().padStart(2, '0'); }
+function rsHex(u8, s, e, max = 32) {
+  const out = [];
+  for (let i = s; i < e && i < s + max; i++) out.push(rsHexByte(u8[i]));
+  return out.join(' ') + (e - s > max ? ` … (${rsBytesWord(e - s)})` : '');
+}
+function rsLatin1(u8, s, e) {
+  let t = '';
+  for (let i = s; i < e; i += 8192) t += String.fromCharCode.apply(null, u8.subarray(i, Math.min(e, i + 8192)));
+  return t;
+}
+function rsUtf8(u8, s, e) { return new TextDecoder('utf-8').decode(u8.subarray(s, e)); }
+// Whether a byte range holds only plain printable ASCII letters, digits and marks.
+function rsAsciiWord(u8, s, e) { for (let i = s; i < e; i++) if (u8[i] < 32 || u8[i] > 126) return false; return e > s; }
+
+// Text from a file, in curly quotes, with control characters written out so every one shows,
+// and cut short when it is very long. When s is only the start of the text, `inAll` says how long
+// the whole text is ('1,234 bytes'), and the text is shown as cut short.
+function rsQuote(s, max = 2000, inAll = null) {
+  let t = '', k = 0, over = false;
+  for (const ch of s) {
+    if (k++ >= max) { over = true; break; }
+    const c = ch.codePointAt(0);
+    if (c === 10) t += '\n';
+    else if (c === 9) t += '\t';
+    else if (c < 32 || c === 127 || (c >= 128 && c < 160)) t += `\\x${rsHexByte(c)}`;
+    else t += ch;
+  }
+  if (over || inAll) t += '…';
+  const more = inAll ? ` (${inAll} in all)` : over ? ` (${rsNum(rsChars(s))} characters in all)` : '';
+  return `“${t}”${more}`;
+}
+function rsChars(s) { // the number of characters, counting a surrogate pair as one
+  let k = s.length;
+  for (let i = 0; i < s.length; i++) { const c = s.charCodeAt(i); if (c >= 0xd800 && c <= 0xdbff) { const d = s.charCodeAt(i + 1); if (d >= 0xdc00 && d <= 0xdfff) { k--; i++; } } }
+  return k;
+}
+// The start of a long run of text bytes, for rsQuote: at most `keep` bytes, and how long the whole is.
+const RS_TEXT_KEEP = 8192;
+function rsQuoteBytes(u8, s, e, utf8, max = 2000) {
+  const cut = e - s > RS_TEXT_KEEP, b = cut ? s + RS_TEXT_KEEP : e;
+  const t = utf8 ? rsUtf8(u8, s, b) : rsLatin1(u8, s, b);
+  return rsQuote(t, max, cut ? (utf8 ? rsBytesWord(e - s) : `${rsNum(e - s)} characters`) : null);
+}
+
+// Bytes shown as text when they are readable UTF-8 text, else as hex.
+function rsTextOrHex(u8, s, e) {
+  const b = u8.subarray(s, e);
+  try {
+    const t = new TextDecoder('utf-8', { fatal: true }).decode(b);
+    if (!/[\x00-\x08\x0e-\x1f\x7f]/.test(t)) return rsQuote(t, 500);
+  } catch (err) { /* not UTF-8 text: shown as hex below */ }
+  return rsHex(u8, s, e, 48);
+}
+
+// Inflates zlib-wrapped data with the browser's own decompressor, keeping at most `cap` bytes, and
+// counting how many there are, up to `count` (at least cap). Gives { bytes, whole, total, ended }:
+// whole says whether everything was kept, total how many bytes were counted, and ended whether
+// that was all of them (counting stops at `count`). Throws if it is damaged.
+async function rsInflate(data, cap = 1 << 20, count = cap) {
+  if (typeof DecompressionStream === 'undefined') throw new Error('this browser can’t decompress data');
+  const ds = new DecompressionStream('deflate');
+  const w = ds.writable.getWriter();
+  w.write(data).catch(() => {}); w.close().catch(() => {});
+  const r = ds.readable.getReader();
+  const parts = []; let got = 0, total = 0, ended = true;
+  for (;;) {
+    const { value, done } = await r.read();
+    if (done) break;
+    if (got < cap) { const k = Math.min(value.length, cap - got); parts.push(k < value.length ? value.subarray(0, k) : value); got += k; }
+    total += value.length;
+    if (total > count || (total > got && count <= cap)) { ended = false; r.cancel().catch(() => {}); break; }
+  }
+  const out = new Uint8Array(got); let o = 0;
+  for (const p of parts) { out.set(p, o); o += p.length; }
+  return { bytes: out, whole: ended && got === total, total, ended };
+}
+// How many decompressed bytes one file's compressed text may come to in all, and one chunk's;
+// past these, the page stops decompressing, so a file of many small compressed parts that
+// each grow very large stays quick.
+const RS_INFLATE_ALL = 64 << 20, RS_INFLATE_ONE = 16 << 20;
+
+/* ---------- SQLite databases ---------- */
+
+function rsSqVarint(u8, p, end) { // gives { v, n } or null when it runs past end; v is a BigInt when big
+  let x = 0;
+  for (let i = 0; i < 9; i++) {
+    if (p + i >= end) return null;
+    const b = u8[p + i];
+    if (i < 6) { x = x * 128 + (b & 127); if (b < 128) return { v: x, n: i + 1 }; continue; }
+    // seven or more bytes: work it out again with BigInt so nothing is lost
+    let y = 0n;
+    for (let j = 0; j < 9; j++) {
+      if (p + j >= end) return null;
+      const c = u8[p + j];
+      if (j === 8) { y = (y << 8n) | BigInt(c); return { v: y, n: 9 }; }
+      y = (y << 7n) | BigInt(c & 127);
+      if (c < 128) return { v: y <= BigInt(Number.MAX_SAFE_INTEGER) ? Number(y) : y, n: j + 1 };
+    }
+  }
+  return null;
+}
+function rsSqSigned(v) { // a rowid is a signed 64-bit number
+  if (typeof v === 'number') return v;
+  const s = v >= (1n << 63n) ? v - (1n << 64n) : v;
+  return s >= BigInt(Number.MIN_SAFE_INTEGER) && s <= BigInt(Number.MAX_SAFE_INTEGER) ? Number(s) : s;
+}
+
+const RS_SQ_HEADER = [
+  [0, 16, 'Header string', (u8) => rsQuote(rsLatin1(u8, 0, 15)) + ' and a zero byte'],
+  [16, 2, 'Page size', (u8, v) => v === 1 ? '65,536 bytes (stored as 1)' : rsBytesWord(v)],
+  [18, 1, 'File format write version', (u8, v) => `${v}` + (v === 1 ? ' (rollback journal)' : v === 2 ? ' (write-ahead log)' : '')],
+  [19, 1, 'File format read version', (u8, v) => `${v}` + (v === 1 ? ' (rollback journal)' : v === 2 ? ' (write-ahead log)' : '')],
+  [20, 1, 'Reserved space at the end of each page', (u8, v) => rsBytesWord(v)],
+  [21, 1, 'Maximum embedded payload fraction', (u8, v) => `${v}`, 'Always 64.'],
+  [22, 1, 'Minimum embedded payload fraction', (u8, v) => `${v}`, 'Always 32.'],
+  [23, 1, 'Leaf payload fraction', (u8, v) => `${v}`, 'Always 32.'],
+  [24, 4, 'File change counter', (u8, v) => rsNum(v)],
+  [28, 4, 'Database size in pages', (u8, v) => rsNum(v), 'Used when the version-valid-for number matches the change counter.'],
+  [32, 4, 'First freelist trunk page', (u8, v) => v ? `page ${v}` : '0 (none)'],
+  [36, 4, 'Total number of freelist pages', (u8, v) => rsNum(v)],
+  [40, 4, 'Schema cookie', (u8, v) => rsNum(v)],
+  [44, 4, 'Schema format number', (u8, v) => rsNum(v)],
+  [48, 4, 'Suggested number of pages to keep in memory', (u8, v) => rsNum(v)],
+  [52, 4, 'Largest root b-tree page', (u8, v) => v ? `page ${v}` : '0 (not in auto-vacuum mode)'],
+  [56, 4, 'Text encoding', (u8, v) => ({ 1: '1 (UTF-8)', 2: '2 (UTF-16 little-endian)', 3: '3 (UTF-16 big-endian)' })[v] || `${v}`],
+  [60, 4, 'User version', (u8, v) => rsNum(v)],
+  [64, 4, 'Incremental vacuum mode', (u8, v) => v ? `${v} (on)` : '0 (off)'],
+  [68, 4, 'Application ID', (u8, v) => rsNum(v) + (rsAsciiWord(u8, 68, 72) ? ` (as text, ${rsQuote(rsLatin1(u8, 68, 72))})` : '')],
+  [72, 20, 'Reserved for expansion', (u8) => u8.subarray(72, 92).every((b) => b === 0) ? 'all zero' : rsHex(u8, 72, 92)],
+  [92, 4, 'Version-valid-for number', (u8, v) => rsNum(v)],
+  [96, 4, 'SQLite version number', (u8, v) => `${rsNum(v)} (${Math.floor(v / 1000000)}.${Math.floor(v / 1000) % 1000}.${v % 1000})`],
+];
+
+const RS_SQ_PAGE = { 2: 'index b-tree interior page', 5: 'table b-tree interior page', 10: 'index b-tree leaf page', 13: 'table b-tree leaf page' };
+
+function rsSqlite(cx) {
+  const { u8, n } = cx;
+  if (n < 100) throw new Error('It is shorter than the 100-byte header the format starts with.');
+  if (rsLatin1(u8, 0, 16) !== 'SQLite format 3\u0000') throw new Error('It doesn’t begin with the text “SQLite format 3” and a zero byte, which is how the format starts.');
+  const ps = rsBE(u8, 16, 2) === 1 ? 65536 : rsBE(u8, 16, 2);
+  if (ps < 512 || ps > 65536 || (ps & (ps - 1))) throw new Error(`Its header gives a page size of ${rsBE(u8, 16, 2)}, which isn’t a power of two from 512 to 65,536.`);
+  const reserved = u8[20], U = ps - reserved;
+  if (U < 480) throw new Error('Its header sets aside so much of each page that too little is left to use.');
+  const enc = rsBE(u8, 56, 4);
+  const items = [];
+
+  // the header, field by field
+  const hk = RS_SQ_HEADER.map(([off, len, name, show, note]) => rsI(cx, name, off, off + len, show(u8, len <= 4 ? rsBE(u8, off, len) : 0), note));
+  items.push(rsI(cx, 'Database header', 0, 100, '100 bytes', null, hk));
+
+  const filePages = Math.floor(n / ps);
+  if (!filePages) throw new Error(`It ends before its first page does (pages are ${rsBytesWord(ps)}).`);
+  const hdrPages = rsBE(u8, 28, 4);
+  const sizeValid = hdrPages > 0 && rsBE(u8, 92, 4) === rsBE(u8, 24, 4);
+  const dbPages = sizeValid ? hdrPages : filePages;
+  const lockPage = Math.floor(0x40000000 / ps) + 1;
+  const pageStart = (pg) => (pg - 1) * ps;
+  const done = new Map(); // page number → its finished item
+  const role = new Map(); // page number → what it was reached as
+  let current = 0;
+
+  class Stop extends Error {}
+  const stop = (why) => { throw new Stop(why); };
+  const claim = (pg, what, from) => {
+    if (!Number.isInteger(pg) || pg < 1 || pg > dbPages) stop(`${from} points to page ${rsNum(pg)}, which isn’t one of the database’s ${rsNum(dbPages)} pages.`);
+    if (pg > filePages) stop(`${from} points to page ${rsNum(pg)}, which is past the end of the file.`);
+    if (pg === lockPage && what !== 'lock-byte page') stop(`${from} points to page ${rsNum(pg)}, the lock-byte page, which never holds data.`);
+    if (role.has(pg)) stop(`Page ${rsNum(pg)} is reached twice: as ${role.get(pg)}, and as ${what} from ${from[0].toLowerCase() + from.slice(1)}.`);
+    role.set(pg, what);
+  };
+  const decodeText = (b) => {
+    const label = enc === 2 ? 'utf-16le' : enc === 3 ? 'utf-16be' : 'utf-8';
+    return new TextDecoder(label).decode(b);
+  };
+  const owned = (o) => o.kind === 'schema' ? 'the schema table' : `${o.kind} ${rsQuote(o.name)}`;
+
+  // payload sizes kept on the page, from the format's rules
+  const localSize = (P, isTable) => {
+    const X = isTable ? U - 35 : Math.floor((U - 12) * 64 / 255) - 23;
+    const M = Math.floor((U - 12) * 32 / 255) - 23;
+    if (P <= X) return P;
+    const K = M + ((P - M) % (U - 4));
+    return K <= X ? K : M;
+  };
+
+  // Follows an overflow chain, describing each page, and gives back the payload bytes when asked.
+  const overflow = (first, need, owner, fromPage, collect) => {
+    const parts = [];
+    let pg = first, left = need, k = 0;
+    while (left > 0) {
+      if (pg === 0) stop(`The overflow chain for a cell on page ${rsNum(fromPage)} ends before its payload does.`);
+      claim(pg, 'an overflow page', `The overflow chain from page ${rsNum(fromPage)}`);
+      const s = pageStart(pg), use = Math.min(left, U - 4);
+      const next = rsBE(u8, s, 4);
+      const kids = [];
+      if (rsRoom(cx)) { // past the item limit, a page is shown as one item
+        kids.push(rsI(cx, 'Next overflow page', s, s + 4, next ? `page ${rsNum(next)}` : '0 (none)'), rsI(cx, 'Overflow content', s + 4, s + 4 + use, rsBytesWord(use)));
+        if (use < U - 4) kids.push(rsI(cx, 'Unused space', s + 4 + use, s + U, rsBytesWord(U - 4 - use)));
+        if (reserved) kids.push(rsI(cx, 'Reserved space', s + U, s + ps, rsBytesWord(reserved)));
+      }
+      done.set(pg, rsI(cx, `Page ${rsNum(pg)}: overflow page`, s, s + ps, owned(owner), `Holds part of the payload of a cell on page ${rsNum(fromPage)}.`, kids));
+      if (collect) parts.push(u8.subarray(s + 4, s + 4 + use));
+      left -= use; k++;
+      if (left > 0) pg = next;
+    }
+    return parts;
+  };
+
+  // Describes one b-tree page and gives back the child pages it points to, plus the leaf payloads
+  // when `collect` is set (used to read the schema table).
+  const btreePage = (pg, family, owner, collect) => {
+    current = pg;
+    const s = pageStart(pg), h = s + (pg === 1 ? 100 : 0);
+    const flag = u8[h];
+    if (!RS_SQ_PAGE[flag]) stop(`Page ${rsNum(pg)} should be a b-tree page of ${owned(owner)}, but its first byte is ${flag}, which isn’t a b-tree page type.`);
+    const isTable = flag === 5 || flag === 13, leaf = flag === 10 || flag === 13;
+    if (family && family !== (isTable ? 'table' : 'index')) stop(`Page ${rsNum(pg)} is a ${RS_SQ_PAGE[flag]}, but the b-tree it belongs to is made of ${family} pages.`);
+    const hlen = leaf ? 8 : 12;
+    const nCells = rsBE(u8, h + 3, 2), firstFree = rsBE(u8, h + 1, 2);
+    const cStart = rsBE(u8, h + 5, 2) || 65536, frag = u8[h + 7];
+    const right = leaf ? 0 : rsBE(u8, h + 8, 4);
+    const ptrEnd = h + hlen + 2 * nCells;
+    if (ptrEnd > s + U) stop(`Page ${rsNum(pg)} says it has ${rsNum(nCells)} cells, more than its pointer array has room for.`);
+    if (s + cStart < ptrEnd || cStart > U) stop(`Page ${rsNum(pg)} says its cell content starts at byte ${rsNum(cStart)}, which isn’t between its pointer array and the end of the page.`);
+    const detail = rsRoom(cx); // past the item limit, a page is shown in larger pieces only
+    const hk = !detail ? [] : [rsI(cx, 'Page type', h, h + 1, `${flag} (${RS_SQ_PAGE[flag].replace(' page', '')})`),
+      rsI(cx, 'First freeblock', h + 1, h + 3, firstFree ? `at byte ${firstFree}` : '0 (none)'),
+      rsI(cx, 'Number of cells', h + 3, h + 5, rsNum(nCells)),
+      rsI(cx, 'Start of the cell content area', h + 5, h + 7, `byte ${rsNum(cStart)}`),
+      rsI(cx, 'Fragmented free bytes', h + 7, h + 8, rsNum(frag))];
+    if (!leaf && detail) hk.push(rsI(cx, 'Right-most child page', h + 8, h + 12, `page ${rsNum(right)}`));
+    const kids = !detail ? [] : [rsI(cx, 'Page header', h, h + hlen, `${hlen} bytes`, null, hk),
+      rsI(cx, 'Cell pointer array', h + hlen, ptrEnd, `${rsNum(nCells)} pointer${nCells === 1 ? '' : 's'}`)];
+    if (s + cStart > ptrEnd && detail) kids.push(rsI(cx, 'Unallocated space', ptrEnd, s + cStart, rsBytesWord(s + cStart - ptrEnd)));
+    const body = []; // cells and freeblocks, as [start, end, item]
+    const children = [], payloads = [];
+    const where = `Page ${rsNum(pg)}`;
+    for (let i = 0; i < nCells; i++) {
+      const off = rsBE(u8, h + hlen + 2 * i, 2);
+      if (off < cStart || off >= U) stop(`Cell ${i + 1} on page ${rsNum(pg)} starts at byte ${off}, outside the page’s cell content area.`);
+      let p = s + off; const lim = s + U, ck = [];
+      const short = () => stop(`Cell ${i + 1} on page ${rsNum(pg)} runs past the end of the page.`);
+      let left = 0, P = 0, rowid = null;
+      if (!leaf) {
+        if (p + 4 > lim) short();
+        left = rsBE(u8, p, 4);
+        if (rsRoom(cx)) ck.push(rsI(cx, 'Left child page', p, p + 4, `page ${rsNum(left)}`));
+        p += 4;
+      }
+      if (flag !== 5) {
+        const v = rsSqVarint(u8, p, lim); if (!v) short();
+        P = v.v;
+        if (typeof P !== 'number' || P > 0x7fffffff) stop(`Cell ${i + 1} on page ${rsNum(pg)} gives a payload size too big for the format.`);
+        if (rsRoom(cx)) ck.push(rsI(cx, 'Payload size', p, p + v.n, rsBytesWord(P)));
+        p += v.n;
+      }
+      if (isTable) {
+        const v = rsSqVarint(u8, p, lim); if (!v) short();
+        rowid = rsSqSigned(v.v);
+        if (rsRoom(cx)) ck.push(rsI(cx, leaf ? 'Rowid' : 'Key (largest rowid in the left child)', p, p + v.n, String(rowid)));
+        p += v.n;
+      }
+      let label;
+      if (flag === 5) label = `Cell: child page ${rsNum(left)}, rowids up to ${rowid}`;
+      else {
+        const local = localSize(P, isTable);
+        if (p + local > lim) short();
+        if (rsRoom(cx)) ck.push(rsI(cx, local < P ? 'Payload (the part kept on this page)' : 'Payload', p, p + local, rsBytesWord(local)));
+        let parts = collect ? [u8.subarray(p, p + local)] : null;
+        p += local;
+        if (local < P) {
+          if (p + 4 > lim) short();
+          const first = rsBE(u8, p, 4);
+          if (rsRoom(cx)) ck.push(rsI(cx, 'First overflow page', p, p + 4, `page ${rsNum(first)}`));
+          p += 4;
+          const more = overflow(first, P - local, owner, pg, collect);
+          if (parts) parts = parts.concat(more);
+          current = pg;
+        }
+        if (parts) payloads.push(parts);
+        label = flag === 13 ? `Cell: rowid ${rowid}` : flag === 2 ? `Cell: child page ${rsNum(left)}` : 'Cell';
+        label += `, payload ${rsBytesWord(P)}` + (local < P ? ' (continues on overflow pages)' : '');
+      }
+      body.push([s + off, p, detail ? rsI(cx, label, s + off, p, null, null, ck) : null]);
+      if (!leaf) children.push(left);
+    }
+    // freeblocks, a chain in increasing order through the content area
+    let fb = firstFree, last = -1, nfb = 0;
+    while (fb) {
+      if (fb <= last || fb < cStart || fb + 4 > U) stop(`A freeblock on page ${rsNum(pg)} is at byte ${fb}, outside the content area or out of order.`);
+      const next = rsBE(u8, s + fb, 2), size = rsBE(u8, s + fb + 2, 2);
+      if (size < 4 || fb + size > U) stop(`A freeblock on page ${rsNum(pg)} at byte ${fb} gives a size of ${size}, which doesn’t fit the page.`);
+      const fk = rsRoom(cx) ? [rsI(cx, 'Next freeblock', s + fb, s + fb + 2, next ? `at byte ${next}` : '0 (none)'),
+        rsI(cx, 'Freeblock size', s + fb + 2, s + fb + 4, rsBytesWord(size))] : null;
+      body.push([s + fb, s + fb + size, detail ? rsI(cx, 'Freeblock (free space)', s + fb, s + fb + size, rsBytesWord(size), null, fk) : null]);
+      last = fb; fb = next;
+      if (++nfb > U) stop(`The freeblock chain on page ${rsNum(pg)} doesn’t end.`);
+    }
+    body.sort((a, b) => a[0] - b[0]);
+    let at = s + cStart;
+    for (const [bs, be, it] of body) {
+      if (bs < at) stop(`On page ${rsNum(pg)}, two cells or freeblocks overlap at byte ${bs - s}.`);
+      if (bs > at && detail) kids.push(rsI(cx, 'Free fragment', at, bs, rsBytesWord(bs - at)));
+      if (it) kids.push(it);
+      at = be;
+    }
+    if (detail && at < s + U) kids.push(rsI(cx, 'Free fragment', at, s + U, rsBytesWord(s + U - at)));
+    if (reserved && detail) kids.push(rsI(cx, 'Reserved space', s + U, s + ps, rsBytesWord(reserved)));
+    if (!leaf) children.push(right);
+    const label = `Page ${rsNum(pg)}: ${RS_SQ_PAGE[flag]}` + (pg === 1 ? ' (after the database header)' : '');
+    done.set(pg, rsI(cx, label, h === s ? s : h, s + ps, owned(owner), detail ? null : `${rsNum(nCells)} cell${nCells === 1 ? '' : 's'}; there are too many items in this file to list each part of the page.`, kids));
+    return { children, payloads, family: isTable ? 'table' : 'index' };
+  };
+
+  // Walks a whole b-tree from its root.
+  const walk = (root, owner, collect) => {
+    const all = [];
+    const from = owner.kind === 'schema' ? 'The schema table' : `The schema entry for ${owned(owner)}`;
+    current = 1;
+    if (owner.kind !== 'schema') claim(root, `the root page of ${owned(owner)}`, from);
+    else role.set(1, 'the root page of the schema table');
+    const r0 = btreePage(root, null, owner, collect);
+    const fam = r0.family;
+    let queue = r0.children.map((c) => [c, root]);
+    if (collect) all.push(...r0.payloads);
+    while (queue.length) {
+      const next = [];
+      for (const [pg, parent] of queue) {
+        current = parent;
+        claim(pg, `a page of ${owned(owner)}`, `Page ${rsNum(parent)}`);
+        const r = btreePage(pg, fam, owner, collect);
+        if (collect) all.push(...r.payloads);
+        for (const c of r.children) next.push([c, pg]);
+      }
+      queue = next;
+    }
+    return all;
+  };
+
+  // a record's first few columns, enough to read the schema table
+  const record = (parts) => {
+    let len = 0; for (const p of parts) len += p.length;
+    const b = new Uint8Array(len); let o = 0; for (const p of parts) { b.set(p, o); o += p.length; }
+    const hs = rsSqVarint(b, 0, b.length);
+    if (!hs || hs.v > b.length) stop('A row of the schema table can’t be read: its record header runs past its end.');
+    const types = []; let p = hs.n;
+    while (p < hs.v) { const t = rsSqVarint(b, p, hs.v); if (!t) stop('A row of the schema table can’t be read: its record header is damaged.'); types.push(Number(t.v)); p += t.n; }
+    const vals = []; let q = hs.v;
+    for (const t of types) {
+      let sz;
+      if (t >= 12) sz = Math.floor((t - 12) / 2); else sz = [0, 1, 2, 3, 4, 6, 8, 8, 0, 0, 0, 0][t];
+      if (t === 10 || t === 11) stop('A row of the schema table uses a reserved value type.');
+      if (q + sz > b.length) stop('A row of the schema table can’t be read: a value runs past the end of the record.');
+      if (t >= 13 && t % 2) vals.push(decodeText(b.subarray(q, q + sz)));
+      else if (t >= 1 && t <= 6) { let x = rsBE(b, q, sz); if (x >= 2 ** (8 * sz - 1)) x -= 2 ** (8 * sz); vals.push(x); }
+      else if (t === 8) vals.push(0); else if (t === 9) vals.push(1);
+      else vals.push(null);
+      q += sz;
+    }
+    return vals;
+  };
+
+  try {
+    const rows = walk(1, { kind: 'schema' }, true).map(record);
+    for (const r of rows) {
+      const [type, name, , root] = r;
+      if (typeof root !== 'number' || root <= 0) continue;
+      if (type !== 'table' && type !== 'index') continue;
+      walk(root, { kind: type, name: String(name) }, false);
+    }
+    // the freelist: trunk pages, each listing leaf pages
+    let trunk = rsBE(u8, 32, 4), from = 'The header’s freelist field', found = 0;
+    current = 1;
+    while (trunk) {
+      claim(trunk, 'a freelist trunk page', from);
+      current = trunk;
+      const s = pageStart(trunk), next = rsBE(u8, s, 4), k = rsBE(u8, s + 4, 4);
+      if (k > U / 4 - 2) stop(`Freelist trunk page ${rsNum(trunk)} says it lists ${rsNum(k)} pages, more than it has room for.`);
+      const kids = [];
+      if (rsRoom(cx)) {
+        kids.push(rsI(cx, 'Next trunk page', s, s + 4, next ? `page ${rsNum(next)}` : '0 (none)'), rsI(cx, 'Number of leaf pages listed', s + 4, s + 8, rsNum(k)));
+        if (k) kids.push(rsI(cx, 'Leaf page numbers', s + 8, s + 8 + 4 * k, `${rsNum(k)} page number${k === 1 ? '' : 's'}`));
+        if (8 + 4 * k < U) kids.push(rsI(cx, 'Unused space', s + 8 + 4 * k, s + U, rsBytesWord(U - 8 - 4 * k)));
+        if (reserved) kids.push(rsI(cx, 'Reserved space', s + U, s + ps, rsBytesWord(reserved)));
+      }
+      done.set(trunk, rsI(cx, `Page ${rsNum(trunk)}: freelist trunk page`, s, s + ps, null, null, kids));
+      for (let i = 0; i < k; i++) {
+        const lf = rsBE(u8, s + 8 + 4 * i, 4);
+        claim(lf, 'a freelist leaf page', `Freelist trunk page ${rsNum(trunk)}`);
+        done.set(lf, rsI(cx, `Page ${rsNum(lf)}: freelist leaf page (free page)`, pageStart(lf), pageStart(lf) + ps, null, `Listed on freelist trunk page ${rsNum(trunk)}.`));
+      }
+      found += 1 + k;
+      from = `Freelist trunk page ${rsNum(trunk)}`;
+      trunk = next;
+    }
+    if (found !== rsBE(u8, 36, 4)) hk[11].note = `The freelist itself holds ${rsNum(found)} page${found === 1 ? '' : 's'}.`;
+    // pointer-map pages, in auto-vacuum databases
+    if (rsBE(u8, 52, 4)) {
+      const per = Math.floor(U / 5);
+      for (let pm = 2; pm <= dbPages; pm += per + 1) {
+        let pg = pm; if (pg === lockPage) pg++;
+        if (pg > dbPages) break;
+        current = 1;
+        claim(pg, 'a pointer-map page', 'The auto-vacuum layout');
+        current = pg;
+        const s = pageStart(pg), kids = [];
+        let k = 0;
+        for (; k < per && pg + 1 + k <= dbPages; k++) {
+          if (!rsRoom(cx)) break;
+          const e = s + 5 * k, t = u8[e], par = rsBE(u8, e + 1, 4);
+          const tn = { 1: 'root page', 2: 'free page', 3: 'first page of an overflow chain', 4: 'later page of an overflow chain', 5: 'non-root b-tree page' }[t] || `type ${t}`;
+          kids.push(rsI(cx, `Entry for page ${rsNum(pg + 1 + k)}`, e, e + 5, tn + (par ? `, parent page ${rsNum(par)}` : '')));
+        }
+        if (k < per && 5 * k < U && rsRoom(cx)) kids.push(rsI(cx, 'Unused space', s + 5 * k, s + U, rsBytesWord(U - 5 * k)));
+        done.set(pg, rsI(cx, `Page ${rsNum(pg)}: pointer-map page`, s, s + ps, null, null, kids));
+      }
+    }
+  } catch (e) {
+    if (!(e instanceof Stop)) throw e;
+    const pg = current || 1;
+    const s = pageStart(pg) + (pg === 1 ? 100 : 0), end = Math.min(n, pageStart(pg) + ps);
+    const it = rsStopItem(cx, s, end, e.message);
+    if (done.has(pg)) { const d = done.get(pg); it.start = d.start; it.end = d.end; it.children = [d]; } // keep what was read of it
+    done.set(pg, it);
+  }
+  // the lock-byte page, and every page nothing reached
+  for (let pg = 1; pg <= Math.max(dbPages, filePages) && pg <= filePages; pg++) {
+    const s = pageStart(pg) + (pg === 1 ? 100 : 0), e = pageStart(pg) + ps;
+    if (done.has(pg)) { items.push(done.get(pg)); continue; }
+    if (pg > dbPages) items.push(rsI(cx, `Page ${rsNum(pg)}: after the database’s last page`, s, e, null, `The header gives the database ${rsNum(dbPages)} pages.`));
+    else if (pg === lockPage) items.push(rsI(cx, `Page ${rsNum(pg)}: lock-byte page`, s, e, null, 'Set aside by the format for file locking; it never holds data.'));
+    else if (cx.stopped) items.push(rsI(cx, `Page ${rsNum(pg)}: not reached`, s, e, null, 'Reading stopped before this page was reached.'));
+    else items.push(rsI(cx, `Page ${rsNum(pg)}: unused page`, s, e, null, 'Not reached from the schema, the freelist or an overflow chain.'));
+  }
+  if (dbPages > filePages) hk[9].note += ` The file itself holds ${rsNum(filePages)}.`;
+  return { title: `SQLite database, ${rsNum(Math.min(dbPages, filePages))} page${dbPages === 1 ? '' : 's'} of ${rsBytesWord(ps)}`, items };
+}
+
+/* ---------- TIFF files, and the Exif blocks inside other images ---------- */
+
+const RS_TIFF_TYPES = { 1: ['BYTE', 1], 2: ['ASCII', 1], 3: ['SHORT', 2], 4: ['LONG', 4], 5: ['RATIONAL', 8], 6: ['SBYTE', 1], 7: ['UNDEFINED', 1], 8: ['SSHORT', 2], 9: ['SLONG', 4], 10: ['SRATIONAL', 8], 11: ['FLOAT', 4], 12: ['DOUBLE', 8], 13: ['IFD', 4], 16: ['LONG8', 8], 17: ['SLONG8', 8], 18: ['IFD8', 8] };
+
+const RS_TIFF_TAGS = new Map(Object.entries({
+  254: 'NewSubfileType', 255: 'SubfileType', 256: 'ImageWidth', 257: 'ImageLength', 258: 'BitsPerSample', 259: 'Compression',
+  262: 'PhotometricInterpretation', 263: 'Threshholding', 264: 'CellWidth', 265: 'CellLength', 266: 'FillOrder', 269: 'DocumentName',
+  270: 'ImageDescription', 271: 'Make', 272: 'Model', 273: 'StripOffsets', 274: 'Orientation', 277: 'SamplesPerPixel', 278: 'RowsPerStrip',
+  279: 'StripByteCounts', 280: 'MinSampleValue', 281: 'MaxSampleValue', 282: 'XResolution', 283: 'YResolution', 284: 'PlanarConfiguration',
+  285: 'PageName', 286: 'XPosition', 287: 'YPosition', 288: 'FreeOffsets', 289: 'FreeByteCounts', 290: 'GrayResponseUnit', 291: 'GrayResponseCurve',
+  292: 'T4Options', 293: 'T6Options', 296: 'ResolutionUnit', 297: 'PageNumber', 301: 'TransferFunction', 305: 'Software', 306: 'DateTime',
+  315: 'Artist', 316: 'HostComputer', 317: 'Predictor', 318: 'WhitePoint', 319: 'PrimaryChromaticities', 320: 'ColorMap', 321: 'HalftoneHints',
+  322: 'TileWidth', 323: 'TileLength', 324: 'TileOffsets', 325: 'TileByteCounts', 330: 'SubIFDs', 332: 'InkSet', 333: 'InkNames',
+  334: 'NumberOfInks', 336: 'DotRange', 337: 'TargetPrinter', 338: 'ExtraSamples', 339: 'SampleFormat', 340: 'SMinSampleValue',
+  341: 'SMaxSampleValue', 342: 'TransferRange', 343: 'ClipPath', 347: 'JPEGTables', 512: 'JPEGProc', 513: 'JPEGInterchangeFormat',
+  514: 'JPEGInterchangeFormatLength', 529: 'YCbCrCoefficients', 530: 'YCbCrSubSampling', 531: 'YCbCrPositioning', 532: 'ReferenceBlackWhite',
+  700: 'XMP', 18246: 'Rating', 18249: 'RatingPercent', 32995: 'Matteing', 32996: 'DataType', 32997: 'ImageDepth', 32998: 'TileDepth',
+  33421: 'CFARepeatPatternDim', 33422: 'CFAPattern', 33432: 'Copyright', 33434: 'ExposureTime', 33437: 'FNumber', 33550: 'ModelPixelScaleTag',
+  33723: 'IPTC', 33922: 'ModelTiepointTag', 34264: 'ModelTransformationTag', 34377: 'Photoshop', 34665: 'ExifIFD', 34675: 'ICCProfile',
+  34735: 'GeoKeyDirectoryTag', 34736: 'GeoDoubleParamsTag', 34737: 'GeoAsciiParamsTag', 34850: 'ExposureProgram', 34852: 'SpectralSensitivity',
+  34853: 'GPSIFD', 34855: 'ISOSpeedRatings', 34856: 'OECF', 34864: 'SensitivityType', 36864: 'ExifVersion', 36867: 'DateTimeOriginal',
+  36868: 'DateTimeDigitized', 36880: 'OffsetTime', 36881: 'OffsetTimeOriginal', 36882: 'OffsetTimeDigitized', 37121: 'ComponentsConfiguration',
+  37122: 'CompressedBitsPerPixel', 37377: 'ShutterSpeedValue', 37378: 'ApertureValue', 37379: 'BrightnessValue', 37380: 'ExposureBiasValue',
+  37381: 'MaxApertureValue', 37382: 'SubjectDistance', 37383: 'MeteringMode', 37384: 'LightSource', 37385: 'Flash', 37386: 'FocalLength',
+  37396: 'SubjectArea', 37500: 'MakerNote', 37510: 'UserComment', 37520: 'SubSecTime', 37521: 'SubSecTimeOriginal', 37522: 'SubSecTimeDigitized',
+  37724: 'ImageSourceData', 40091: 'XPTitle', 40092: 'XPComment', 40093: 'XPAuthor', 40094: 'XPKeywords', 40095: 'XPSubject',
+  40960: 'FlashpixVersion', 40961: 'ColorSpace', 40962: 'PixelXDimension', 40963: 'PixelYDimension', 40964: 'RelatedSoundFile',
+  40965: 'InteroperabilityIFD', 41483: 'FlashEnergy', 41486: 'FocalPlaneXResolution', 41487: 'FocalPlaneYResolution',
+  41488: 'FocalPlaneResolutionUnit', 41492: 'SubjectLocation', 41493: 'ExposureIndex', 41495: 'SensingMethod', 41728: 'FileSource',
+  41729: 'SceneType', 41730: 'CFAPattern', 41985: 'CustomRendered', 41986: 'ExposureMode', 41987: 'WhiteBalance', 41988: 'DigitalZoomRatio',
+  41989: 'FocalLengthIn35mmFilm', 41990: 'SceneCaptureType', 41991: 'GainControl', 41992: 'Contrast', 41993: 'Saturation', 41994: 'Sharpness',
+  41996: 'SubjectDistanceRange', 42016: 'ImageUniqueID', 42032: 'CameraOwnerName', 42033: 'BodySerialNumber', 42034: 'LensSpecification',
+  42035: 'LensMake', 42036: 'LensModel', 42037: 'LensSerialNumber', 42112: 'GDAL_METADATA', 42113: 'GDAL_NODATA', 50706: 'DNGVersion',
+  50838: 'ImageJMetaDataByteCounts', 50839: 'ImageJMetaData',
+}).map(([k, v]) => [Number(k), v]));
+
+const RS_GPS_TAGS = ['GPSVersionID', 'GPSLatitudeRef', 'GPSLatitude', 'GPSLongitudeRef', 'GPSLongitude', 'GPSAltitudeRef', 'GPSAltitude',
+  'GPSTimeStamp', 'GPSSatellites', 'GPSStatus', 'GPSMeasureMode', 'GPSDOP', 'GPSSpeedRef', 'GPSSpeed', 'GPSTrackRef', 'GPSTrack',
+  'GPSImgDirectionRef', 'GPSImgDirection', 'GPSMapDatum', 'GPSDestLatitudeRef', 'GPSDestLatitude', 'GPSDestLongitudeRef', 'GPSDestLongitude',
+  'GPSDestBearingRef', 'GPSDestBearing', 'GPSDestDistanceRef', 'GPSDestDistance', 'GPSProcessingMethod', 'GPSAreaInformation',
+  'GPSDateStamp', 'GPSDifferential', 'GPSHPositioningError'];
+
+// what some numeric values mean, for tags that are lists of choices
+const RS_TIFF_MEANS = new Map([
+  [259, { 1: 'no compression', 2: 'CCITT modified Huffman', 3: 'CCITT Group 3', 4: 'CCITT Group 4', 5: 'LZW', 6: 'JPEG (old style)', 7: 'JPEG', 8: 'Deflate', 32773: 'PackBits', 32946: 'Deflate', 34887: 'LERC', 34925: 'LZMA', 50000: 'Zstandard', 50001: 'WebP' }],
+  [262, { 0: 'white is zero', 1: 'black is zero', 2: 'RGB', 3: 'palette colour', 4: 'transparency mask', 5: 'separated (usually CMYK)', 6: 'YCbCr', 8: 'CIE L*a*b*' }],
+  [274, { 1: 'top left', 2: 'top right', 3: 'bottom right', 4: 'bottom left', 5: 'left top', 6: 'right top', 7: 'right bottom', 8: 'left bottom' }],
+  [284, { 1: 'chunky (samples together)', 2: 'planar (samples in separate planes)' }],
+  [296, { 1: 'no unit', 2: 'inch', 3: 'centimetre' }],
+  [317, { 1: 'none', 2: 'horizontal differencing', 3: 'floating-point differencing' }],
+  [338, { 0: 'unspecified', 1: 'associated alpha', 2: 'unassociated alpha' }],
+  [339, { 1: 'unsigned integer', 2: 'signed integer', 3: 'floating point', 4: 'undefined' }],
+]);
+
+const RS_GEOKEYS = new Map(Object.entries({
+  1024: 'GTModelTypeGeoKey', 1025: 'GTRasterTypeGeoKey', 1026: 'GTCitationGeoKey', 2048: 'GeographicTypeGeoKey', 2049: 'GeogCitationGeoKey',
+  2050: 'GeogGeodeticDatumGeoKey', 2051: 'GeogPrimeMeridianGeoKey', 2052: 'GeogLinearUnitsGeoKey', 2053: 'GeogLinearUnitSizeGeoKey',
+  2054: 'GeogAngularUnitsGeoKey', 2055: 'GeogAngularUnitSizeGeoKey', 2056: 'GeogEllipsoidGeoKey', 2057: 'GeogSemiMajorAxisGeoKey',
+  2058: 'GeogSemiMinorAxisGeoKey', 2059: 'GeogInvFlatteningGeoKey', 2060: 'GeogAzimuthUnitsGeoKey', 2061: 'GeogPrimeMeridianLongGeoKey',
+  2062: 'GeogTOWGS84GeoKey', 3072: 'ProjectedCSTypeGeoKey', 3073: 'PCSCitationGeoKey', 3074: 'ProjectionGeoKey', 3075: 'ProjCoordTransGeoKey',
+  3076: 'ProjLinearUnitsGeoKey', 3077: 'ProjLinearUnitSizeGeoKey', 3078: 'ProjStdParallel1GeoKey', 3079: 'ProjStdParallel2GeoKey',
+  3080: 'ProjNatOriginLongGeoKey', 3081: 'ProjNatOriginLatGeoKey', 3082: 'ProjFalseEastingGeoKey', 3083: 'ProjFalseNorthingGeoKey',
+  3084: 'ProjFalseOriginLongGeoKey', 3085: 'ProjFalseOriginLatGeoKey', 3086: 'ProjFalseOriginEastingGeoKey', 3087: 'ProjFalseOriginNorthingGeoKey',
+  3088: 'ProjCenterLongGeoKey', 3089: 'ProjCenterLatGeoKey', 3090: 'ProjCenterEastingGeoKey', 3091: 'ProjCenterNorthingGeoKey',
+  3092: 'ProjScaleAtNatOriginGeoKey', 3093: 'ProjScaleAtCenterGeoKey', 3094: 'ProjAzimuthAngleGeoKey', 3095: 'ProjStraightVertPoleLongGeoKey',
+  3096: 'ProjRectifiedGridAngleGeoKey', 4096: 'VerticalCSTypeGeoKey', 4097: 'VerticalCitationGeoKey', 4098: 'VerticalDatumGeoKey',
+  4099: 'VerticalUnitsGeoKey', 5120: 'CoordinateEpochGeoKey',
+}).map(([k, v]) => [Number(k), v]));
+const RS_GEO_MEANS = new Map([
+  [1024, { 1: 'projected', 2: 'geographic', 3: 'geocentric', 32767: 'user-defined' }],
+  [1025, { 1: 'pixel is area', 2: 'pixel is point' }],
+]);
+const RS_GEO_UNITS = { 9001: 'metre', 9002: 'foot', 9003: 'US survey foot', 9101: 'radian', 9102: 'degree', 9103: 'arc-minute', 9104: 'arc-second', 9105: 'grad', 32767: 'user-defined' };
+
+// Reads `count` values of a TIFF type at p. Gives an array (numbers, BigInts, or [num, den] pairs).
+function rsTiffValues(u8, p, type, count, le) {
+  const dv = new DataView(u8.buffer, u8.byteOffset, u8.length);
+  const out = [];
+  const size = RS_TIFF_TYPES[type][1];
+  for (let i = 0; i < count; i++) {
+    const q = p + i * size;
+    switch (type) {
+      case 1: case 2: case 7: out.push(u8[q]); break;
+      case 6: out.push(dv.getInt8(q)); break;
+      case 3: out.push(dv.getUint16(q, le)); break;
+      case 8: out.push(dv.getInt16(q, le)); break;
+      case 4: case 13: out.push(dv.getUint32(q, le)); break;
+      case 9: out.push(dv.getInt32(q, le)); break;
+      case 5: out.push([dv.getUint32(q, le), dv.getUint32(q + 4, le)]); break;
+      case 10: out.push([dv.getInt32(q, le), dv.getInt32(q + 4, le)]); break;
+      case 11: out.push(dv.getFloat32(q, le)); break;
+      case 12: out.push(dv.getFloat64(q, le)); break;
+      case 16: case 18: { const v = dv.getBigUint64(q, le); out.push(v <= BigInt(Number.MAX_SAFE_INTEGER) ? Number(v) : v); break; }
+      case 17: { const v = dv.getBigInt64(q, le); out.push(v >= BigInt(Number.MIN_SAFE_INTEGER) && v <= BigInt(Number.MAX_SAFE_INTEGER) ? Number(v) : v); break; }
+    }
+  }
+  return out;
+}
+
+function rsTiffShow(tag, type, vals, u8, p, bytes) {
+  if (type === 2) { // text, possibly several pieces each ending in a zero byte
+    let t = rsLatin1(u8, p, p + bytes);
+    try { t = new TextDecoder('utf-8', { fatal: true }).decode(u8.subarray(p, p + bytes)); } catch (e) { /* kept as Latin-1 */ }
+    const pieces = t.replace(/\u0000$/, '').split('\u0000');
+    return pieces.map((x) => rsQuote(x, 1000)).join(', ');
+  }
+  if (type === 7) return rsAsciiWord(u8, p, p + bytes) && bytes <= 64 ? `${rsQuote(rsLatin1(u8, p, p + bytes))} (${rsHex(u8, p, p + bytes, 16)})` : rsHex(u8, p, p + bytes, 32);
+  const one = (v) => Array.isArray(v) ? `${v[0]}/${v[1]}` + (v[1] ? ` (${+(v[0] / v[1]).toPrecision(10)})` : '') : typeof v === 'number' && !Number.isInteger(v) ? String(v) : rsNum(v);
+  const shown = vals.slice(0, 32).map(one);
+  let t = shown.join(', ') + (vals.length > 32 ? `, … (${rsNum(vals.length)} values in all)` : '');
+  const m = RS_TIFF_MEANS.get(tag);
+  if (m && vals.length === 1 && m[vals[0]]) t += ` (${m[vals[0]]})`;
+  else if (m && vals.length > 1 && vals.length <= 8 && vals.every((v) => m[v])) t += ` (${vals.map((v) => m[v]).join(', ')})`;
+  return t;
+}
+
+// Describes a TIFF structure that starts at `base` and must lie before `limit`. Offsets in it
+// count from base. Gives { items, title, stopped }; items use the file's own byte positions.
+// The tags whose values later steps use: where sub-IFDs, strips, tiles, free ranges and JPEG data
+// lie, and the GeoTIFF keys.
+const RS_TIFF_USED = new Set([273, 279, 288, 289, 324, 325, 330, 513, 514, 34665, 34735, 34736, 34737, 34853, 40965]);
+// How many more items, past the limit, ranges scattered through a file (strips, tiles) may make.
+const RS_SCATTERED = 25000;
+function rsTiffWalk(cx, base, limit, what) {
+  const { u8 } = cx;
+  const items = [];
+  if (limit - base < 8) throw new Error(`${what} is too short to hold the eight-byte header.`);
+  const bo = rsLatin1(u8, base, base + 2);
+  if (bo !== 'II' && bo !== 'MM') throw new Error(`${what} doesn’t begin with “II” or “MM”, the byte-order mark the format starts with.`);
+  const le = bo === 'II';
+  const dv = new DataView(u8.buffer, u8.byteOffset, u8.length);
+  const magic = dv.getUint16(base + 2, le);
+  if (magic !== 42 && magic !== 43) throw new Error(`${what} gives ${magic} where the format has 42 (or 43 for the large variant).`);
+  const big = magic === 43;
+  const hk = [rsI(cx, 'Byte order', base, base + 2, le ? '“II” (little-endian)' : '“MM” (big-endian)'),
+    rsI(cx, 'Version', base + 2, base + 4, big ? '43 (BigTIFF)' : '42')];
+  let first, hEnd, firstAt;
+  if (big) {
+    if (limit - base < 16) throw new Error(`${what} is too short to hold its 16-byte header.`);
+    hk.push(rsI(cx, 'Offset size', base + 4, base + 6, `${dv.getUint16(base + 4, le)}`), rsI(cx, 'Always zero', base + 6, base + 8, `${dv.getUint16(base + 6, le)}`));
+    if (dv.getUint16(base + 4, le) !== 8) throw new Error(`${what} gives an offset size of ${dv.getUint16(base + 4, le)}; the format uses 8.`);
+    first = rsLE64(u8, base + 8); if (!le) first = rsBE64(u8, base + 8);
+    hk.push(rsI(cx, 'First IFD offset', base + 8, base + 16, rsNum(first)));
+    hEnd = base + 16;
+    firstAt = [base + 8, base + 16];
+  } else {
+    first = dv.getUint32(base + 4, le);
+    hk.push(rsI(cx, 'First IFD offset', base + 4, base + 8, rsNum(first)));
+    hEnd = base + 8;
+    firstAt = [base + 4, base + 8];
+  }
+  items.push(rsI(cx, 'Header', base, hEnd, big ? 'BigTIFF' : null, null, hk));
+  const cntSize = big ? 8 : 2, entSize = big ? 20 : 12, offSize = big ? 8 : 4;
+  const readOff = (p) => big ? (le ? rsLE64(u8, p) : rsBE64(u8, p)) : dv.getUint32(p, le);
+  const seen = new Set();

@@ -1,0 +1,1097 @@
+<!-- Review copy: lines 3053-4148 of ruminate/index.html, split so Copilot can review it. Not served. -->
+/* Text for a protocol 0 or 1 byte string: a str when it is ASCII (Python's default), else the bytes. */
+function pkAsciiOrBytes(b) {
+  for (const x of b) if (x > 127) return { __py: 'bytes', v: b };
+  return pkLatin1(b);
+}
+
+/* A whole number written out in a line, as Python's text instructions read it. */
+function pkIntText(s, where) {
+  const t = s.trim().replace(/L$/, '');
+  const m = /^([+-]?)(?:0[xX]([0-9a-fA-F]+)|0[oO]([0-7]+)|0[bB]([01]+)|(0[0-7]*)|([1-9][0-9]*))$/.exec(t);
+  if (!m) throw new Error(`The number written at ${where} (“${s}”) isn’t a whole number.`);
+  const digits = m[2] ? '0x' + m[2] : m[3] ? '0o' + m[3] : m[4] ? '0b' + m[4] : m[5] ? (m[5].length > 1 ? '0o' + m[5].slice(1) : '0') : m[6];
+  const v = BigInt(digits);
+  return pkInt(m[1] === '-' ? -v : v);
+}
+
+/* Python values the machine builds itself from a few built-in names, instead of leaving a call:
+   bytes, bytearray, set and frozenset as protocols 0 to 4 save them. Nothing is run; any other
+   call stays a call node. */
+function pkBuiltin(func, args) {
+  if (!func || func.__py !== 'global' || !Array.isArray(args)) return undefined;
+  const { module: m, name } = func, bi = m === 'builtins' || m === '__builtin__';
+  const latin = (s) => typeof s === 'string' && /^[\0-\xff]*$/.test(s);
+  if (m === '_codecs' && name === 'encode' && args.length === 2 && latin(args[0]) && (args[1] === 'latin1' || args[1] === 'latin-1')) {
+    return { __py: 'bytes', v: Uint8Array.from(args[0], (c) => c.charCodeAt(0)) };
+  }
+  if (bi && name === 'bytes' && args.length === 0) return { __py: 'bytes', v: new Uint8Array(0) };
+  if (bi && name === 'bytearray') {
+    if (args.length === 0) return { __py: 'bytearray', v: new Uint8Array(0) };
+    if (args.length === 1 && args[0] && args[0].__py === 'bytes') return { __py: 'bytearray', v: args[0].v.slice() };
+  }
+  if (bi && (name === 'set' || name === 'frozenset')) {
+    if (args.length === 0) return pkSet(name);
+    if (args.length === 1 && Array.isArray(args[0])) { const s = pkSet(name); for (const x of args[0]) pkSetAdd(s, x); return s; }
+  }
+  return undefined;
+}
+
+/* Run the pickle instructions on a stack, building a tree of values. Nothing in the file is
+   ever imported, called or run: names stay names and calls stay call nodes. */
+function pickleLoad(u8) {
+  const n = u8.length, dv = new DataView(u8.buffer, u8.byteOffset, u8.byteLength);
+  const stack = [], marks = [], memo = new Map();
+  let p = 0, at = 0;
+  const where = () => `byte ${at}`;
+  const fail = (why) => { throw new Error(why); };
+  const need = (k) => { if (p + k > n) fail(`The data ends partway through the instruction at byte ${at}.`); };
+  const take = (k) => { need(k); const b = u8.subarray(p, p + k); p += k; return b; };
+  const line = () => {
+    let e = p;
+    while (e < n && u8[e] !== 10) e++;
+    if (e >= n) fail(`The data ends partway through the instruction at byte ${at} (its line never ends).`);
+    const b = u8.subarray(p, e); p = e + 1; return b;
+  };
+  const ascii = (b) => pkLatin1(b);
+  const fence = () => (marks.length ? marks[marks.length - 1] : 0);
+  const pop = () => { if (stack.length <= fence()) fail(`The instruction at byte ${at} needs a value from the stack, but there isn’t one.`); return stack.pop(); };
+  const peek = () => { if (stack.length <= fence()) fail(`The instruction at byte ${at} needs a value from the stack, but there isn’t one.`); return stack[stack.length - 1]; };
+  const popMark = () => {
+    if (!marks.length) fail(`The instruction at byte ${at} needs a mark on the stack, but none was set.`);
+    return stack.splice(marks.pop());
+  };
+  const len8 = () => { const v = dv.getBigUint64((need(8), p), true); p += 8; if (v > BigInt(n)) fail(`The data ends partway through the instruction at byte ${at}.`); return Number(v); };
+  const get = (i) => { if (!memo.has(i)) fail(`The instruction at byte ${at} asks for saved value ${i}, which was never saved.`); stack.push(memo.get(i)); };
+  const put = (i) => { if (i < 0) fail(`The instruction at byte ${at} saves to a negative slot (${i}).`); memo.set(i, peek()); };
+  const call = (op, func, args, kwargs = null) => ({ __py: 'call', op, func, args, kwargs, state: undefined, items: [], entries: [] });
+  const glob = (module, name) => ({ __py: 'global', module, name });
+  const appendTo = (target, items) => {
+    if (Array.isArray(target) && !target._tuple) for (const x of items) target.push(x);
+    else if (target && (target.__py === 'call' || target.__py === 'persid' || target.__py === 'ext')) for (const x of items) target.items.push(x);
+    else fail(`The instruction at byte ${at} adds items to ${pkA(target)}, which can’t take them.`);
+  };
+  const setItems = (target, kv) => {
+    if (kv.length % 2) fail(`The instruction at byte ${at} has an odd number of keys and values.`);
+    if (target && target.__py === 'dict') for (let i = 0; i < kv.length; i += 2) pkDictSet(target, kv[i], kv[i + 1]);
+    else if (target && (target.__py === 'call' || target.__py === 'persid' || target.__py === 'ext')) for (let i = 0; i < kv.length; i += 2) target.entries.push([kv[i], kv[i + 1]]);
+    else fail(`The instruction at byte ${at} sets keys on ${pkA(target)}, which can’t take them.`);
+  };
+  const reduce = (op, func, args, kwargs) => {
+    if (op === 'reduce') {
+      if (!Array.isArray(args) || !args._tuple) fail(`The call at byte ${at} gives its arguments as ${pkA(args)}, but they must be a tuple.`);
+      const v = pkBuiltin(func, args);
+      if (v !== undefined) return v;
+    }
+    return call(op, func, args, kwargs);
+  };
+
+  for (;;) {
+    at = p;
+    if (p >= n) fail(`The data ends at byte ${n} without the instruction that finishes it.`);
+    const op = u8[p++];
+    switch (op) {
+      case 0x80: { // PROTO
+        const v = take(1)[0];
+        if (v > 5) fail(`The data says it uses protocol ${v}, but only protocols 0 to 5 exist.`);
+        break;
+      }
+      case 0x95: { const k = len8(); if (p + k > n) fail(`The data ends inside the frame that starts at byte ${at}.`); break; } // FRAME
+      case 0x2e: return pop(); // STOP
+      case 0x28: marks.push(stack.length); break; // MARK
+      case 0x30: // POP
+        if (marks.length && marks[marks.length - 1] === stack.length) marks.pop(); else pop();
+        break;
+      case 0x31: popMark(); break; // POP_MARK
+      case 0x32: stack.push(peek()); break; // DUP
+      // whole numbers, floats and constants
+      case 0x4e: stack.push(null); break; // NONE
+      case 0x88: stack.push(true); break; // NEWTRUE
+      case 0x89: stack.push(false); break; // NEWFALSE
+      case 0x49: { // INT
+        const s = ascii(line());
+        stack.push(s === '00' ? false : s === '01' ? true : pkIntText(s, where()));
+        break;
+      }
+      case 0x4a: stack.push((need(4), dv.getInt32(p, true))); p += 4; break; // BININT
+      case 0x4b: stack.push(take(1)[0]); break; // BININT1
+      case 0x4d: stack.push((need(2), dv.getUint16(p, true))); p += 2; break; // BININT2
+      case 0x4c: stack.push(pkIntText(ascii(line()), where())); break; // LONG
+      case 0x8a: case 0x8b: { // LONG1, LONG4
+        let k;
+        if (op === 0x8a) k = take(1)[0];
+        else { need(4); k = dv.getInt32(p, true); p += 4; if (k < 0) fail(`The number at byte ${at} gives a negative length (${k}).`); }
+        const b = take(k);
+        let v = 0n;
+        for (let i = b.length - 1; i >= 0; i--) v = (v << 8n) | BigInt(b[i]);
+        if (k && b[k - 1] & 0x80) v -= 1n << BigInt(8 * k);
+        stack.push(pkInt(v));
+        break;
+      }
+      case 0x46: { // FLOAT
+        const s = ascii(line()).trim();
+        let v;
+        if (/^[+-]?(nan)$/i.test(s)) v = NaN;
+        else if (/^[+-]?inf(inity)?$/i.test(s)) v = s[0] === '-' ? -Infinity : Infinity;
+        else if (/^[+-]?(\d+\.?\d*|\.\d+)([eE][+-]?\d+)?$/.test(s)) v = Number(s);
+        else fail(`The number written at byte ${at} (“${s}”) isn’t a float.`);
+        stack.push(pkFloat(v));
+        break;
+      }
+      case 0x47: stack.push(pkFloat((need(8), dv.getFloat64(p, false)))); p += 8; break; // BINFLOAT
+      // strings and bytes
+      case 0x53: { // STRING
+        const b = line();
+        const q = b[0];
+        if (b.length < 2 || (q !== 0x27 && q !== 0x22) || b[b.length - 1] !== q) fail(`The quoted text at byte ${at} isn’t quoted properly.`);
+        stack.push(pkAsciiOrBytes(pkEscapes(b.subarray(1, b.length - 1), where())));
+        break;
+      }
+      case 0x54: { need(4); const k = dv.getInt32(p, true); p += 4; if (k < 0) fail(`The text at byte ${at} gives a negative length (${k}).`); stack.push(pkAsciiOrBytes(take(k).slice())); break; } // BINSTRING
+      case 0x55: stack.push(pkAsciiOrBytes(take(take(1)[0]).slice())); break; // SHORT_BINSTRING
+      case 0x56: stack.push(pkRawUnicode(line(), where())); break; // UNICODE
+      case 0x58: { need(4); const k = dv.getUint32(p, true); p += 4; stack.push(pkUtf8(take(k), where())); break; } // BINUNICODE
+      case 0x8c: stack.push(pkUtf8(take(take(1)[0]), where())); break; // SHORT_BINUNICODE
+      case 0x8d: stack.push(pkUtf8(take(len8()), where())); break; // BINUNICODE8
+      case 0x42: { need(4); const k = dv.getUint32(p, true); p += 4; stack.push({ __py: 'bytes', v: take(k).slice() }); break; } // BINBYTES
+      case 0x43: stack.push({ __py: 'bytes', v: take(take(1)[0]).slice() }); break; // SHORT_BINBYTES
+      case 0x8e: stack.push({ __py: 'bytes', v: take(len8()).slice() }); break; // BINBYTES8
+      case 0x96: stack.push({ __py: 'bytearray', v: take(len8()).slice() }); break; // BYTEARRAY8
+      case 0x97: fail(`The data at byte ${at} refers to a buffer kept outside the file (out-of-band data), so it can’t be read from the file alone.`); // NEXT_BUFFER
+      case 0x98: peek(); break; // READONLY_BUFFER: makes a buffer read-only, which changes nothing here
+      // containers
+      case 0x5d: stack.push([]); break; // EMPTY_LIST
+      case 0x29: stack.push(pkTuple([])); break; // EMPTY_TUPLE
+      case 0x7d: stack.push(pkDict()); break; // EMPTY_DICT
+      case 0x8f: stack.push(pkSet('set')); break; // EMPTY_SET
+      case 0x6c: stack.push(popMark()); break; // LIST
+      case 0x74: stack.push(pkTuple(popMark())); break; // TUPLE
+      case 0x85: stack.push(pkTuple([pop()])); break; // TUPLE1
+      case 0x86: { const b = pop(), a = pop(); stack.push(pkTuple([a, b])); break; } // TUPLE2
+      case 0x87: { const c = pop(), b = pop(), a = pop(); stack.push(pkTuple([a, b, c])); break; } // TUPLE3
+      case 0x64: { const kv = popMark(), d = pkDict(); setItems(d, kv); stack.push(d); break; } // DICT
+      case 0x91: { const items = popMark(), s = pkSet('frozenset'); for (const x of items) pkSetAdd(s, x); stack.push(s); break; } // FROZENSET
+      case 0x61: { const v = pop(); appendTo(peek(), [v]); break; } // APPEND
+      case 0x65: { const items = popMark(); appendTo(peek(), items); break; } // APPENDS
+      case 0x73: { const v = pop(), k = pop(); setItems(peek(), [k, v]); break; } // SETITEM
+      case 0x75: { const kv = popMark(); setItems(peek(), kv); break; } // SETITEMS
+      case 0x90: { // ADDITEMS
+        const items = popMark(), s = peek();
+        if (s && s.__py === 'set') for (const x of items) pkSetAdd(s, x);
+        else if (s && s.__py === 'call') for (const x of items) s.items.push(x);
+        else fail(`The instruction at byte ${at} adds set items to ${pkA(s)}, which can’t take them.`);
+        break;
+      }
+      // the memo: values saved to be used again
+      case 0x70: put(pkIntText(ascii(line()), where())); break; // PUT
+      case 0x71: put(take(1)[0]); break; // BINPUT
+      case 0x72: need(4); put(dv.getUint32(p, true)); p += 4; break; // LONG_BINPUT
+      case 0x94: put(memo.size); break; // MEMOIZE
+      case 0x67: get(pkIntText(ascii(line()), where())); break; // GET
+      case 0x68: get(take(1)[0]); break; // BINGET
+      case 0x6a: need(4); get(dv.getUint32(p, true)); p += 4; break; // LONG_BINGET
+      // names, calls and objects: recorded, never looked up or run
+      case 0x63: { const m = pkUtf8(line(), where()), nm = pkUtf8(line(), where()); stack.push(glob(m, nm)); break; } // GLOBAL
+      case 0x93: { // STACK_GLOBAL
+        const nm = pop(), m = pop();
+        if (typeof nm !== 'string' || typeof m !== 'string') fail(`The name at byte ${at} must be made of two strings.`);
+        stack.push(glob(m, nm));
+        break;
+      }
+      case 0x52: { const args = pop(), func = pop(); stack.push(reduce('reduce', func, args)); break; } // REDUCE
+      case 0x81: { const args = pop(), cls = pop(); stack.push(reduce('newobj', cls, args)); break; } // NEWOBJ
+      case 0x92: { const kw = pop(), args = pop(), cls = pop(); stack.push(reduce('newobj_ex', cls, args, kw)); break; } // NEWOBJ_EX
+      case 0x69: { // INST
+        const m = pkUtf8(line(), where()), nm = pkUtf8(line(), where());
+        stack.push(reduce('inst', glob(m, nm), pkTuple(popMark())));
+        break;
+      }
+      case 0x6f: { // OBJ
+        const items = popMark();
+        if (!items.length) fail(`The instruction at byte ${at} needs a class, but its mark has nothing after it.`);
+        stack.push(reduce('obj', items[0], pkTuple(items.slice(1))));
+        break;
+      }
+      case 0x62: { // BUILD
+        const state = pop(), obj = peek();
+        if (!obj || !['call', 'persid', 'ext'].includes(obj.__py)) fail(`The instruction at byte ${at} sets the state of ${pkA(obj)}, which Python can’t do.`);
+        if (obj.state === undefined) obj.state = state;
+        else (obj.moreStates || (obj.moreStates = [])).push(state);
+        break;
+      }
+      case 0x82: stack.push({ __py: 'ext', code: take(1)[0], state: undefined, items: [], entries: [] }); break; // EXT1
+      case 0x83: stack.push({ __py: 'ext', code: (need(2), dv.getUint16(p, true)), state: undefined, items: [], entries: [] }); p += 2; break; // EXT2
+      case 0x84: stack.push({ __py: 'ext', code: (need(4), dv.getInt32(p, true)), state: undefined, items: [], entries: [] }); p += 4; break; // EXT4
+      case 0x50: stack.push({ __py: 'persid', id: ascii(line()), state: undefined, items: [], entries: [] }); break; // PERSID
+      case 0x51: stack.push({ __py: 'persid', id: pop(), state: undefined, items: [], entries: [] }); break; // BINPERSID
+      default:
+        fail(`Byte ${at} holds ${op.toString(16).padStart(2, '0')}, which isn’t an instruction.`);
+    }
+  }
+}
+
+/* ---------- Python's repr ---------- */
+
+const PK_NOPRINT = /[\p{Cc}\p{Cf}\p{Cs}\p{Co}\p{Cn}\p{Zl}\p{Zp}\p{Zs}]/u;
+
+/* repr of a str, choosing quotes and escapes the way Python does. The text is built in pieces,
+   joined once, so a long value doesn't take far more memory than its own length. */
+function pyStr(s) {
+  const q = s.includes("'") && !s.includes('"') ? '"' : "'";
+  const parts = [q];
+  let out = '';
+  for (const ch of s) {
+    const c = ch.codePointAt(0);
+    if (ch === q || ch === '\\') out += '\\' + ch;
+    else if (ch === '\t') out += '\\t';
+    else if (ch === '\n') out += '\\n';
+    else if (ch === '\r') out += '\\r';
+    else if (c < 0x20 || c === 0x7f) out += '\\x' + c.toString(16).padStart(2, '0');
+    else if (c < 0x7f) out += ch;
+    else if (!PK_NOPRINT.test(ch)) out += ch;
+    else if (c <= 0xff) out += '\\x' + c.toString(16).padStart(2, '0');
+    else if (c <= 0xffff) out += '\\u' + c.toString(16).padStart(4, '0');
+    else out += '\\U' + c.toString(16).padStart(8, '0');
+    if (out.length >= 4096) { parts.push(out); out = ''; }
+  }
+  parts.push(out, q);
+  return parts.join('');
+}
+
+/* repr of bytes, from a table of what each byte value is written as. */
+let PY_BYTE = null;
+function pyBytes(b) {
+  if (!PY_BYTE) {
+    PY_BYTE = [];
+    for (let c = 0; c < 256; c++) PY_BYTE.push(c === 0x5c ? '\\\\' : c === 9 ? '\\t' : c === 10 ? '\\n' : c === 13 ? '\\r' : c < 0x20 || c >= 0x7f ? '\\x' + c.toString(16).padStart(2, '0') : String.fromCharCode(c));
+  }
+  const q = b.includes(0x27) && !b.includes(0x22) ? '"' : "'", qc = q.charCodeAt(0);
+  const parts = ['b' + q], run = [];
+  for (let i = 0; i < b.length; i++) {
+    const c = b[i];
+    run.push(c === qc ? '\\' + q : PY_BYTE[c]);
+    if (run.length >= 4096) { parts.push(run.join('')); run.length = 0; }
+  }
+  parts.push(run.join(''), q);
+  return parts.join('');
+}
+
+/* repr of a float: the shortest digits that read back the same, in Python's layout. */
+function pyFloat(x) {
+  if (Number.isNaN(x)) return 'nan';
+  if (x === Infinity) return 'inf';
+  if (x === -Infinity) return '-inf';
+  if (x === 0) return Object.is(x, -0) ? '-0.0' : '0.0';
+  const m = /^(-?)(\d)(?:\.(\d+))?e([+-]\d+)$/.exec(x.toExponential());
+  const sign = m[1], digits = m[2] + (m[3] || ''), exp = Number(m[4]), dp = exp + 1;
+  if (dp > -4 && dp <= 16) {
+    if (dp <= 0) return sign + '0.' + '0'.repeat(-dp) + digits;
+    if (dp >= digits.length) return sign + digits + '0'.repeat(dp - digits.length) + '.0';
+    return sign + digits.slice(0, dp) + '.' + digits.slice(dp);
+  }
+  return sign + digits[0] + (digits.length > 1 ? '.' + digits.slice(1) : '') + 'e' + (exp < 0 ? '-' : '+') + String(Math.abs(exp)).padStart(2, '0');
+}
+
+/* Python-style text for a value from pickleLoad. Plain data reads exactly as Python's repr;
+   names read as module.name and calls as name(arguments), followed by what was done to the
+   result (.__setstate__(...), .extend([...]), .update({...})). With {indent: true}, large
+   structures are laid out over several lines the way Python's pprint does (in file order). */
+function pyRepr(v, opts = {}) {
+  const busy = new Set(); // containers being written out, to catch ones that contain themselves
+  const WIDTH = 80;
+  let work = 0, depth = 0;
+  // How much text it writes, at most: in one value, and made in all. A value met a second time
+  // (shared in the pickle, or met again by the layout below) is kept once written, unless it holds
+  // a container that contains itself, whose text depends on where it is met; so sharing doesn't
+  // make the work grow.
+  const MAX_ONE = 16e6, MAX_ALL = 64e6;
+  let made = 0, loops = 0;
+  const done = new Map(), met = new Set();
+  const tooLarge = () => { throw new Error('The value is too large to write out here.'); };
+  const joined = (list, f, sep) => { // the texts of a list's items, joined, giving up as soon as they are too long
+    const parts = []; let len = 0;
+    for (let i = 0; i < list.length; i++) { const t = f(list[i]); len += t.length + (i ? sep.length : 0); if (len > MAX_ONE) tooLarge(); parts.push(t); }
+    return parts.join(sep);
+  };
+  const flat = (v) => {
+    if (++work > 3e6) tooLarge();
+    const obj = v !== null && typeof v === 'object';
+    if (obj && done.has(v)) return done.get(v);
+    const before = loops;
+    const r = flat1(v);
+    if (r.length > MAX_ONE || (made += r.length) > MAX_ALL) tooLarge();
+    if (obj && loops === before) { if (met.has(v)) done.set(v, r); else met.add(v); }
+    return r;
+  };
+  const flat1 = (v) => {
+    if (v === null || v === undefined) return 'None';
+    if (v === true) return 'True';
+    if (v === false) return 'False';
+    if (typeof v === 'number') return Number.isInteger(v) && !Object.is(v, -0) ? String(v) : pyFloat(v);
+    if (typeof v === 'bigint') return v.toString();
+    if (typeof v === 'string') return pyStr(v);
+    if (v instanceof Uint8Array) return pyBytes(v);
+    if (typeof v !== 'object') return String(v);
+    if (v.__py === 'float') return pyFloat(v.v);
+    if (v.__py === 'bytes') return pyBytes(v.v);
+    if (v.__py === 'bytearray') return 'bytearray(' + pyBytes(v.v) + ')';
+    if (v.__py === 'global') return v.module + '.' + v.name;
+    if (busy.has(v)) { loops++; return Array.isArray(v) ? (v._tuple ? '(...)' : '[...]') : v.__py === 'dict' ? '{...}' : v.__py === 'set' || v.__py === 'frozenset' ? v.__py + '(...)' : '...'; }
+    if (++depth > 900) throw new Error('The value is nested too deeply to write out here (more than 900 levels).');
+    busy.add(v);
+    try {
+      if (Array.isArray(v)) {
+        const inner = joined(v, flat, ', ');
+        return v._tuple ? '(' + inner + (v.length === 1 ? ',)' : ')') : '[' + inner + ']';
+      }
+      if (v.__py === 'dict') return '{' + joined(v.entries, ([k, x]) => flat(k) + ': ' + flat(x), ', ') + '}';
+      if (v.__py === 'set' || v.__py === 'frozenset') {
+        if (!v.items.length) return v.__py + '()';
+        const inner = '{' + joined(v.items, flat, ', ') + '}';
+        return v.__py === 'set' ? inner : 'frozenset(' + inner + ')';
+      }
+      return joined(callHead(v), (part) => (typeof part === 'string' ? part : part.pre + joined(part.items, (it) => (it.k ? it.k : '') + flat(it.v), ', ') + part.post), '');
+    } finally { busy.delete(v); depth--; }
+  };
+  // a call, persistent id or extension node as a list of pieces: plain strings, and argument
+  // lists { pre, items: [{k, v}], post } that can be laid out over lines
+  const callHead = (v) => {
+    const parts = [];
+    if (v.__py === 'persid') parts.push({ pre: 'persistent_load(', items: [{ v: v.id }], post: ')' });
+    else if (v.__py === 'ext') parts.push({ pre: 'extension(', items: [{ v: v.code }], post: ')' });
+    else {
+      const items = (Array.isArray(v.args) ? v.args : [v.args]).map((x) => ({ v: x }));
+      if (v.kwargs) {
+        if (v.kwargs.__py === 'dict' && v.kwargs.entries.every(([k]) => typeof k === 'string' && /^[\p{L}_][\p{L}\p{N}_]*$/u.test(k))) {
+          for (const [k, x] of v.kwargs.entries) items.push({ k: k + '=', v: x });
+        } else items.push({ k: '**', v: v.kwargs });
+      }
+      parts.push(flat(v.func), { pre: '(', items, post: ')' });
+    }
+    for (const s of v.state !== undefined ? [v.state, ...(v.moreStates || [])] : []) parts.push({ pre: '.__setstate__(', items: [{ v: s }], post: ')' });
+    if (v.items && v.items.length) parts.push({ pre: '.extend(', items: [{ v: v.items }], post: ')' });
+    if (v.entries && v.entries.length) { const d = pkDict(); d.entries.push(...v.entries); parts.push({ pre: '.update(', items: [{ v: d }], post: ')' }); }
+    return parts;
+  };
+  if (!opts.indent) return flat(v);
+
+  // the pprint layout: a value that fits in the room left stays on one line; otherwise its
+  // items go one per line, lined up under the first
+  let out = '';
+  const col = () => out.length - out.lastIndexOf('\n') - 1;
+  const items = (list, indent, allowance, fmtItem) => {
+    indent += 1;
+    list.forEach((it, i) => {
+      if (i) out += ',\n' + ' '.repeat(indent);
+      fmtItem(it, indent, i === list.length - 1 ? allowance : 1);
+    });
+  };
+  const fmt = (v, indent, allowance) => {
+    const rep = flat(v);
+    const container = v && typeof v === 'object' && !busy.has(v) && (Array.isArray(v) || ['dict', 'set', 'frozenset', 'call', 'persid', 'ext'].includes(v.__py));
+    if (rep.length <= WIDTH - indent - allowance || !container) { out += rep; if (out.length > MAX_ONE) tooLarge(); return; }
+    busy.add(v);
+    if (Array.isArray(v)) {
+      const end = v._tuple ? (v.length === 1 ? ',)' : ')') : ']';
+      out += v._tuple ? '(' : '[';
+      items(v, indent, allowance + end.length, (x, ind, al) => fmt(x, ind, al));
+      out += end;
+    } else if (v.__py === 'dict') {
+      out += '{';
+      items(v.entries, indent, allowance + 1, ([k, x], ind, al) => { const kr = flat(k); out += kr + ': '; fmt(x, ind + kr.length + 2, al); });
+      out += '}';
+    } else if (v.__py === 'set' || v.__py === 'frozenset') {
+      const set = v.__py === 'set';
+      out += set ? '{' : 'frozenset({';
+      items(v.items, set ? indent : indent + 10, allowance + (set ? 1 : 2), (x, ind, al) => fmt(x, ind, al));
+      out += set ? '}' : '})';
+    } else {
+      const parts = callHead(v);
+      parts.forEach((part, pi) => {
+        const last = pi === parts.length - 1;
+        if (typeof part === 'string') { out += part; return; }
+        out += part.pre;
+        items(part.items, col() - 1, (last ? allowance : 0) + part.post.length, (it, ind, al) => {
+          if (it.k) out += it.k;
+          fmt(it.v, ind + (it.k ? it.k.length : 0), al);
+        });
+        out += part.post;
+      });
+    }
+    busy.delete(v);
+  };
+  fmt(v, 0, 0);
+  return out;
+}
+
+/* ====================================================================================
+   Comma-separated tables
+   ==================================================================================== */
+
+/* Split text into rows of fields (RFC 4180), the way Python's csv reader does with its default
+   settings: quoted fields may hold the delimiter, doubled quotes and line breaks; a line break
+   is LF, CRLF or CR; an empty line gives an empty row; text after a closing quote joins the field. */
+function csvParse(text, delim = ',') {
+  const SR = 0, SF = 1, IF = 2, IQ = 3, QQ = 4, EC = 5;
+  const rows = [];
+  let fields = [], field = '', state = SR;
+  const save = () => { fields.push(field); field = ''; };
+  const step = (c) => { // c is one character, or null for the end of a line
+    const nl = c === '\n' || c === '\r' || c === null;
+    switch (state) {
+      case SR:
+        if (c === null) return;
+        if (c === '\n' || c === '\r') { state = EC; return; }
+        state = SF;
+      // falls through
+      case SF:
+        if (nl) { save(); state = c === null ? SR : EC; }
+        else if (c === '"') state = IQ;
+        else if (c === delim) save();
+        else { field += c; state = IF; }
+        return;
+      case IF:
+        if (nl) { save(); state = c === null ? SR : EC; }
+        else if (c === delim) { save(); state = SF; }
+        else field += c;
+        return;
+      case IQ:
+        if (c === null) return;
+        if (c === '"') state = QQ; else field += c;
+        return;
+      case QQ:
+        if (c === '"') { field += c; state = IQ; }
+        else if (c === delim) { save(); state = SF; }
+        else if (nl) { save(); state = c === null ? SR : EC; }
+        else { field += c; state = IF; }
+        return;
+      case EC:
+        if (c === null) state = SR;
+        return;
+    }
+  };
+  const endLine = () => { step(null); if (state === SR) { rows.push(fields); fields = []; } };
+  const n = text.length;
+  for (let i = 0; i < n; i++) {
+    const c = text[i];
+    step(c);
+    if (c === '\n' || (c === '\r' && text[i + 1] !== '\n')) endLine();
+  }
+  if (n && text[n - 1] !== '\n' && text[n - 1] !== '\r') endLine();
+  if (state !== SR && (field.length || state === IQ)) { save(); rows.push(fields); }
+  return rows;
+}
+
+/* ====================================================================================
+   Formatted text (a safe subset of CommonMark and GitHub's tables)
+   ==================================================================================== */
+
+const MD_ENT = {
+  amp: '&', lt: '<', gt: '>', quot: '"', apos: "'", nbsp: ' ', copy: '©', reg: '®', trade: '™', hellip: '…', mdash: '—', ndash: '–',
+  lsquo: '‘', rsquo: '’', ldquo: '“', rdquo: '”', laquo: '«', raquo: '»', deg: '°', plusmn: '±', times: '×', divide: '÷', middot: '·',
+  bull: '•', para: '¶', sect: '§', micro: 'µ', frac12: '½', frac14: '¼', frac34: '¾', sup1: '¹', sup2: '²', sup3: '³', euro: '€', pound: '£',
+  yen: '¥', cent: '¢', shy: '­', larr: '←', rarr: '→', uarr: '↑', darr: '↓', harr: '↔', le: '≤', ge: '≥', ne: '≠', asymp: '≈',
+  infin: '∞', minus: '−', prime: '′', Prime: '″', iexcl: '¡', iquest: '¿', ordm: 'º', ordf: 'ª', not: '¬', acute: '´', uml: '¨', cedil: '¸',
+  macr: '¯', brvbar: '¦', curren: '¤', ensp: ' ', emsp: ' ', thinsp: ' ', zwnj: '‌', zwj: '‍', dagger: '†', Dagger: '‡',
+  permil: '‰', alpha: 'α', beta: 'β', gamma: 'γ', delta: 'δ', epsilon: 'ε', theta: 'θ', lambda: 'λ', mu: 'μ', pi: 'π', sigma: 'σ', tau: 'τ',
+  phi: 'φ', omega: 'ω', Delta: 'Δ', Sigma: 'Σ', Omega: 'Ω', sum: '∑', prod: '∏', radic: '√', part: '∂', int: '∫', there4: '∴', sim: '∼',
+  equiv: '≡', sdot: '⋅', lowast: '∗', check: '✓', cross: '✗', star: '☆', starf: '★', hearts: '♥', spades: '♠', clubs: '♣', diams: '♦',
+  Agrave: 'À', Aacute: 'Á', Auml: 'Ä', Eacute: 'É', Ouml: 'Ö', Uuml: 'Ü', szlig: 'ß', agrave: 'à', aacute: 'á', acirc: 'â', auml: 'ä',
+  ccedil: 'ç', egrave: 'è', eacute: 'é', ecirc: 'ê', euml: 'ë', iacute: 'í', iuml: 'ï', ntilde: 'ñ', oacute: 'ó', ocirc: 'ô', ouml: 'ö',
+  uacute: 'ú', uuml: 'ü', aring: 'å', aelig: 'æ', oslash: 'ø', Aring: 'Å', AElig: 'Æ', Oslash: 'Ø', Ntilde: 'Ñ', Ccedil: 'Ç',
+};
+const MD_ENT_RE = /^&(?:#[xX]([0-9a-fA-F]{1,6})|#([0-9]{1,7})|([A-Za-z][A-Za-z0-9]{1,31}));/;
+const MD_PUNCT = /[!-\/:-@\[-`{-~]/;
+const MD_UPUNCT = /[\p{P}\p{S}]/u;
+const MD_TAG = '[A-Za-z][A-Za-z0-9-]*';
+const MD_ATTR = '(?:\\s+[A-Za-z_:][A-Za-z0-9_.:-]*(?:\\s*=\\s*(?:[^\\s"\'=<>`]+|\'[^\']*\'|"[^"]*"))?)';
+const MD_RAWHTML = new RegExp('^(?:<' + MD_TAG + MD_ATTR + '*\\s*/?>|</' + MD_TAG + '\\s*>|<!-[-](?:>|->|[\\s\\S]*?-->)|<\\?[\\s\\S]*?\\?>|<![A-Za-z][^>]*>|<!\\[CDATA\\[[\\s\\S]*?\\]\\]>)');
+const MD_BLOCKTAGS = 'address|article|aside|base|basefont|blockquote|body|caption|center|col|colgroup|dd|details|dialog|dir|div|dl|dt|fieldset|figcaption|figure|footer|form|frame|frameset|h1|h2|h3|h4|h5|h6|head|header|hr|html|iframe|legend|li|link|main|menu|menuitem|nav|noframes|ol|optgroup|option|p|param|search|section|summary|table|tbody|td|tfoot|th|thead|title|tr|track|ul';
+
+/* Decode one character reference at the start of s: [text, length], or null. */
+function mdEntity(s) {
+  const m = MD_ENT_RE.exec(s);
+  if (!m) return null;
+  if (m[3]) return Object.prototype.hasOwnProperty.call(MD_ENT, m[3]) ? [MD_ENT[m[3]], m[0].length] : null;
+  let cp = m[1] ? parseInt(m[1], 16) : parseInt(m[2], 10);
+  if (cp === 0 || cp > 0x10ffff || (cp >= 0xd800 && cp <= 0xdfff)) cp = 0xfffd;
+  return [String.fromCodePoint(cp), m[0].length];
+}
+
+/* Undo backslash escapes and character references in a link address or title. */
+function mdUnescape(s) {
+  let out = '';
+  for (let i = 0; i < s.length;) {
+    if (s[i] === '\\' && MD_PUNCT.test(s[i + 1] || '')) { out += s[i + 1]; i += 2; continue; }
+    if (s[i] === '&') { const e = mdEntity(s.slice(i)); if (e) { out += e[0]; i += e[1]; continue; } }
+    out += s[i++];
+  }
+  return out;
+}
+
+/* A link label, folded so that labels match the way CommonMark matches them. */
+function mdLabel(s) { return s.trim().replace(/\s+/g, ' ').toLowerCase().toUpperCase(); }
+
+/* Read a link address and optional title at s[i...] (after the opening parenthesis, or after a
+   reference label's colon). Gives { dest, title, end } or null. */
+function mdDestTitle(s, i, closer, noTitle) {
+  const ws = () => { while (i < s.length && /[ \t\n]/.test(s[i])) i++; };
+  ws();
+  let dest = '';
+  if (s[i] === '<') {
+    let j = i + 1;
+    for (; j < s.length && s[j] !== '>'; j++) { if (s[j] === '\n' || s[j] === '<') return null; if (s[j] === '\\') j++; }
+    if (s[j] !== '>') return null;
+    dest = s.slice(i + 1, j); i = j + 1;
+  } else {
+    let depth = 0, j = i;
+    for (; j < s.length; j++) {
+      const c = s[j];
+      if (c === '\\' && MD_PUNCT.test(s[j + 1] || '')) { j++; continue; }
+      if (c === '(') { if (++depth > 32) return null; } // deeper nesting isn't read as an address, as in other CommonMark readers
+      else if (c === ')') { if (!depth) break; depth--; }
+      else if (/[\s\x00-\x1f\x7f]/.test(c)) break;
+    }
+    if (depth) return null;
+    if (j === i && closer !== ')') return null;
+    dest = s.slice(i, j); i = j;
+  }
+  const beforeTitle = i;
+  ws();
+  let title = null;
+  const q = s[i];
+  if (!noTitle && i > beforeTitle && (q === '"' || q === "'" || q === '(')) {
+    const close = q === '(' ? ')' : q;
+    let j = i + 1;
+    for (; j < s.length && s[j] !== close; j++) { if (s[j] === '\\') j++; else if (q === '(' && s[j] === '(') return null; }
+    if (s[j] !== close) return null;
+    title = s.slice(i + 1, j); i = j + 1;
+  } else i = beforeTitle;
+  while (i < s.length && /[ \t]/.test(s[i])) i++;
+  if (closer === ')') { if (s[i] === '\n') { i++; while (/[ \t]/.test(s[i] || '')) i++; } if (s[i] !== ')') return null; i++; }
+  return { dest: mdUnescape(dest), title: title == null ? null : mdUnescape(title), end: i };
+}
+
+/* Read a link label in brackets at s[i] === '['. Gives { label, end } or null. */
+function mdBracketLabel(s, i) {
+  if (s[i] !== '[') return null;
+  let j = i + 1;
+  for (; j < s.length && s[j] !== ']'; j++) { if (s[j] === '[') return null; if (s[j] === '\\') j++; }
+  if (j >= s.length || j - i - 1 > 999) return null;
+  return { label: s.slice(i + 1, j), end: j + 1 };
+}
+
+/* Parse inline content into nodes: text, code, br, soft, link, img, em, strong, del. */
+function mdInline(src, refs) {
+  const nodes = [];
+  let text = '', i = 0;
+  let dTop = null; // the delimiter runs, as a doubly linked list
+  const brackets = [];
+  const flush = () => { if (text) { nodes.push({ t: 'text', s: text }); text = ''; } };
+  const isWS = (c) => !c || /\s/.test(c);
+  const isP = (c) => !!c && MD_UPUNCT.test(c);
+  const prevChar = (k) => { if (k <= 0) return ''; const c = src.charCodeAt(k - 1); return c >= 0xdc00 && c <= 0xdfff && k >= 2 ? src.slice(k - 2, k) : src[k - 1]; };
+  const nextChar = (k) => (k < src.length ? String.fromCodePoint(src.codePointAt(k)) : '');
+  const removeDelim = (d) => {
+    if (d.prev) d.prev.next = d.next;
+    if (d.next) d.next.prev = d.prev; else dTop = d.prev;
+  };
+  // Works on a linked list of the nodes, so each match takes time only for what it wraps; the
+  // array is rebuilt from the list at the end.
+  const processEmphasis = (arr, bottom) => {
+    const openersBottom = {};
+    const cell = new Map(); // node -> its place in the list
+    let head = null, tail = null;
+    for (const v of arr) { const c = { v, prev: tail, next: null }; if (tail) tail.next = c; else head = c; tail = c; cell.set(v, c); }
+    const unlink = (c) => { if (c.prev) c.prev.next = c.next; else head = c.next; if (c.next) c.next.prev = c.prev; else tail = c.prev; };
+    let closer = dTop;
+    while (closer && closer.prev !== bottom) closer = closer.prev;
+    while (closer) {
+      if (!closer.canClose) { closer = closer.next; continue; }
+      const ch = closer.ch, key = ch + (closer.canOpen ? 1 : 0) + (closer.orig % 3);
+      let opener = closer.prev, found = false;
+      while (opener && opener !== bottom && opener !== openersBottom[key]) {
+        const odd = ch !== '~' && (closer.canOpen || opener.canClose) && closer.orig % 3 !== 0 && (opener.orig + closer.orig) % 3 === 0;
+        if (opener.ch === ch && opener.canOpen && !odd && (ch !== '~' || opener.n === closer.n)) { found = true; break; }
+        opener = opener.prev;
+      }
+      const old = closer;
+      if (found) {
+        const use = ch === '~' ? closer.n : closer.n >= 2 && opener.n >= 2 ? 2 : 1;
+        opener.n -= use; closer.n -= use;
+        opener.node.s = opener.node.s.slice(0, opener.n); closer.node.s = closer.node.s.slice(0, closer.n);
+        const a = cell.get(opener.node), b = cell.get(closer.node);
+        const kids = [];
+        for (let c = a.next; c !== b; c = c.next) kids.push(c.v);
+        const w = { v: { t: ch === '~' ? 'del' : use === 2 ? 'strong' : 'em', kids }, prev: a, next: b };
+        a.next = w; b.prev = w;
+        opener.next = closer; closer.prev = opener; // drop the runs in between
+        if (!opener.n) { unlink(a); removeDelim(opener); }
+        if (!closer.n) { const nx = closer.next; unlink(b); removeDelim(closer); closer = nx; }
+      } else {
+        closer = closer.next;
+        openersBottom[key] = old.prev;
+        if (!old.canOpen) removeDelim(old);
+      }
+    }
+    while (dTop && dTop !== bottom) removeDelim(dTop);
+    arr.length = 0;
+    for (let c = head; c; c = c.next) arr.push(c.v);
+  };
+
+  while (i < src.length) {
+    const c = src[i];
+    if (c === '\\') {
+      const nx = src[i + 1];
+      if (nx === '\n') { text = text.replace(/ +$/, ''); flush(); nodes.push({ t: 'br' }); i += 2; while (src[i] === ' ' || src[i] === '\t') i++; continue; }
+      if (nx && MD_PUNCT.test(nx)) { text += nx; i += 2; continue; }
+      text += '\\'; i++; continue;
+    }
+    if (c === '`') {
+      let j = i; while (src[j] === '`') j++;
+      const run = j - i;
+      let k = j, found = -1;
+      while (k < src.length) {
+        const s0 = src.indexOf('`', k);
+        if (s0 < 0) break;
+        let e = s0; while (src[e] === '`') e++;
+        if (e - s0 === run) { found = s0; break; }
+        k = e;
+      }
+      if (found < 0) { text += src.slice(i, j); i = j; continue; }
+      let code = src.slice(j, found).replace(/\n/g, ' ');
+      if (code.length > 2 && code[0] === ' ' && code[code.length - 1] === ' ' && /[^ ]/.test(code)) code = code.slice(1, -1);
+      flush(); nodes.push({ t: 'code', s: code }); i = found + run; continue;
+    }
+    if (c === '&') { const e = mdEntity(src.slice(i)); if (e) { text += e[0]; i += e[1]; continue; } text += c; i++; continue; }
+    if (c === '<') {
+      const rest = src.slice(i);
+      let m = /^<([A-Za-z][A-Za-z0-9+.-]{1,31}:[^\s<>\x00-\x1f]*)>/.exec(rest);
+      if (m) { flush(); nodes.push({ t: 'link', href: m[1], auto: true, kids: [{ t: 'text', s: m[1] }] }); i += m[0].length; continue; }
+      m = /^<([a-zA-Z0-9.!#$%&'*+\/=?^_`{|}~-]+@[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?(?:\.[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?)*)>/.exec(rest);
+      if (m) { flush(); nodes.push({ t: 'link', href: 'mailto:' + m[1], auto: true, kids: [{ t: 'text', s: m[1] }] }); i += m[0].length; continue; }
+      m = MD_RAWHTML.exec(rest);
+      if (m) { text += m[0]; i += m[0].length; continue; } // markup in the source is shown as text
+      text += c; i++; continue;
+    }
+    if (c === '*' || c === '_' || c === '~') {
+      let j = i; while (src[j] === c) j++;
+      const run = j - i;
+      if (c === '~' && run > 2) { text += src.slice(i, j); i = j; continue; }
+      const before = prevChar(i), after = nextChar(j);
+      const left = !isWS(after) && (!isP(after) || isWS(before) || isP(before));
+      const right = !isWS(before) && (!isP(before) || isWS(after) || isP(after));
+      let canOpen = left, canClose = right;
+      if (c === '_') { canOpen = left && (!right || isP(before)); canClose = right && (!left || isP(after)); }
+      flush();
+      const node = { t: 'text', s: src.slice(i, j) };
+      nodes.push(node);
+      const d = { ch: c, n: run, orig: run, canOpen, canClose, node, prev: dTop, next: null };
+      if (dTop) dTop.next = d;
+      dTop = d;
+      i = j; continue;
+    }
+    if (c === '[' || (c === '!' && src[i + 1] === '[')) {
+      flush();
+      const image = c === '!';
+      const node = { t: 'text', s: image ? '![' : '[' };
+      nodes.push(node);
+      brackets.push({ node, image, active: true, bottom: dTop, start: i + (image ? 2 : 1) });
+      i += image ? 2 : 1; continue;
+    }
+    if (c === ']') {
+      const op = brackets[brackets.length - 1];
+      if (!op) { text += c; i++; continue; }
+      if (!op.active) { brackets.pop(); text += c; i++; continue; }
+      let link = null, end = i + 1;
+      if (src[i + 1] === '(') {
+        const r = mdDestTitle(src, i + 2, ')');
+        if (r) { link = { href: r.dest, title: r.title }; end = r.end; }
+      }
+      if (!link) {
+        const lab = mdBracketLabel(src, i + 1);
+        let label = src.slice(op.start, i);
+        if (lab) { if (lab.label.trim()) label = lab.label; }
+        const ref = refs.get(mdLabel(label));
+        if (ref && label.trim()) { link = { href: ref.dest, title: ref.title }; end = lab ? lab.end : i + 1; }
+      }
+      if (!link) { brackets.pop(); text += c; i++; continue; }
+      flush();
+      const a = nodes.lastIndexOf(op.node); // near the end: what follows it is what the link holds
+      const kids = nodes.splice(a + 1);
+      nodes.splice(a, 1);
+      processEmphasis(kids, op.bottom);
+      nodes.push({ t: op.image ? 'img' : 'link', href: link.href, title: link.title, kids });
+      brackets.pop();
+      if (!op.image) { // no links inside links; the ones further down were already made inactive by an earlier link, if one is
+        for (let k = brackets.length - 1; k >= 0; k--) { const b = brackets[k]; if (b.image) continue; if (!b.active) break; b.active = false; }
+      }
+      i = end; continue;
+    }
+    if (c === '\n') {
+      const m = / +$/.exec(text);
+      const hard = m && m[0].length >= 2;
+      if (m) text = text.slice(0, -m[0].length);
+      flush(); nodes.push({ t: hard ? 'br' : 'soft' });
+      i++; while (src[i] === ' ' || src[i] === '\t') i++;
+      continue;
+    }
+    text += c; i++;
+  }
+  flush();
+  processEmphasis(nodes, null);
+  return nodes;
+}
+
+/* The plain text of inline nodes, for an image's description. */
+function mdPlain(nodes) {
+  return nodes.map((n) => (n.t === 'text' || n.t === 'code' ? n.s : n.t === 'soft' || n.t === 'br' ? ' ' : n.kids ? mdPlain(n.kids) : '')).join('');
+}
+
+/* Inline nodes to HTML. Only http and https links are clickable; others show their address as
+   text. Images are never loaded: their description and address are shown as text. */
+function mdInlineHtml(nodes) {
+  let h = '';
+  for (const n of nodes) {
+    switch (n.t) {
+      case 'text': h += fmtEsc(n.s); break;
+      case 'code': h += '<code>' + fmtEsc(n.s) + '</code>'; break;
+      case 'br': h += '<br>\n'; break;
+      case 'soft': h += '\n'; break;
+      case 'em': case 'strong': case 'del': h += `<${n.t}>` + mdInlineHtml(n.kids) + `</${n.t}>`; break;
+      case 'link': {
+        const inner = mdInlineHtml(n.kids);
+        const href = n.href.trim();
+        if (/^https?:\/\/[^\s]/i.test(href)) {
+          const safe = href.replace(/[\x00-\x20\x7f"<>\\^`{|}]/g, (ch) => '%' + ch.charCodeAt(0).toString(16).toUpperCase().padStart(2, '0'));
+          h += `<a href="${fmtEsc(safe)}" rel="noopener noreferrer" target="_blank"${n.title ? ` title="${fmtEsc(n.title)}"` : ''}>${inner}</a>`;
+        } else if (n.auto || !href) h += inner;
+        else h += inner + ' <span class="md-addr">(' + fmtEsc(href) + ')</span>';
+        break;
+      }
+      case 'img':
+        h += '<span class="md-img"' + (n.title ? ` title="${fmtEsc(n.title)}"` : '') + '>[Image: ' + fmtEsc(mdPlain(n.kids)) + ']' + (n.href ? ' (' + fmtEsc(n.href) + ')' : '') + '</span>';
+        break;
+    }
+  }
+  return h;
+}
+
+/* Split a table row into cells at pipes that aren't escaped. */
+function mdCells(line) {
+  let s = line.trim();
+  if (s.startsWith('|')) s = s.slice(1);
+  if (s.endsWith('|') && !s.endsWith('\\|')) s = s.slice(0, -1);
+  const cells = [];
+  let cur = '';
+  for (let i = 0; i < s.length; i++) {
+    if (s[i] === '\\' && s[i + 1] === '|') { cur += '|'; i++; continue; }
+    if (s[i] === '|') { cells.push(cur.trim()); cur = ''; continue; }
+    cur += s[i];
+  }
+  cells.push(cur.trim());
+  return cells;
+}
+
+/* The block parser's line tests. */
+const MD_HR = /^ {0,3}(?:(?:\*[ \t]*){3,}|(?:-[ \t]*){3,}|(?:_[ \t]*){3,})$/;
+const MD_ATX = /^ {0,3}(#{1,6})(?=[ \t]|$)(.*)$/;
+const MD_FENCE = /^( {0,3})(`{3,}|~{3,})(.*)$/;
+const MD_QUOTE = /^ {0,3}>/;
+const MD_ITEM = /^( {0,3})([-+*]|\d{1,9}[.)])(?=[ \t]|$)/;
+const MD_DELIMROW = /^ {0,3}\|?[ \t]*:?-+:?[ \t]*(?:\|[ \t]*:?-+:?[ \t]*)*\|?[ \t]*$/;
+const MD_HTML1 = /^ {0,3}<(?:scr[i]pt|pre|style|textarea)(?:[\s>]|$)/i;
+const MD_HTML6 = new RegExp('^ {0,3}</?(?:' + MD_BLOCKTAGS + ')(?:[\\s/>]|$)', 'i');
+const MD_HTML7 = new RegExp('^ {0,3}(?:<' + MD_TAG + MD_ATTR + '*\\s*/?>|</' + MD_TAG + '\\s*>)\\s*$');
+
+/* Expand tabs in a line's leading space to the next multiple of four columns. */
+function mdTabs(line) {
+  const m = /^[ \t]*/.exec(line)[0];
+  if (!m.includes('\t')) return line;
+  let col = 0;
+  for (const c of m) col = c === '\t' ? col + 4 - (col % 4) : col + 1;
+  return ' '.repeat(col) + line.slice(m.length);
+}
+function mdIndent(line) { return /^ */.exec(line)[0].length; }
+function mdBlank(line) { return /^[ \t]*$/.test(line); }
+
+/* Which kind of HTML block starts on this line (1 to 7), or 0. */
+function mdHtmlStart(line) {
+  if (MD_HTML1.test(line)) return 1;
+  if (/^ {0,3}<!-[-]/.test(line)) return 2;
+  if (/^ {0,3}<\?/.test(line)) return 3;
+  if (/^ {0,3}<![A-Za-z]/.test(line)) return 4;
+  if (/^ {0,3}<!\[CDATA\[/.test(line)) return 5;
+  if (MD_HTML6.test(line)) return 6;
+  if (MD_HTML7.test(line)) return 7;
+  return 0;
+}
+
+/* A list item's marker on this line: { bullet, num, delim, width (where its content starts),
+   content, empty }, or null. */
+function mdItem(line) {
+  const m = MD_ITEM.exec(line);
+  if (!m) return null;
+  const ind = m[1].length, marker = m[2];
+  const empty = mdBlank(line.slice(ind + marker.length));
+  // tabs after the marker count to the next multiple of four columns
+  const rest = mdTabs(' '.repeat(ind + marker.length) + line.slice(ind + marker.length)).slice(ind + marker.length);
+  let sp = /^ */.exec(rest)[0].length; // spaces after the marker
+  if (empty) sp = 1;
+  else if (sp > 4) sp = 1; // the content is indented code: one space belongs to the marker
+  const isNum = /\d/.test(marker[0]);
+  return {
+    bullet: isNum ? null : marker, num: isNum ? parseInt(marker, 10) : null, delim: isNum ? marker.slice(-1) : null,
+    width: ind + marker.length + sp, content: empty ? '' : rest.slice(sp), empty,
+  };
+}
+
+/* Whether a line starts a block that ends a paragraph. */
+function mdInterrupts(line) {
+  const f = MD_FENCE.exec(line);
+  if (MD_ATX.test(line) || (f && !(f[2][0] === '`' && f[3].includes('`')))) return true;
+  if (MD_QUOTE.test(line) || MD_HR.test(line)) return true;
+  const h = mdHtmlStart(line);
+  if (h && h < 7) return true;
+  const it = mdItem(line);
+  if (it && !it.empty && (it.bullet || it.num === 1)) return true;
+  return false;
+}
+
+/* Take link reference definitions off the front of a paragraph's text; gives what is left. */
+function mdTakeRefs(s, refs) {
+  for (;;) {
+    const m = /^ {0,3}\[/.exec(s);
+    if (!m) return s;
+    const lab = mdBracketLabel(s, m[0].length - 1);
+    if (!lab || s[lab.end] !== ':' || !lab.label.trim()) return s;
+    const atEol = (r) => r && (r.end >= s.length || s[r.end] === '\n');
+    let r = mdDestTitle(s, lab.end + 1, null);
+    if (!atEol(r)) r = mdDestTitle(s, lab.end + 1, null, true); // a title with more after it isn't one
+    if (!atEol(r)) return s;
+    const end = r.end;
+    const key = mdLabel(lab.label);
+    if (!refs.has(key)) refs.set(key, { dest: r.dest, title: r.title });
+    s = s.slice(end + 1);
+    if (!s) return '';
+  }
+}
+
+/* Parse lines (container markers already taken off) into blocks. */
+function mdBlocks(lines, refs, depth) {
+  const blocks = [];
+  let i = 0, blankBefore = false;
+  blocks.loose = false;
+  const push = (b) => { if (blankBefore && blocks.length) blocks.loose = true; blankBefore = false; blocks.push(b); };
+  while (i < lines.length) {
+    const line = mdTabs(lines[i]);
+    if (mdBlank(line)) { blankBefore = true; i++; continue; }
+    const ind = mdIndent(line);
+    // indented code
+    if (ind >= 4) {
+      const code = [];
+      while (i < lines.length) {
+        const l = mdTabs(lines[i]);
+        if (mdBlank(l)) code.push(l.slice(4));
+        else if (mdIndent(l) >= 4) code.push(l.slice(4));
+        else break;
+        i++;
+      }
+      while (code.length && mdBlank(code[code.length - 1])) code.pop();
+      push({ t: 'code', s: code.join('\n') + '\n', info: '' });
+      continue;
+    }
+    // fenced code
+    let m = MD_FENCE.exec(line);
+    if (m && !(m[2][0] === '`' && m[3].includes('`'))) {
+      const fi = m[1].length, fence = m[2], info = mdUnescape(m[3].trim()).split(/\s+/)[0] || '';
+      const code = [];
+      i++;
+      while (i < lines.length) {
+        const l = lines[i];
+        const c = /^( {0,3})(`+|~+)[ \t]*$/.exec(l);
+        if (c && c[2][0] === fence[0] && c[2].length >= fence.length) { i++; break; }
+        let k = 0; while (k < fi && l[k] === ' ') k++;
+        code.push(l.slice(k)); i++;
+      }
+      push({ t: 'code', s: code.length ? code.join('\n') + '\n' : '', info });
+      continue;
+    }
+    // headings and rules
+    m = MD_ATX.exec(line);
+    if (m) {
+      const s = m[2].replace(/^[ \t]+/, '').replace(/(?:^|[ \t]+)#+[ \t]*$/, '').replace(/[ \t]+$/, '');
+      push({ t: 'h', level: m[1].length, s }); i++; continue;
+    }
+    if (MD_HR.test(line)) { push({ t: 'hr' }); i++; continue; }
+    // markup blocks, shown as text
+    const ht = mdHtmlStart(line);
+    if (ht) {
+      const raw = [];
+      const ends = [null, /<\/(?:scr[i]pt|pre|style|textarea)>/i, /-->/, /\?>/, />/, /\]\]>/][ht];
+      while (i < lines.length) {
+        const l = lines[i];
+        if (ht >= 6 && mdBlank(l)) break;
+        raw.push(l); i++;
+        if (ends && ends.test(l)) break;
+      }
+      push({ t: 'raw', s: raw.join('\n') });
+      continue;
+    }
+    // block quotes
+    if (MD_QUOTE.test(line)) {
+      const inner = [];
+      let lastPara = false;
+      while (i < lines.length) {
+        const l = mdTabs(lines[i]);
+        if (MD_QUOTE.test(l)) {
+          let rest = l.replace(/^ {0,3}>/, '');
+          if (rest[0] === ' ') rest = rest.slice(1);
+          inner.push(rest);
+          lastPara = !mdBlank(rest) && mdIndent(rest) < 4 && !MD_FENCE.test(rest);
+          i++;
+        } else if (lastPara && !mdBlank(l) && !mdInterrupts(l)) { inner.push(l); i++; } // a lazy continuation line
+        else break;
+      }
+      push({ t: 'quote', kids: depth > 50 ? [{ t: 'p', s: inner.join('\n') }] : mdBlocks(inner, refs, depth + 1) });
+      continue;
+    }
+    // lists
+    let it = mdItem(line);
+    if (it) {
+      const listBlankBefore = blankBefore;
+      blankBefore = false;
+      const list = { t: it.bullet ? 'ul' : 'ol', start: it.num, items: [], loose: false };
+      const sameList = (x) => x && (it.bullet ? x.bullet === it.bullet : x.delim === it.delim);
+      for (;;) {
+        const W = it.width;
+        const content = [it.content];
+        i++;
+        let lastPara = !it.empty, blanks = 0;
+        if (!(it.empty && i < lines.length && mdBlank(lines[i]))) { // an empty item followed by a blank line ends there
+          while (i < lines.length) {
+            const l = mdTabs(lines[i]);
+            if (mdBlank(l)) { content.push(''); blanks++; i++; continue; }
+            if (mdIndent(l) >= W) { content.push(l.slice(W)); lastPara = true; blanks = 0; i++; continue; }
+            if (!blanks && lastPara && !mdInterrupts(l) && !(mdItem(l))) { content.push(l); i++; continue; } // lazy continuation
+            break;
+          }
+        }
+        let trailing = 0;
+        while (content.length > 1 && content[content.length - 1] === '') { content.pop(); trailing++; }
+        while (i < lines.length && mdBlank(lines[i])) { i++; trailing++; } // blank lines after an empty item
+        const kids = depth > 50 ? [{ t: 'p', s: content.join('\n') }] : mdBlocks(content, refs, depth + 1);
+        if (kids.loose) list.loose = true;
+        list.items.push(kids);
+        const nx = i < lines.length ? mdItem(mdTabs(lines[i])) : null;
+        if (nx && sameList(nx) && !MD_HR.test(mdTabs(lines[i]))) {
+          if (trailing) list.loose = true;
+          it = nx; continue;
+        }
+        if (trailing) blankBefore = true;
+        break;
+      }
+      const after = blankBefore; // blank lines after the list's last item
+      blankBefore = listBlankBefore;
+      push(list);
+      blankBefore = after;
+      continue;
+    }
+    // tables
+    if (i + 1 < lines.length && line.includes('|') && MD_DELIMROW.test(lines[i + 1])) {
+      const head = mdCells(line), aligns = mdCells(lines[i + 1]).map((c) => (/^:-+:$/.test(c) ? 'center' : /^-+:$/.test(c) ? 'right' : /^:-+$/.test(c) ? 'left' : ''));
+      if (head.length === aligns.length) {
+        const rows = [];
+        i += 2;
+        while (i < lines.length && !mdBlank(lines[i]) && !mdInterrupts(mdTabs(lines[i]))) { rows.push(mdCells(lines[i])); i++; }
+        push({ t: 'table', head, aligns, rows });
+        continue;
+      }
+    }
+    // paragraphs, and setext headings
+    const para = [line.replace(/^[ \t]+/, '')];
+    i++;
+    let setext = 0;
+    while (i < lines.length) {
+      const l = mdTabs(lines[i]);
+      if (mdBlank(l)) break;
+      if (mdIndent(l) < 4 && /^ {0,3}(=+|-+)[ \t]*$/.test(l)) { setext = l.trim()[0] === '=' ? 1 : 2; i++; break; }
+      if (mdInterrupts(l)) break;
+      if (i + 1 < lines.length && l.includes('|') && MD_DELIMROW.test(lines[i + 1]) && mdCells(l).length === mdCells(lines[i + 1]).length) break;
+      para.push(l.replace(/^[ \t]+/, '')); i++;
+    }
+    let s = mdTakeRefs(para.join('\n'), refs);
+    if (!s.trim()) { if (setext) push({ t: 'p', s: setext === 1 ? '=' : '-' }); continue; } // only definitions
+    s = s.replace(/[ \t]+$/, '');
+    push(setext ? { t: 'h', level: setext, s } : { t: 'p', s });
+  }
+  return blocks;
+}
+
+/* Blocks to HTML; a tight list's paragraphs go without <p>. */
+function mdBlocksHtml(blocks, refs, tight) {
+  let h = '';
+  for (const b of blocks) {
+    switch (b.t) {
+      case 'p': h += tight ? mdInlineHtml(mdInline(b.s, refs)) + '\n' : '<p>' + mdInlineHtml(mdInline(b.s, refs)) + '</p>\n'; break;
+      case 'h': h += `<h${b.level}>` + mdInlineHtml(mdInline(b.s, refs)) + `</h${b.level}>\n`; break;
+      case 'hr': h += '<hr>\n'; break;
+      case 'code': h += '<pre><code' + (b.info ? ` class="language-${fmtEsc(b.info)}"` : '') + '>' + fmtEsc(b.s) + '</code></pre>\n'; break;
+      case 'raw': h += '<pre class="md-raw">' + fmtEsc(b.s) + '</pre>\n'; break;
+      case 'quote': h += '<blockquote>\n' + mdBlocksHtml(b.kids, refs, false) + '</blockquote>\n'; break;
+      case 'ul': case 'ol':
+        h += b.t === 'ol' && b.start !== 1 ? `<ol start="${b.start}">\n` : `<${b.t}>\n`;
+        for (const kids of b.items) { // a block (not a tight paragraph) at either end goes on its own line
+          let inner = mdBlocksHtml(kids, refs, !b.loose);
+          const blockAt = (k) => kids.length && !(!b.loose && kids[k].t === 'p');
+          if (!blockAt(kids.length - 1)) inner = inner.replace(/\n$/, '');
+          h += '<li>' + (blockAt(0) ? '\n' : '') + inner + '</li>\n';
+        }
+        h += `</${b.t}>\n`;
+        break;
+      case 'table': {
+        const al = (k) => (b.aligns[k] ? ` style="text-align:${b.aligns[k]}"` : '');
+        h += '<div class="md-table"><table>\n<thead>\n<tr>' + b.head.map((c, k) => `<th${al(k)}>` + mdInlineHtml(mdInline(c, refs)) + '</th>').join('') + '</tr>\n</thead>\n';
+        if (b.rows.length) {
+          h += '<tbody>\n';
+          for (const r of b.rows) h += '<tr>' + b.head.map((_, k) => `<td${al(k)}>` + mdInlineHtml(mdInline(r[k] ?? '', refs)) + '</td>').join('') + '</tr>\n';
+          h += '</tbody>\n';
+        }
+        h += '</table></div>\n';
+        break;
+      }
+    }
+  }
+  return h;
+}
+
+/* Formatted text to safe HTML. Markup in the source is shown as text, links are clickable only
+   for http and https, and images are never loaded. */
+function mdRender(text) {
+  const lines = String(text).replace(/\r\n?/g, '\n').replace(/\0/g, '�').split('\n');
+  if (lines.length && lines[lines.length - 1] === '') lines.pop();
+  const refs = new Map();
+  const blocks = mdBlocks(lines, refs, 0);
+  return mdBlocksHtml(blocks, refs, false);
+}
+
+/* ====================================================================================
+   Code colouring
+   ==================================================================================== */
+
+const HL_C_KW = new Set(('auto break case char const continue default do double else enum extern float for goto if inline int long register restrict return short signed sizeof static struct switch typedef union unsigned void volatile while ' +
+  '_Alignas _Alignof _Atomic _Bool _Complex _Generic _Imaginary _Noreturn _Static_assert _Thread_local _BitInt _Decimal32 _Decimal64 _Decimal128 ' +
+  'alignas alignof bool constexpr false nullptr static_assert thread_local true typeof typeof_unqual').split(' '));
+const HL_R_KW = new Set('function if else for while repeat return in next break TRUE FALSE NULL NA Inf NaN NA_integer_ NA_real_ NA_character_ NA_complex_'.split(' '));
+
+/* Escaped HTML for code, with spans for comments, strings, numbers, keywords and (for C)
+   preprocessor lines. lang is 'c' or 'r'; anything else gives the text escaped. */
+function highlight(text, lang) {
+  text = String(text);
+  if (lang === 'c') return hlC(text);
+  if (lang === 'r') return hlR(text);
+  return fmtEsc(text);
+}
+
+function hlSpan(cls, s) { return s ? `<span class="${cls}">${fmtEsc(s)}</span>` : ''; }
+

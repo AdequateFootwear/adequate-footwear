@@ -633,7 +633,7 @@ table.nums td:last-child{overflow-wrap:anywhere;white-space:normal}
   // st.slotLines is every line of Step 1 as last seen, blank ones included, and st.slotAll the choice
   // for each (null for a line that hasn't had one). A line keeps its choice while it is edited, even
   // through being emptied and retyped; lines added get the usual layout; formulas pasted over the old
-  // ones (two or more lines, none in common) start again from the usual layout.
+  // ones (two or more lines, none in common), or typed over all of them, start again from the usual layout.
   let fullOf = [];   // for each formula row (blank lines skipped), its index in st.slotLines
   const likeness = (a, b) => { if (a === b) return 1e6; let p = 0; while (p < a.length && p < b.length && a[p] === b[p]) p++; let q = 0; while (q < a.length && q < b.length && a[a.length - 1 - q] === b[b.length - 1 - q]) q++; return Math.max(p, q); };
   // pair each line of the shorter list with one of the longer list, in order, as alike as possible
@@ -651,7 +651,10 @@ table.nums td:last-child{overflow-wrap:anywhere;white-space:normal}
       let r = 0; was = now; had = now.map((l) => (l ? st.slots[r++] : null) || null);
     }
     let slots;
-    if (!was || !Array.isArray(st.slots) || (nb(now).length >= 2 && (!nb(was).length || (nb(was).length >= 2 && !nb(now).some((l) => was.includes(l)))))) slots = now.map(() => null);
+    const fresh = !nb(now).some((l) => was && was.includes(l));   // no formula line is still there as it was
+    if (!was || !Array.isArray(st.slots)
+        || (nb(now).length >= 2 && (!nb(was).length || (nb(was).length >= 2 && fresh)))   // pasted over, or into an empty box
+        || (nb(was).length >= 2 && nb(now).length < nb(was).length && fresh)) slots = now.map(() => null);   // typed over a selection of every line
     else {
       let p = 0; while (p < was.length && p < now.length && was[p] === now[p]) p++;
       let q = 0; while (q < was.length - p && q < now.length - p && was[was.length - 1 - q] === now[now.length - 1 - q]) q++;

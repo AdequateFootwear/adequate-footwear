@@ -709,9 +709,8 @@ function parseCoords(t) {
   const hs = T.match(/[NSEW]/g) || [];
   if (hs.length > 2 || /[A-DF-MO-RT-VX-Z]/.test(T.replace(/[NSEW]/g, ''))) return { err: 'Use numbers and N, S, E or W only.' };
   T = T.replace(/(^|[^\d.])\.(?=\d)/g, (m, a) => a + '0.'); // .5 is 0.5
-  // and ,5 is 0,5, a decimal comma read below; but in "45 ,93" (one comma, no N/S/E/W) the comma separates the pair
-  const oneComma = (T.match(/,/g) || []).length === 1 && !hs.length;
-  T = T.replace(/(^|[^\d.,]),(?=\d)/g, (m, a) => (oneComma && /\s/.test(a) ? m : a + '0,'));
+  // a comma after a space or N/S/E/W separates the pair, so a number can't start with a decimal comma
+  if (/(^|-),\d/.test(T)) return { err: 'Write a number that starts with a decimal comma with a 0 first: 0,5, not ,5.' };
   if (/^[-\d,]+$/.test(T) && (T.match(/,/g) || []).length > 1) {
     // only digits and commas (-33,8568,151,2153): try each comma as the one between latitude and longitude
     const half = (h, max) => /^-?\d+(,\d+)?$/.test(h) && Math.abs(+h.replace(',', '.')) <= max;
@@ -728,7 +727,7 @@ function parseCoords(t) {
   if (!/\d\.\d/.test(T) && /\d,\d/.test(T)) {
     const dec = T.replace(/(\d),(?=\d)/g, '$1.'), nums = dec.match(/\d+(?:\.\d+)*/g) || [];
     if (nums.some((x) => x.split('.').length > 2)) return { err: COMMA_ERR };
-    if (!(nums.length === 1 && (T.match(/\d,\d/g) || []).length === 1)) T = dec;
+    if (!(nums.length === 1 && (T.match(/\d,\d/g) || []).length === 1) || /^-0,/.test(T)) T = dec;   // but -0,5 is a decimal
   }
   let parts;
   const hm = T.match(/^\s*([NS])([^EW]*)([EW])(.*)$/);

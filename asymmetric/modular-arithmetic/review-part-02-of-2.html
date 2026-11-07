@@ -1,0 +1,399 @@
+<!-- Review copy: lines 636-1033 of asymmetric/modular-arithmetic/index.html, split so Copilot can review it. Not served. -->
+      <p>To find an inverse, run Euclid's algorithm for the greatest common divisor: divide, keep the remainder, repeat. If the remainders reach 1, the inverse exists. Alongside each remainder the table keeps a <b>multiplier</b>, chosen so that</p>
+      <div class="math">remainder ≡ multiplier × a   (mod n)</div>
+      <p>Each new multiplier is the one from two rows up, minus “goes in” times the one from the row above. Start with 0 for <var>n</var> and 1 for <var>a</var>. On the row where the remainder is 1, the multiplier is the inverse. If it's negative, add <var>n</var>: for 7 mod 40 that row says −17, and −17 + 40 = 23. This is how RSA's private exponent <var>d</var> is found from <var>e</var>.</p>
+    </div>
+    <div class="calc">
+      <label>Inverse of <var>a</var> <input type="text" id="iv-a" value="7" inputmode="numeric" spellcheck="false"></label>
+      <label>mod <var>n</var> <input type="text" id="iv-n" value="40" inputmode="numeric" spellcheck="false"></label>
+    </div>
+    <div class="out" id="iv-out" aria-live="polite"></div>
+    <div class="scroll"><table id="iv-table"></table></div>
+  </section>
+
+  <!-- 9 -->
+  <section class="panel" id="crt" aria-labelledby="h-crt">
+    <div class="panel-head"><span class="step">9</span><h2 id="h-crt">Two clocks at once</h2></div>
+    <div class="explain">
+      <p>Picture a 3-hour clock and a 5-hour clock ticking together. Which count shows 2 on the first and 3 on the second? Counting up: 8 (8 mod 3 = 2, 8 mod 5 = 3). Because 3 and 5 share no factor, the pair of positions repeats only every 3 × 5 = 15 ticks, so 8 is the only answer between 0 and 14.</p>
+      <p>That's the <b>Chinese Remainder Theorem</b> (CRT): knowing a number modulo several moduli that share no factors pins it down modulo their product. Cryptosystems use it to split one big calculation into smaller ones, mod <var>p</var> and mod <var>q</var>, and glue the answers back together.</p>
+    </div>
+    <div class="calc">
+      <label><var>x mod</var> <input type="number" id="cr-n1" aria-label="first modulus" value="3" min="2" max="9999" inputmode="numeric"> <var>=</var> <input type="number" id="cr-r1" aria-label="remainder for the first modulus" value="2" inputmode="numeric"></label>
+      <label><var>x mod</var> <input type="number" id="cr-n2" aria-label="second modulus" value="5" min="2" max="9999" inputmode="numeric"> <var>=</var> <input type="number" id="cr-r2" aria-label="remainder for the second modulus" value="3" inputmode="numeric"></label>
+    </div>
+    <div class="out" id="cr-out" aria-live="polite"></div>
+    <div class="scroll"><div class="ticks" id="cr-ticks"></div></div>
+    <div class="try"><span class="step">Check yourself</span><ol><li><span>Which x from 0 to 35 has x mod 4 = 3 and x mod 9 = 5?</span><details><summary>Show answer</summary><p>23: 23 = 5 × 4 + 3 and 23 = 2 × 9 + 5. Put 4, 3, 9, 5 in the boxes above to check.</p></details></li></ol></div>
+  </section>
+
+  <!-- 10 -->
+  <section class="panel" id="roots" aria-labelledby="h-roots">
+    <div class="panel-head"><span class="step">10</span><h2 id="h-roots">Square roots on a clock</h2></div>
+    <div class="explain">
+      <p>Which numbers <var>x</var> have <var>x<sup>2</sup> ≡ a (mod n)</var>? Mod 7, squaring 1 to 6 gives 1, 4, 2, 2, 4, 1, so only 1, 2 and 4 have square roots. Those are called <b>quadratic residues</b> (squares, for short). Mod an odd prime, exactly half the non-zero numbers are squares, and each has two roots, <var>x</var> and <var>p − x</var> (on the clock, <var>x</var> and its mirror image).</p>
+      <p><b>Euler's criterion</b> tells squares from non-squares in one power:</p>
+      <div class="math">a^((p−1)/2) mod p = 1          if a is a square
+a^((p−1)/2) mod p = p − 1      if it isn't (that's −1)
+
+mod 7:  2^3 = 8 ≡ 1        so 2 is a square
+        3^3 = 27 ≡ 6 ≡ −1  so 3 isn't</div>
+      <p><b>The shortcut for primes that leave remainder 3 when divided by 4</b> (like 7, 11, 19, 23):</p>
+      <div class="math">x = a^((p+1)/4) mod p
+
+√2 mod 7:  2^((7+1)/4) = 2^2 = 4,  and 4^2 = 16 ≡ 2 ✓</div>
+      <p>It works because <var>x<sup>2</sup> = a<sup>(p+1)/2</sup> = a × a<sup>(p−1)/2</sup> ≡ a × 1 = a</var>, using Euler's criterion. Other primes need a longer method (Tonelli–Shanks), which the worksheets do for you.</p>
+      <p><b>Mod a product of two primes, a square has four roots.</b> Solve mod each prime, then glue the pieces together with the CRT (section 9). For <var>x<sup>2</sup> ≡ 1 (mod 15)</var>: mod 3 the roots are ±1, mod 5 they're ±1, and the four combinations are:</p>
+      <div class="scroll"><table class="ftab"><thead><tr><th>mod 3</th><th>mod 5</th><th>x mod 15</th></tr></thead><tbody>
+        <tr><td>1</td><td>1</td><td><b>1</b></td></tr><tr><td>1</td><td>4</td><td><b>4</b></td></tr><tr><td>2</td><td>1</td><td><b>11</b></td></tr><tr><td>2</td><td>4</td><td><b>14</b></td></tr>
+      </tbody></table></div>
+      <p>Check: 4<sup>2</sup> = 16, 11<sup>2</sup> = 121 and 14<sup>2</sup> = 196 all leave remainder 1 mod 15. Anyone can square, but finding all four roots needs the two primes. A system that encrypts by squaring rests on exactly that.</p>
+    </div>
+    <div class="calc"><label>Modulus <var>n</var> <input type="number" id="sq-n" value="15" min="2" max="60" inputmode="numeric"></label></div>
+    <div class="scroll"><table class="ftab" id="sq-table"></table></div>
+    <p class="help" id="sq-say"></p>
+    <div class="try"><span class="step">Check yourself</span><ol><li><span>Which numbers are squares mod 11?</span><details><summary>Show answer</summary><p>1, 3, 4, 5 and 9 (from 1<sup>2</sup>, 5<sup>2</sup>, 2<sup>2</sup>, 4<sup>2</sup>, 3<sup>2</sup>, and their mirror images).</p></details></li><li><span>Use the shortcut to find a square root of 3 mod 11.</span><details><summary>Show answer</summary><p>11 leaves remainder 3 when divided by 4, so x = 3<sup>(11+1)/4</sup> = 3<sup>3</sup> = 27 ≡ 5. Check: 5<sup>2</sup> = 25 = 2 × 11 + 3. The other root is 11 − 5 = 6.</p></details></li></ol></div>
+  </section>
+
+  <!-- 11 -->
+  <section class="panel" id="dlog" aria-labelledby="h-dlog">
+    <div class="panel-head"><span class="step">11</span><h2 id="h-dlog">Why these discrete logs break</h2></div>
+    <div class="explain">
+      <p>Finding <var>x</var> with <var>g<sup>x</sup> ≡ h (mod p)</var> is hard in general: the best general methods take about <var>√p</var> steps, around 10<sup>22</sup> for a 45-digit prime. But the loop of powers of <var>g</var> has a length that divides <var>p − 1</var> (section 6), and when <var>p − 1</var> splits into small primes, the <b>Pohlig–Hellman</b> method solves the problem one small prime at a time:</p>
+      <ol>
+        <li>For each prime <var>q</var> dividing <var>p − 1</var>, raise both <var>g</var> and <var>h</var> to the power <var>(p − 1)/q</var>. That pushes both into a loop only <var>q</var> long, where only <var>x mod q</var> matters.</li>
+        <li>Find <var>x mod q</var> by searching that short loop.</li>
+        <li>Glue the answers together with the CRT (section 9).</li>
+      </ol>
+      <p><b>Worked example.</b> Find <var>x</var> with <var>3<sup>x</sup> ≡ 22 (mod 31)</var>. Here <var>p − 1 = 30 = 2 × 3 × 5</var>.</p>
+      <div class="scroll"><table class="ftab"><thead><tr><th>q</th><th>3<sup>30/q</sup> mod 31</th><th>22<sup>30/q</sup> mod 31</th><th>The short loop</th><th>x mod q</th></tr></thead><tbody>
+        <tr><td>2</td><td>30</td><td>30</td><td>1, 30</td><td><b>1</b></td></tr>
+        <tr><td>3</td><td>25</td><td>5</td><td>1, 25, 5</td><td><b>2</b></td></tr>
+        <tr><td>5</td><td>16</td><td>8</td><td>1, 16, 8, 4, 2</td><td><b>2</b></td></tr>
+      </tbody></table></div>
+      <p>Read each answer from the loop's position: 22<sup>15</sup> ≡ 30 is step 1 of the first loop, 5 is step 2 of the second, 8 is step 2 of the third. Then the CRT: <var>x ≡ 1 (mod 2)</var>, <var>x ≡ 2 (mod 3)</var>, <var>x ≡ 2 (mod 5)</var> gives <var>x = 17</var>, and indeed <var>3<sup>17</sup> mod 31 = 22</var>.</p>
+      <p><b>What decides the difficulty</b> is the largest prime factor of <var>p − 1</var>, not the size of <var>p</var>. A 45-digit prime whose <var>p − 1</var> is built from primes of 13 digits or fewer needs only a few million steps per piece. Real systems avoid this by using “safe primes” <var>p = 2q + 1</var> with <var>q</var> prime, so one piece is almost as big as <var>p</var> and the trick gains nothing. The worksheets show the pieces for any prime you give them.</p>
+    </div>
+  </section>
+
+  <!-- 12 -->
+  <section class="panel" id="tiny" aria-labelledby="h-tiny">
+    <div class="panel-head"><span class="step">12</span><h2 id="h-tiny">Put it together: a tiny RSA</h2></div>
+    <div class="explain">
+      <p>Every step of RSA, small enough to check by hand. Work each one out (the widgets above help), then open the answer.</p>
+    </div>
+    <div class="try"><span class="step">Make the keys, then send a message</span><ol>
+      <li><span>Take the primes <var>p = 11</var> and <var>q = 23</var>. What is <var>n = p × q</var>?</span><details><summary>Show answer</summary><p>253.</p></details></li>
+      <li><span>What is <var>φ(n) = (p − 1)(q − 1)</var>? (Section 6.)</span><details><summary>Show answer</summary><p>10 × 22 = 220.</p></details></li>
+      <li><span>Choose <var>e = 3</var>. Does it share a factor with 220? (Section 7's gcd box.)</span><details><summary>Show answer</summary><p>No: gcd(3, 220) = 1, so <var>e = 3</var> works.</p></details></li>
+      <li><span>Find <var>d = 3<sup>−1</sup> mod 220</var>. (Section 8's inverse box.)</span><details><summary>Show answer</summary><p>147, because 3 × 147 = 441 = 2 × 220 + 1.</p></details></li>
+      <li><span>Encrypt <var>m = 100</var>: <var>c = 100<sup>3</sup> mod 253</var>. (Section 8's power box.)</span><details><summary>Show answer</summary><p>144.</p></details></li>
+      <li><span>Decrypt: what is <var>144<sup>147</sup> mod 253</var>?</span><details><summary>Show answer</summary><p>100, the message again.</p></details></li>
+      <li><span>Now be the eavesdropper. You only know <var>n = 253</var>, <var>e = 3</var> and <var>c = 144</var>. What do you do first?</span><details><summary>Show answer</summary><p>Factor 253 (section 7's box): 11 × 23. From there, steps 2, 4 and 6 give you the message. That's everything the RSA worksheet does, with bigger numbers.</p></details></li>
+    </ol></div>
+  </section>
+
+  <!-- 13 -->
+  <section class="panel" id="crypto" aria-labelledby="h-crypto">
+    <div class="panel-head"><span class="step">13</span><h2 id="h-crypto">How the worksheets use all this</h2></div>
+    <div class="explain">
+      <ul class="facts">
+        <li><b>Remainders</b> (sections 1–3): every ciphertext, message and shared secret is a remainder after dividing by the public modulus.</li>
+        <li><b>Inverses</b> (sections 4 and 8): private exponents, and “dividing out” a shared secret.</li>
+        <li><b>Powers, Fermat and Euler</b> (sections 5, 6 and 8): encrypting and decrypting, and why decryption undoes encryption.</li>
+        <li><b>Factoring and φ</b> (sections 6 and 7): the hard problem behind the systems built on a product of secret primes.</li>
+        <li><b>The CRT</b> (section 9): splitting work into mod <var>p</var> and mod <var>q</var>, then gluing it back together.</li>
+        <li><b>Square roots</b> (section 10): the systems that encrypt by squaring.</li>
+        <li><b>Discrete logarithms</b> (sections 5 and 11): the hard problem behind the systems built on powers of a base, and why puzzle-sized ones break.</li>
+        <li><b>Turning numbers into text</b>: see <a href="../letters-to-numbers/">From Letters to Numbers</a>.</li>
+      </ul>
+      <p>Which system a puzzle uses, and which of these ideas it leans on, is for you to work out. <a href="../">Back to the worksheets.</a></p>
+    </div>
+  </section>
+
+  <section class="panel" id="bonus" aria-labelledby="h-bonus">
+    <div class="panel-head"><span class="step">Bonus</span><h2 id="h-bonus">The calendar is a clock too</h2></div>
+    <div class="explain">
+      <p>Days of the week are arithmetic mod 7, and John Conway turned that into a trick for finding the day of the week of any date in your head: the <b>Doomsday rule</b>. It has its own page, with the formulas, why each one works, a calculator and a practice game: <a href="../../day-of-the-week/">Day of the Week</a>.</p>
+    </div>
+  </section>
+
+  <footer>
+    <span>Modular Arithmetic Basics · <a href="../">all asymmetric tools</a> · <a href="../../">all AdequateFootwear tools</a></span>
+    <span class="mono">a ≡ b (mod n)</span>
+  </footer>
+</main>
+
+<script>
+(function(){
+  'use strict';
+  const $ = (s) => document.querySelector(s);
+  const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;' }[c]));
+  const DAYS = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
+  const NICK = ['Noneday','Oneday','Twosday','Treblesday','Foursday','Fiveday','Six-a-day'];
+  const MONTHS = ['January','February','March','April','May','June','July','August','September','October','November','December'];
+  const modN = (a, n) => ((a % n) + n) % n;
+  const modB = (a, n) => { a %= n; return a < 0n ? a + n : a; };
+  const big = (s) => { const t = String(s).replace(/[\s,_]/g, ''); return /^-?\d+$/.test(t) ? BigInt(t) : null; };
+  const sg = (v) => String(v).replace(/^-/, '−');
+  const short = (v) => { const t = String(v); return t.length > 24 ? t.slice(0, 10) + '…' + t.slice(-6) : t; };
+  const gcdB = (a, b) => { a = a < 0n ? -a : a; b = b < 0n ? -b : b; while (b) [a, b] = [b, a % b]; return a; };
+  const gcdN = (a, b) => { while (b) [a, b] = [b, a % b]; return Math.abs(a); };
+  const int = (el, lo, hi, dflt) => { let v = parseInt(el.value, 10); if (!Number.isFinite(v)) v = dflt; return Math.max(lo, Math.min(hi, v)); };
+  const st = (() => { try { return JSON.parse(localStorage.getItem('asym-modular:v1') || '{}'); } catch (e) { return {}; } })();
+  const save = () => { try { localStorage.setItem('asym-modular:v1', JSON.stringify(st)); } catch (e) {} };
+
+  /* ---------- 1. clock ---------- */
+  function drawClock(){
+    const n = int($('#ck-n'), 2, 24, 12), a = int($('#ck-a'), -1e9, 1e9, 0), b = int($('#ck-b'), -1e9, 1e9, 0);
+    const start = modN(a, n), end = modN(a + b, n), laps = Math.floor((modN(a, n) + b) / n);
+    const cx = 120, cy = 120, R = 92;
+    const ang = (k) => (k / n) * 2 * Math.PI - Math.PI / 2;
+    const pt = (k, r) => [cx + r * Math.cos(ang(k)), cy + r * Math.sin(ang(k))];
+    let svg = `<circle cx="${cx}" cy="${cy}" r="${R + 14}" class="face"/>`;
+    for (let k = 0; k < n; k++) {
+      const [x1, y1] = pt(k, R - 6), [x2, y2] = pt(k, R + 6), [lx, ly] = pt(k, n > 12 ? R - 19 : R - 22);
+      svg += `<line x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}" class="tick"/>`;
+      svg += `<text x="${lx}" y="${ly}" class="lbl${n > 12 ? ' sm' : ''}${k === end ? ' on' : ''}" dominant-baseline="central" text-anchor="middle">${k}</text>`;
+    }
+    // arc from start to end going forward (or backward), at most one lap drawn
+    const steps = Math.min(Math.abs(b), n);
+    if (steps > 0) {
+      const dir = b > 0 ? 1 : -1, r = R + 14;
+      let d = '';
+      for (let i = 0; i <= steps * 8; i++) { const k = start + dir * (i / 8); const [x, y] = pt(k, r - 7); d += (i ? 'L' : 'M') + x.toFixed(1) + ' ' + y.toFixed(1); }
+      svg += `<path d="${d}" class="arc"/>`;
+    }
+    const [sx, sy] = pt(start, R - 40), [ex, ey] = pt(end, R - 36);
+    svg += `<line x1="${cx}" y1="${cy}" x2="${sx}" y2="${sy}" class="hand from"/><line x1="${cx}" y1="${cy}" x2="${ex}" y2="${ey}" class="hand"/><circle cx="${cx}" cy="${cy}" r="5" class="hub"/>`;
+    $('#clock-svg').innerHTML = svg;
+    const total = a + b;
+    $('#clock-say').innerHTML = `${sg(a)} ${b < 0 ? '−' : '+'} ${Math.abs(b)} = ${sg(total)}, and on a ${n}-position clock that's <b>${end}</b>, because <var>${sg(total)} mod ${n} = ${end}</var>.` +
+      (laps > 0 ? ` The hand went all the way round ${laps === 1 ? 'once' : laps + ' times'} on the way.` : laps < 0 ? ` The hand went backwards past 0 ${-laps === 1 ? 'once' : -laps + ' times'}.` : '');
+    st.ck = { n, a, b }; save();
+  }
+  for (const id of ['#ck-n', '#ck-a', '#ck-b']) $(id).addEventListener('input', drawClock);
+  const bump = (d) => { $('#ck-b').value = int($('#ck-b'), -1e9, 1e9, 0) + d; drawClock(); };
+  const preset = (n, a, b) => { $('#ck-n').value = n; $('#ck-a').value = a; $('#ck-b').value = b; drawClock(); };
+  $('#ck-12').addEventListener('click', () => preset(12, 9, 5)); $('#ck-24').addEventListener('click', () => preset(24, 14, 15));
+  $('#ck-minus').addEventListener('click', () => bump(-1)); $('#ck-plus').addEventListener('click', () => bump(1)); $('#ck-plus10').addEventListener('click', () => bump(10));
+
+  /* ---------- 2. mod calculator ---------- */
+  function doMod(){
+    const a = big($('#md-a').value), n = big($('#md-n').value);
+    if (a === null || n === null) { $('#md-out').innerHTML = 'Type whole numbers in both boxes.'; return; }
+    if (n < 1n) { $('#md-out').innerHTML = 'The modulus has to be at least 1.'; return; }
+    const r = modB(a, n), q = (a - r) / n;
+    $('#md-out').innerHTML = `<div class="math">${sg(a)} = ${sg(q)} × ${n} + ${r}</div><p><var>${sg(short(a))} mod ${short(n)}</var> = <b class="num">${r}</b>. ${a < 0n ? `Going backwards ${-a} steps from 0 on a ${n}-position clock lands on ${r}.` : q > 0n ? `That's ${q} full lap${q === 1n ? '' : 's'} of the clock, with ${r} left over.` : `${a} is already smaller than ${n}, so it's its own remainder.`}</p>`;
+  }
+  $('#md-a').addEventListener('input', doMod); $('#md-n').addEventListener('input', doMod);
+
+  /* ---------- 3. weekday ---------- */
+  $('#wd-day').innerHTML = DAYS.map((d, i) => `<option value="${i}">${d}</option>`).join('');
+  $('#wd-day').value = '2';
+  function doWeekday(){
+    const d0 = +$('#wd-day').value, k = int($('#wd-n'), -1e9, 1e9, 0), r = modN(d0 + k, 7);
+    $('#wd-out').innerHTML = `<div class="math">(${d0} ${k < 0 ? '−' : '+'} ${Math.abs(k)}) mod 7 = ${sg(d0 + k)} mod 7 = ${r}</div><p>${Math.abs(k)} day${Math.abs(k) === 1 ? '' : 's'} ${k < 0 ? 'before' : 'after'} a ${DAYS[d0]} is a <b>${DAYS[r]}</b>.${Math.abs(k) >= 7 ? ` Whole weeks don't change the day, so only the remainder, ${modN(k, 7)}, matters.` : ''}</p>`;
+  }
+  $('#wd-day').addEventListener('change', doWeekday); $('#wd-n').addEventListener('input', doWeekday);
+
+  /* ---------- 4. times table ---------- */
+  $('#tt-n').innerHTML = Array.from({ length: 14 }, (_, i) => `<option value="${i + 2}">${i + 2}</option>`).join('');
+  $('#tt-n').value = String(st.tt || 10);
+  function doTable(){
+    const n = +$('#tt-n').value; st.tt = n; save();
+    let h = '<thead><tr><th scope="col">×</th>' + Array.from({ length: n }, (_, j) => `<th scope="col">${j}</th>`).join('') + '</tr></thead><tbody>';
+    const noInv = [];
+    for (let i = 0; i < n; i++) {
+      const has = gcdN(i, n) === 1;
+      if (!has && i) noInv.push(i);
+      h += `<tr class="${has ? '' : 'noinv'}"><th scope="row">${i}</th>`;
+      for (let j = 0; j < n; j++) { const v = (i * j) % n; h += `<td class="${v === 1 ? 'one' : ''}">${v}</td>`; }
+      h += '</tr>';
+    }
+    $('#tt').innerHTML = h + '</tbody>';
+    $('#tt-say').innerHTML = noInv.length
+      ? `Mod ${n}, the dimmed rows (${noInv.join(', ')}) have no 1, so those numbers can't be divided by: each shares a factor with ${n}. The other rows each have exactly one 1, in the column of their inverse.`
+      : `Mod ${n}, every row except 0 has exactly one 1, so every non-zero number has an inverse. That happens exactly when the modulus is prime.`;
+  }
+  $('#tt-n').addEventListener('change', doTable);
+
+  /* ---------- 5. powers ---------- */
+  function doPowers(){
+    const g = int($('#pw-g'), 0, 999, 3), n = int($('#pw-n'), 2, 200, 7);
+    const seen = new Map(), seq = []; let x = 1, k = 0;
+    while (true) { x = (x * g) % n; k++; if (seen.has(x) || k > 400) break; seen.set(x, k); seq.push(x); }
+    const cycleStart = seen.get(x), len = k - cycleStart;
+    $('#pw-chips').innerHTML = seq.map((v, i) => `<span class="chip${v === 1 ? ' one' : ''}"><span class="d">${g}<sup>${i + 1}</sup></span><span class="t">${v}</span></span>`).join('') + `<span class="chip odd"><span class="d">${g}<sup>${k}</sup></span><span class="t">${x}</span></span>`;
+    const isPrime = n > 1 && Array.from({ length: Math.floor(Math.sqrt(n)) - 1 }, (_, i) => i + 2).every((d) => n % d);
+    let say = `Powers of ${g} mod ${n} repeat after ${len} step${len === 1 ? '' : 's'}`;
+    if (gcdN(g, n) !== 1) say += `. ${g} shares a factor with ${n}, so its powers never reach 1.`;
+    else {
+      say += `: the <b>order</b> of ${g} is ${len}.`;
+      if (isPrime) say += len === n - 1 ? ` Every number from 1 to ${n - 1} appears, so ${g} is a <b>generator</b> mod ${n}.` : ` ${len} divides ${n} − 1 = ${n - 1}, as Fermat's little theorem says it must, but ${g} isn't a generator.`;
+    }
+    $('#pw-say').innerHTML = say;
+  }
+  $('#pw-g').addEventListener('input', doPowers); $('#pw-n').addEventListener('input', doPowers);
+
+  /* ---------- 6. fast power and inverse ---------- */
+  /* primality, factoring and Fermat witnesses for the fast-power note (BigInt) */
+  const powB = (b, e, m) => { let r = 1n; b = modB(b, m); while (e > 0n) { if (e & 1n) r = r * b % m; b = b * b % m; e >>= 1n; } return r; };
+  const SMALLP = [2n, 3n, 5n, 7n, 11n, 13n, 17n, 19n, 23n, 29n, 31n, 37n, 41n];
+  const isPrimeB = (n) => {  // Miller–Rabin: these 13 bases decide every n below 3.3 × 10^24; above that, extra random bases make a mistake vanishingly unlikely
+    if (n < 2n) return false;
+    for (const p of SMALLP) { if (n === p) return true; if (n % p === 0n) return false; }
+    let d = n - 1n, s = 0; while (!(d & 1n)) { d >>= 1n; s++; }
+    const bases = SMALLP.slice();
+    if (n >= 3317044064679887385961981n) for (let i = 0; i < 16; i++) bases.push(2n + BigInt(Math.floor(Math.random() * 1e15)) % (n - 3n));
+    next: for (const b of bases) {
+      let x = powB(b, d, n); if (x === 1n || x === n - 1n) continue;
+      for (let i = 1; i < s; i++) { x = x * x % n; if (x === n - 1n) continue next; }
+      return false;
+    }
+    return true;
+  };
+  const rho = (n, budget) => {  // Pollard's rho (Brent's version): one factor of a composite n, or null when the budget runs out
+    for (let c = 1n; c < 20n && budget.left > 0; c++) {
+      let y = 2n, r = 1, q = 1n, g = 1n, x = 2n, ys = 2n; const f = (v) => (v * v + c) % n;
+      while (g === 1n && budget.left > 0) {
+        x = y; for (let i = 0; i < r; i++) y = f(y);
+        for (let k = 0; k < r && g === 1n; k += 64) { ys = y; for (let i = 0; i < Math.min(64, r - k); i++) { y = f(y); q = q * (x > y ? x - y : y - x) % n; } g = gcdB(q, n); budget.left -= 64; }
+        r *= 2;
+      }
+      if (g === n) { g = 1n; while (g === 1n) { ys = f(ys); g = gcdB(x > ys ? x - ys : ys - x, n); } }
+      if (g !== 1n && g !== n) return g;
+    }
+    return null;
+  };
+  const factorB = (n) => {  // the prime factors of n, smallest first, or null if they are too big to find quickly
+    const f = []; for (let d = 2n; d < 1000n && d * d <= n; d++) while (n % d === 0n) { f.push(d); n /= d; }
+    const todo = n > 1n ? [n] : [], budget = { left: 100000 };
+    while (todo.length) {
+      const m = todo.pop();
+      if (isPrimeB(m)) { f.push(m); continue; }
+      const g = rho(m, budget); if (g === null) return null;
+      todo.push(g, m / g);
+    }
+    return f.sort((x, y) => (x < y ? -1 : x > y ? 1 : 0));
+  };
+  const fermatWitness = (n) => {  // a small base sharing no factor with n for which b^(n−1) mod n isn’t 1, if there is one
+    for (let b = 2n, tried = 0; tried < 40 && b < n - 1n; b++) { if (gcdB(b, n) !== 1n) continue; tried++; if (powB(b, n - 1n, n) !== 1n) return b; }
+    return null;
+  };
+  const fermatNote = (a, n) => {  // called when a^(n−1) mod n = 1
+    const am = modB(a, n);
+    if (am === 1n || am === n - 1n) return ` Don’t read anything into that, though: 1 and −1 (that is, ${short(n - 1n)}) give 1 here whatever <var>n</var> is, so try another base.`;
+    if (isPrimeB(n)) return ' That’s Fermat’s little theorem in action.';
+    const w = fermatWitness(n);
+    if (w !== null) return ` That looks like Fermat's little theorem, but ${short(n)} isn't prime! It's a <b>Fermat pseudoprime</b> to base ${short(am)}: this base happens to fool Fermat's test, but others don't. Try <var>a</var> = ${w}.`;
+    const f = factorB(n);
+    if (f === null) return ` That looks like Fermat's little theorem, but ${short(n)} isn't prime (a stronger test shows it). Every base this box tried that shares no factor with it gives 1 too, so it’s probably a <b>Carmichael number</b>, but its factors are too big to find here and check.`;
+    const fs = f.map(String).join(' × ');
+    const sqfree = f.every((p, i) => i === 0 || p !== f[i - 1]), korselt = sqfree && f.length > 1 && f.every((p) => (n - 1n) % (p - 1n) === 0n);
+    if (korselt) return ` That looks like Fermat's little theorem, but ${short(n)} = ${fs} isn't prime! It's a <b>Carmichael number</b>: it fools Fermat's test for every base sharing no factor with it, because ${f.map((p) => `${p} − 1`).join(', ')} all divide ${short(n)} − 1.${n === 561n ? ' It’s the smallest one.' : ' The smallest is 561 = 3 × 11 × 17.'}`;
+    return ` That looks like Fermat's little theorem, but ${short(n)} = ${fs} isn't prime! It's a <b>Fermat pseudoprime</b> to base ${short(am)}: this base happens to fool Fermat's test.`;
+  };
+  function doFast(){
+    const a = big($('#fp-a').value), e = big($('#fp-e').value), n = big($('#fp-n').value);
+    if (a === null || e === null || n === null || e < 0n || n < 2n) { $('#fp-out').innerHTML = 'Type whole numbers: <var>e</var> at least 0 and <var>n</var> at least 2.'; $('#fp-table').innerHTML = ''; return; }
+    let r = 1n, sq = modB(a, n), i = 0; const rows = []; const bits = e.toString(2);
+    for (let E = e; E > 0n; E >>= 1n, i++) {
+      const bit = E & 1n;
+      if (bit) r = r * sq % n;
+      if (rows.length < 80) rows.push(`<tr><td>2<sup>${i}</sup></td><td>${bit}</td><td class="num">${sq}</td><td class="num">${bit ? r : '—'}</td></tr>`);
+      sq = sq * sq % n;
+    }
+    let note = '';
+    if (r === 1n && e === n - 1n) note = fermatNote(a, n);
+    const nSq = e > 0n ? bits.length - 1 : 0, nMul = e > 0n ? bits.split('').filter((b) => b === '1').length - 1 : 0;
+    $('#fp-out').innerHTML = `<p><var>a<sup>e</sup> mod n</var> = <b class="num">${r}</b>, using ${nSq} squaring${nSq === 1 ? '' : 's'} and ${nMul} multiplication${nMul === 1 ? '' : 's'} (the exponent in binary is ${bits.length > 64 ? bits.slice(0, 64) + '…' : bits}: one squaring per digit after the first, one multiplication per extra 1).${note}</p>`;
+    $('#fp-table').innerHTML = '<thead><tr><th>Power of 2</th><th>Bit of e</th><th>a to that power, mod n</th><th>Running result</th></tr></thead><tbody>' + rows.join('') + (rows.length >= 80 ? '<tr><td colspan="4">…</td></tr>' : '') + '</tbody>';
+  }
+  for (const id of ['#fp-a', '#fp-e', '#fp-n']) $(id).addEventListener('input', doFast);
+  function doInv(){
+    const a = big($('#iv-a').value), n = big($('#iv-n').value);
+    if (a === null || n === null || n < 2n) { $('#iv-out').innerHTML = 'Type whole numbers, with <var>n</var> at least 2.'; $('#iv-table').innerHTML = ''; return; }
+    let r0 = modB(a, n), r1 = n, s0 = 1n, s1 = 0n; const rows = [];
+    let A = n, B = modB(a, n), t0 = 0n, t1 = 1n;
+    while (B) { const q = A / B, rr = A - q * B; rows.push(`<tr class="${rr === 1n ? 'hit' : ''}"><td class="num">${A}</td><td class="num">${B}</td><td class="num">${q}</td><td class="num">${rr}</td><td class="num">${t0 - q * t1}</td></tr>`); [A, B] = [B, A - q * B]; [t0, t1] = [t1, t0 - q * t1]; }
+    const g = A;
+    $('#iv-table').innerHTML = '<thead><tr><th>Divide</th><th>by</th><th>Goes in</th><th>Remainder</th><th>Multiplier (remainder ≡ this × a)</th></tr></thead><tbody>' + rows.slice(0, 200).join('') + '</tbody>';
+    if (g !== 1n) $('#iv-out').innerHTML = `<p>No inverse: ${a} and ${n} share the factor <b>${g}</b> (the last non-zero remainder), so no multiple of ${a} is ever 1 more than a multiple of ${n}.</p>`;
+    else { const x = modB(t0, n); $('#iv-out').innerHTML = `<p>The remainders reach 1, so the inverse exists. On that row (highlighted) the multiplier is ${String(t0).replace('-', '−')}${t0 < 0n ? `, and adding ${n} gives ${x}` : ''}: <var>${a}<sup>−1</sup> mod ${n}</var> = <b class="num">${x}</b>. Check: ${a} × ${x} = ${a * x} = ${(a * x - 1n) / n} × ${n} + 1.</p>`; }
+  }
+  $('#iv-a').addEventListener('input', doInv); $('#iv-n').addEventListener('input', doInv);
+
+  /* ---------- 6. phi ---------- */
+  const factorN = (n) => { const f = []; let d = 2; while (d * d <= n) { while (n % d === 0) { f.push(d); n /= d; } d += d === 2 ? 1 : 2; } if (n > 1) f.push(n); return f; };
+  const groupF = (f) => { const m = new Map(); for (const p of f) m.set(p, (m.get(p) || 0) + 1); return [...m]; };
+  const fmtF = (g) => g.map(([p, e]) => p + (e > 1 ? `<sup>${e}</sup>` : '')).join(' × ');
+  function doPhi(){
+    const n = int($('#ph-n'), 2, 1000000, 15), g = groupF(factorN(n));
+    let phi = n; for (const [p] of g) phi = phi / p * (p - 1);
+    let list = '';
+    if (n <= 200) { const xs = []; for (let i = 1; i <= n; i++) if (gcdN(i, n) === 1) xs.push(i); list = `<p>The ${phi} numbers from 1 to ${n} that share no factor with it: ${xs.join(', ')}.</p>`; }
+    const how = g.length === 1 && g[0][1] === 1 ? `${n} is prime, so φ(${n}) = ${n} − 1 = ${phi}.`
+      : g.length === 2 && g.every(([, e]) => e === 1) ? `${n} = ${g[0][0]} × ${g[1][0]}, two different primes, so φ(${n}) = (${g[0][0]} − 1)(${g[1][0]} − 1) = ${phi}.`
+      : `${n} = ${fmtF(g)}, so φ(${n}) = ${n} × ${g.map(([p]) => `(1 − 1/${p})`).join(' × ')} = ${phi}.`;
+    $('#ph-out').innerHTML = `<p>${how}</p>${list}`;
+  }
+  $('#ph-n').addEventListener('input', doPhi);
+
+  /* ---------- 7. factoring and gcd ---------- */
+  function doFactor(){
+    const t = $('#fa-n').value.replace(/[\s,_]/g, '');
+    if (!/^\d+$/.test(t)) { $('#fa-out').innerHTML = '<p>Type a whole number.</p>'; return; }
+    if (t.length > 15) { $('#fa-out').innerHTML = '<p>This box tries every divisor up to the square root, so it stops at 15 digits. The worksheets use much faster methods for bigger numbers.</p>'; return; }
+    const n = Number(t); if (n < 2) { $('#fa-out').innerHTML = '<p>Pick a number of at least 2.</p>'; return; }
+    const t0 = performance.now(); let m = n, d = 2, tries = 0; const f = [];
+    while (d * d <= m) { tries++; while (m % d === 0) { f.push(d); m /= d; } d += d === 2 ? 1 : 2; }
+    if (m > 1) f.push(m);
+    const g = groupF(f); let phi = n; for (const [p] of g) phi = phi / p * (p - 1);
+    $('#fa-out').innerHTML = `<p><var>${n}</var> = <b>${fmtF(g)}</b>${f.length === 1 ? ' (it’s prime)' : ''}. That took ${tries.toLocaleString()} trial divisions and ${(performance.now() - t0).toFixed(1)} ms. From the factors, <var>φ(${n}) = ${phi.toLocaleString()}</var>.</p>`;
+  }
+  $('#fa-n').addEventListener('input', doFactor);
+  function doGcd(){
+    let a = big($('#gc-a').value), b = big($('#gc-b').value);
+    if (a === null || b === null) { $('#gc-out').innerHTML = '<p>Type two whole numbers.</p>'; return; }
+    a = a < 0n ? -a : a; b = b < 0n ? -b : b; const A0 = a, B0 = b; const steps = []; if (a < b) [a, b] = [b, a];
+    while (b) { steps.push(`${a} = ${a / b} × ${b} + ${a % b}`); [a, b] = [b, a % b]; }
+    $('#gc-out').innerHTML = `<p><var>gcd(${short(A0)}, ${short(B0)})</var> = <b class="num">${a}</b>${a === 1n ? ': they share no factor' : ''}.</p>${steps.length && steps.length <= 12 ? `<div class="math">${steps.join('\n')}</div>` : ''}`;
+  }
+  $('#gc-a').addEventListener('input', doGcd); $('#gc-b').addEventListener('input', doGcd);
+
+  /* ---------- 10. square roots ---------- */
+  function doSquares(){
+    const n = int($('#sq-n'), 2, 60, 15); const roots = Array.from({ length: n }, () => []);
+    for (let x = 0; x < n; x++) roots[(x * x) % n].push(x);
+    const rows = roots.map((r, a) => `<tr class="${r.length ? '' : 'none'}"><td>${a}</td><td>${r.length ? r.join(', ') : '—'}</td><td>${r.length}</td></tr>`).join('');
+    $('#sq-table').innerHTML = `<thead><tr><th>a</th><th>x with x² ≡ a (mod ${n})</th><th>How many</th></tr></thead><tbody>${rows}</tbody>`;
+    const sq = roots.filter((r, a) => a && r.length).length, most = Math.max(...roots.slice(1).map((r) => r.length));
+    $('#sq-say').innerHTML = `${sq} of the ${n - 1} non-zero numbers mod ${n} have square roots. ${most > 2 ? `Some have ${most} roots, which can’t happen mod a prime.` : `None has more than 2.`}`;
+  }
+  $('#sq-n').addEventListener('input', doSquares);
+
+  /* ---------- 7. CRT ---------- */
+  function doCRT(){
+    const n1 = int($('#cr-n1'), 2, 9999, 3), n2 = int($('#cr-n2'), 2, 9999, 5), r1 = modN(int($('#cr-r1'), -1e9, 1e9, 0), n1), r2 = modN(int($('#cr-r2'), -1e9, 1e9, 0), n2);
+    const g = gcdN(n1, n2), N = n1 * n2;
+    if (g !== 1) { $('#cr-out').innerHTML = `<p>${n1} and ${n2} share the factor ${g}, so the two clocks fall into step every ${N / g} ticks, not ${N}. The CRT needs moduli that share no factor.</p>`; $('#cr-ticks').innerHTML = ''; return; }
+    let x = r1; while (x % n2 !== r2) x += n1;
+    $('#cr-out').innerHTML = `<p>The only <var>x</var> from 0 to ${N - 1} with <var>x mod ${n1} = ${r1}</var> and <var>x mod ${n2} = ${r2}</var> is <b class="num">${x}</b>. Every other answer is ${x} plus a multiple of ${N}.</p>`;
+    if (N <= 120) {
+      let h = '<table class="tk"><tr><th scope="row">count</th>' + Array.from({ length: N }, (_, i) => `<td class="${i === x ? 'hit' : ''}">${i}</td>`).join('') + '</tr>';
+      h += `<tr><th scope="row">mod ${n1}</th>` + Array.from({ length: N }, (_, i) => `<td class="${i % n1 === r1 ? 'm' : ''}${i === x ? ' hit' : ''}">${i % n1}</td>`).join('') + '</tr>';
+      h += `<tr><th scope="row">mod ${n2}</th>` + Array.from({ length: N }, (_, i) => `<td class="${i % n2 === r2 ? 'm' : ''}${i === x ? ' hit' : ''}">${i % n2}</td>`).join('') + '</tr></table>';
+      $('#cr-ticks').innerHTML = h;
+    } else $('#cr-ticks').innerHTML = '<p class="help">(The tick-by-tick view only shows for products up to 120.)</p>';
+  }
+  for (const id of ['#cr-n1', '#cr-r1', '#cr-n2', '#cr-r2']) $(id).addEventListener('input', doCRT);
+
+  /* restore & first draw */
+  if (st.ck) { $('#ck-n').value = st.ck.n; $('#ck-a').value = st.ck.a; $('#ck-b').value = st.ck.b; }
+  drawClock(); doMod(); doWeekday(); doTable(); doPowers(); doPhi(); doFactor(); doGcd(); doFast(); doInv(); doCRT(); doSquares();
+})();
+</script>
+</body>
+</html>
+

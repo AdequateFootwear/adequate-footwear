@@ -8846,9 +8846,10 @@ function renderText(e, panel) {
     }
     count.textContent = `${fmtInt(k + 1)} of ${fmtInt(hits.length)}${hits.length >= 100000 ? '+' : ''}`;
   }
+  let hitsQ = '';   // the query the current hits are for
   function find() {
     const q = $('tx-find').value, old = byLine;
-    hits = []; byLine = new Map(); curK = -1;
+    hits = []; byLine = new Map(); curK = -1; hitsQ = q;
     if (q) {
       const re = new RegExp(escRe(q), 'gi');
       for (let i = 0; i < M.lines.length && hits.length < 100000; i++) {
@@ -8871,9 +8872,10 @@ function renderText(e, panel) {
     else count.textContent = q ? 'No matches' : '';
   }
   let ft = 0;
+  { const prev = cleanup; cleanup = () => { clearTimeout(ft); if (prev) prev(); }; }   // leaving the view drops a search still waiting to run
   $('tx-find').addEventListener('input', () => { clearTimeout(ft); ft = setTimeout(find, 160); });
   const step = (d) => { if (!hits.length) return; setCurrent((curK + d + hits.length) % hits.length); };
-  $('tx-find').addEventListener('keydown', (ev) => { if (ev.key === 'Enter') { ev.preventDefault(); clearTimeout(ft); if (!hits.length && $('tx-find').value) find(); else step(ev.shiftKey ? -1 : 1); } });
+  $('tx-find').addEventListener('keydown', (ev) => { if (ev.key === 'Enter') { ev.preventDefault(); clearTimeout(ft); if ($('tx-find').value !== hitsQ) find(); else step(ev.shiftKey ? -1 : 1); } });
   $('tx-next').addEventListener('click', () => step(1));
   $('tx-prev').addEventListener('click', () => step(-1));
   lb.box.addEventListener('pointerover', (ev) => { // pointing at a dimmed run gives its byte values, worked out only then
@@ -9360,6 +9362,32 @@ function checkGeom(g, where, depth) {
   };
   if (g.type === 'Point' && Array.isArray(g.coordinates) && g.coordinates.length === 0) return; // an empty point
   walk(g.coordinates, levels);
+  const why = shapeProblem(g);
+  if (why) throw new Error(`${where} has ${why}`);
+}
+/* What is wrong with a geometry's shape, or '': a line needs two or more positions, and a polygon's ring four or more,
+   ending where it starts. Nothing is closed or repaired; empty geometries are allowed, but not an empty ring beside others.
+   wkb is true only for geometries read from a GeoPackage's WKB, never for GeoJSON (whose members a file can set). */
+function shapeProblem(g, wkb) {
+  if (!g) return '';
+  if (g.type === 'GeometryCollection') { for (const x of g.geometries || []) { const w = shapeProblem(x, wkb); if (w) return w; } return ''; }
+  const c = g.coordinates || [];
+  // a measure (M, the last ordinate of a WKB position with M) isn't part of where a point is, so closure ignores it
+  const at = wkb && g.hasM === true ? (p) => p.slice(0, -1) : (p) => p;
+  const same = (p, q) => { p = at(p); q = at(q); return p.length === q.length && p.every((v, i) => v === q[i] || (v !== v && q[i] !== q[i])); }; // NaN Z values match too
+  const line = (l) => (l.length === 1 ? `a line with only one position; a line needs two or more.` : '');
+  const ring = (r) => (!r.length ? '' : r.length < 4 ? `a polygon ring with ${r.length} position${r.length === 1 ? '' : 's'}; a ring needs four or more, ending where it starts.`
+    : !same(r[0], r[r.length - 1]) ? 'a polygon ring that doesn’t end where it starts, so it isn’t closed.' : '');
+  const all = (xs, f) => { for (const x of xs) { const w = f(x); if (w) return w; } return ''; };
+  // a polygon is empty only when every ring is: an empty ring beside others would let a hole be drawn as the outside
+  const poly = (rs) => (rs.some((r) => !r.length) && rs.some((r) => r.length) ? 'a polygon with an empty ring among rings that aren’t empty.' : all(rs, ring));
+  switch (g.type) {
+    case 'LineString': return line(c);
+    case 'MultiLineString': return all(c, line);
+    case 'Polygon': return poly(c);
+    case 'MultiPolygon': return all(c, poly);
+    default: return '';
+  }
 }
 
 /* ---------- coordinate systems ---------- */
@@ -9391,6 +9419,13 @@ function crsOf(code, def, geoFlag, name) {
   const u = unitOfWkt(def) || unitOfCode(c);
   return { mode: 'native', code: c, label, unit: u ? u[0] : null, unitM: u ? u[1] : null };
 }
+/* Which datum a latitude-and-longitude system is on. Layers on different datums aren't drawn together: no datum
+   shift is worked out here, and without one the same place can sit tens or hundreds of metres apart. */
+function datumOf(crs) {
+  if (crs.mode === 'merc' || crs.code === 4326 || crs.code === 4979) return 'WGS 84';
+  if (crs.code === 4258 || crs.code === 4937) return 'ETRS89';
+  return crs.code !== null && crs.code !== undefined ? `EPSG:${crs.code}` : null; // no code: the datum isn't known
+}
 const R_MERC = 6378137;
 const mercToLL = (x, y) => [x / R_MERC * 180 / Math.PI, (2 * Math.atan(Math.exp(y / R_MERC)) - Math.PI / 2) * 180 / Math.PI];
 
@@ -9407,7 +9442,7 @@ function mapSource(e, fmt) {
         else if (Number(L.srsId) === 0) crs = { mode: 'geo', code: null, label: 'an undefined geographic coordinate system' };
         else if (Number(L.srsId) === -1) crs = { mode: 'native', code: -1, label: 'an undefined Cartesian coordinate system', unit: null, unitM: null };
         else crs = crsOf(null, L.srsDefinition, undefined, L.srsName || (L.srsId !== undefined ? `coordinate system ${L.srsId}` : ''));
-        return { label: L.table, crs, features: L.features.map((f) => ({ props: f.props, geom: f.geom, error: f.error })) };
+        return { label: L.table, crs, wkb: true, features: L.features.map((f) => ({ props: f.props, geom: f.geom, error: f.error })) };
       });
     }
     if (fmt === 'geojson') { const g = geojsonOf(e); return [{ label: '', crs: g.crs, features: g.features.map((f) => ({ props: f.props, id: f.id, geom: f.geom })) }]; }
@@ -9432,7 +9467,9 @@ async function renderMap(e, panel, tok, fmt) {
   for (const o of curOpts.otherEntries || []) if (o && o !== e && viewsFor(o.name).includes('map')) others.push(o); // the other files that have a Map view by name
   const first = main[0].crs;
   const disp = first.mode === 'native' ? { mode: 'native', code: first.code, label: first.label, unit: first.unit, unitM: first.unitM } : { mode: 'll', label: first.label };
-  const fits = (crs) => (disp.mode === 'll' ? crs.mode !== 'native' : crs.mode === 'native' && crs.code === disp.code && crs.label === disp.label);
+  // latitude and longitude only on the same known datum; a layer whose datum isn't known is never overlaid on another
+  const fits = (crs, L) => (disp.mode === 'll' ? crs.mode !== 'native' && (L === main[0] || (datumOf(crs) !== null && datumOf(crs) === datumOf(first)))
+    : crs.mode === 'native' && crs.code === disp.code && crs.label === disp.label);
   const hasTab = (id) => curTabs.some((t) => t.key === id);
   const seeAlso = fmt === 'tiff' ? (hasTab('picture:tiff') ? 'The picture’s pixel values are in the Picture view.' : '')
     : fmt === 'gpkg' ? (hasTab('tables:sqlite') ? 'The same features are listed in the Tables view.' : '')
@@ -9454,16 +9491,21 @@ async function renderMap(e, panel, tok, fmt) {
   const skipped = [];
   /* Turn a source layer into something drawable on this map: coordinates in map units (degrees, or the file's own units). */
   function prep(entry, L) {
-    if (!fits(L.crs)) return { why: `It uses ${L.crs.label}, which can’t be drawn on this map of ${disp.label}.` };
+    if (!fits(L.crs, L)) return { why: disp.mode === 'll' && L.crs.mode !== 'native'
+      ? (datumOf(L.crs) === null || datumOf(first) === null
+        ? `It uses ${L.crs.label}${datumOf(L.crs) === null ? ', which doesn’t say which datum it is on' : `, and this map’s ${disp.label} doesn’t say which datum it is on`}, so the two can’t be lined up: the same place could be drawn tens of metres or more apart. It isn’t drawn here.`
+        : `It uses ${L.crs.label}, which may be on a different datum from this map’s ${disp.label}, so the same place could be drawn tens of metres or more apart; it isn’t drawn here.`)
+      : `It uses ${L.crs.label}, which can’t be drawn on this map of ${disp.label}.` };
     const conv = disp.mode === 'll' && L.crs.mode === 'merc' ? mercToLL : (x, y) => [x, y];
     const out = { entry, label: L.label, colour: COLOURS[colourN++ % COLOURS.length], feats: [], raster: null, on: true, bad: 0, badWhy: '' };
     if (L.raster) {
-      const t = L.raster, b = t.geo.bounds, [w, s] = conv(b.west, b.south), [ea, n] = conv(b.east, b.north);
+      const t = L.raster, b = t.geo.bounds, tr = t.geo.transform, [w, s] = conv(b.west, b.south), [ea, n] = conv(b.east, b.north);
+      if (tr && (tr[2] !== 0 || tr[4] !== 0)) return { why: 'The picture is turned or slanted on the Earth (its geographic transform rotates or shears it), and this map places only pictures that line up north to south. The Picture view shows it.' };
       let rgba;
-      try { rgba = FM.tiffToRGBA(t, t.samples >= 3 && t.photometric === 2 ? {} : { band: 0 }); } catch (err) { return { why: reasonOf(err) }; }
+      try { rgba = FM.tiffToRGBA(t); } catch (err) { return { why: reasonOf(err) }; }
       const c = document.createElement('canvas'); c.width = rgba.width; c.height = rgba.height;
       c.getContext('2d').putImageData(new ImageData(rgba.data, rgba.width, rgba.height), 0, 0);
-      out.raster = { img: c, t, w, s, e: ea, n };
+      out.raster = { img: c, t, w, s, e: ea, n, fx: !!tr && tr[1] < 0, fy: !!tr && tr[5] > 0 }; // fx: its first column is the east edge; fy: its first row is the south edge
       out.bbox = [w, s, ea, n];
       return out;
     }
@@ -9489,7 +9531,8 @@ async function renderMap(e, panel, tok, fmt) {
       return acc;
     };
     for (const f of L.features) {
-      if (f.error) { out.bad++; if (!out.badWhy) out.badWhy = f.error; continue; }
+      const shape = f.error ? '' : shapeProblem(f.geom, L.wkb === true);
+      if (f.error || shape) { out.bad++; if (!out.badWhy) out.badWhy = f.error || `one has ${shape}`; continue; }
       const p = parts(f.geom, []);
       if (p.length) out.feats.push({ props: f.props, id: f.id, parts: p });
     }
@@ -9505,7 +9548,7 @@ async function renderMap(e, panel, tok, fmt) {
   const sx = (x) => (x * kx - V.cx) * V.s + W() / 2, sy = (y) => H() / 2 - (y - V.cy) * V.s;
   const ux = (px) => ((px - W() / 2) / V.s + V.cx) / kx, uy = (py) => V.cy - (py - H() / 2) / V.s;
   function fit() {
-    const bbs = layers.filter((l) => l.on && l.bbox).map((l) => l.bbox);
+    const bbs = layers.filter((l) => l.on && !l.off && l.bbox).map((l) => l.bbox);
     if (!W()) return;
     if (!bbs.length) { V = { cx: 0, cy: 0, s: W() / (disp.mode === 'll' ? 360 : 1000) }; fitS = V.s; fitted = true; schedule(); return; }
     const b = [Math.min(...bbs.map((x) => x[0])), Math.min(...bbs.map((x) => x[1])), Math.max(...bbs.map((x) => x[2])), Math.max(...bbs.map((x) => x[3]))];
@@ -9567,7 +9610,8 @@ async function renderMap(e, panel, tok, fmt) {
       if (!L.on || L.off || !L.raster) continue;
       const r = L.raster, x0 = sx(r.w), x1 = sx(r.e), y0 = sy(r.n), y1 = sy(r.s);
       g.globalAlpha = op; g.imageSmoothingEnabled = Math.abs(x1 - x0) < r.img.width;
-      g.drawImage(r.img, x0, y0, x1 - x0, y1 - y0);
+      if (!r.fx && !r.fy) g.drawImage(r.img, x0, y0, x1 - x0, y1 - y0);
+      else { g.save(); g.translate(r.fx ? x1 : x0, r.fy ? y1 : y0); g.scale(r.fx ? -1 : 1, r.fy ? -1 : 1); g.drawImage(r.img, 0, 0, x1 - x0, y1 - y0); g.restore(); } // a mirrored picture
       g.globalAlpha = 1;
     }
     grid(g, w, h, C);
@@ -9699,7 +9743,8 @@ async function renderMap(e, panel, tok, fmt) {
       if (!L.on || L.off || !L.raster) continue;
       const r = L.raster;
       if (x < Math.min(r.w, r.e) || x > Math.max(r.w, r.e) || y < Math.min(r.s, r.n) || y > Math.max(r.s, r.n)) continue;
-      const ix = Math.min(r.t.width - 1, Math.floor((x - r.w) / (r.e - r.w) * r.t.width)), iy = Math.min(r.t.height - 1, Math.floor((r.n - y) / (r.n - r.s) * r.t.height));
+      const fx = (x - r.w) / (r.e - r.w), fy = (r.n - y) / (r.n - r.s);
+      const ix = Math.min(r.t.width - 1, Math.floor((r.fx ? 1 - fx : fx) * r.t.width)), iy = Math.min(r.t.height - 1, Math.floor((r.fy ? 1 - fy : fy) * r.t.height));
       let v; try { v = Array.from(FM.tiffPixel(r.t, ix, iy), String).join(', '); } catch (err) { v = reasonOf(err); }
       html += `<p>The picture in <span class="fn">${esc(L.entry.name)}</span> at pixel ${ix}, ${iy}: ${esc(v)}</p>`;
     }
@@ -9779,15 +9824,17 @@ async function renderMap(e, panel, tok, fmt) {
   $('mp-out').addEventListener('click', () => zoomAt(W() / 2, H() / 2, 1 / 1.6));
   $('mp-fit').addEventListener('click', fit);
   $('mp-op').addEventListener('input', schedule);
+  const loads = []; // for each of the other map files, which tick of its box is the latest
   panel.querySelectorAll('.bf-over input[type=checkbox]').forEach((box) => box.addEventListener('change', async () => {
     const i = +box.dataset.o, o = others[i], why = $(`mp-why-${i}`);
-    const mine = layers.filter((l) => l.entry === o);
-    if (!box.checked) { mine.forEach((l) => { l.on = false; }); if (sel) sel = sel.filter((h) => h.L.entry !== o); legend(); schedule(); return; }
+    const mine = layers.filter((l) => l.entry === o), req = loads[i] = (loads[i] || 0) + 1;
+    if (!box.checked) { if (why.textContent === 'Reading…') why.hidden = true; mine.forEach((l) => { l.on = false; }); if (sel) sel = sel.filter((h) => h.L.entry !== o); legend(); schedule(); return; }
     if (mine.length) { mine.forEach((l) => { l.on = true; }); legend(); schedule(); return; }
     why.hidden = false; why.textContent = 'Reading…';
     let src;
-    try { if (curOpts.readEntry) { await curOpts.readEntry(o); if (!live(tok)) return; } src = await mapSource(o, nameReader('map', o.name)); } catch (err) { if (!live(tok)) return; why.textContent = `Can’t be drawn: ${reasonOf(err)}`; box.checked = false; return; }
-    if (!live(tok)) return;
+    const stale = () => !live(tok) || loads[i] !== req;
+    try { if (curOpts.readEntry) { await curOpts.readEntry(o); if (stale()) return; } src = await mapSource(o, nameReader('map', o.name)); } catch (err) { if (stale()) return; why.textContent = `Can’t be drawn: ${reasonOf(err)}`; box.checked = false; return; }
+    if (stale()) return;
     const msgs = [];
     let added = 0;
     for (const L of src) { const d = prep(o, L); if (d.why) msgs.push(`${L.label ? `Table “${L.label}”: ` : ''}${d.why}`); else { layers.push(d); added++; } }

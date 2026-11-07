@@ -2320,6 +2320,7 @@ function parse(src, isVar) {
         fail('Expected “)” here.', toks[k]);
       }
       const close = next();
+      if (tk.text === '{') say('Here { } are read as brackets. For the fractional part, write frac(x).');
       return { t: 'group', a: e, pos: tk.pos, end: close.end };
     }
     if (tk.v === '|') { // |x|
@@ -2783,7 +2784,12 @@ def('acoth arcoth arccoth', 1, 1, ([z], node) => {
   return atanhC(inv0(z, node.name, node), node, node.name);
 });
 def('cis', 1, 1, ([z], node) => (N.isRealC(z) ? N.cadd(trig(z, 'cos', node), N.cmul(N.CI, trig(z, 'sin', node))) : N.cexp(N.cmul(N.CI, toRad(z)))));
-def('hypot', 2, Infinity, (a, node) => { const xs = listReals(a, 'hypot', node); return C(N.withPrec(8, () => N.rsqrt(xs.reduce((s, x) => N.radd(s, N.rmul(x, x)), Q0)))); });
+def('hypot', 2, Infinity, (a, node) => { // scaled by the largest value, so huge or tiny values don't overflow on the way
+  const xs = listReals(a, 'hypot', node).map((x) => N.rabs(x));
+  let m = xs[0]; for (const x of xs) if (N.rcmp(x, m) > 0) m = x;
+  if (N.rsign(m) === 0) return C(Q0);
+  return C(N.withPrec(8, () => N.rmul(m, N.rsqrt(xs.reduce((s, x) => { const r = N.rdiv(x, m); return N.radd(s, N.rmul(r, r)); }, Q0)))));
+});
 def('sign sgn', 1, 1, ([z]) => {
   if (N.isRealC(z)) { if (N.isNZ(z.re)) { N.note('The value is zero to within the working precision, so its sign is taken as 0.'); return N.C0; } return C(qi(N.rsign(z.re))); }
   return N.withPrec(8, () => N.cdiv(z, C(N.cabs(z))));

@@ -551,6 +551,7 @@ footer .k{font-family:"IBM Plex Mono",monospace;font-size:12px}
   const blankOut = m => m.replace(/[^\n]/g, ' ');
   function stripLabels(text){
     return text
+      .replace(NAMED_RE, m => m.replace(/#/g, ' '))   // a "#" inside a named triple (L#1W#2C#3) isn't a label
       .replace(HASH_LABEL, blankOut)
       .replace(LINE_LABEL, (all, label, rest) => {
         const n = (rest.match(/\d+/g) || []).length;
@@ -566,8 +567,10 @@ footer .k{font-family:"IBM Plex Mono",monospace;font-size:12px}
     return (t.match(RUN) || []).filter(r => r.match(/\d+/g).length % 3 !== 0).length;
   }
 
-  // Returns [[ [a,b,c], ... ], ...] — groups of raw triples (in the order written)
-  function parseFormula(text, groupMode){
+  // Returns [[ [a,b,c], ... ], ...] — groups of raw triples (in the order written). A named
+  // triple (L1W2C3) says which number is which, so it's laid out in the chosen triple order.
+  function parseFormula(text, groupMode, order){
+    order = order || state.opts.order;
     text = stripLabels(text);
     const groups = [];
     let cur = [];
@@ -575,8 +578,11 @@ footer .k{font-family:"IBM Plex Mono",monospace;font-size:12px}
     MASTER.lastIndex = 0;
     let m;
     while((m = MASTER.exec(text)) !== null){
-      const trip = m[1] !== undefined ? [m[1],m[2],m[3]] : [m[4],m[5],m[6]];
-      const t = trip.map(n => parseInt(n,10));
+      let t;
+      if(m[1] !== undefined){
+        const named = { L:+m[1], W:+m[2], C:+m[3] };
+        t = Array.from(order, k => named[k]);
+      } else t = [m[4],m[5],m[6]].map(n => parseInt(n,10));
       if(last >= 0){
         const gap = text.slice(last, m.index);
         const blank = /\n[^\S\n]*\n/.test(gap);
@@ -606,7 +612,7 @@ footer .k{font-family:"IBM Plex Mono",monospace;font-size:12px}
   }
   function wordsOf(line, o){
     let toks = line.trim().split(/\s+/).filter(Boolean);
-    if(o.hyphen === 'split') toks = toks.flatMap(t => t.split(/[-\u2010-\u2015]+/)).filter(Boolean);
+    if(o.hyphen === 'split') toks = toks.flatMap(t => { if(!/[\p{L}\p{N}]/u.test(t)) return [t]; const parts = t.split(/[-\u2010-\u2015]+/).filter(Boolean); return parts.length ? parts : [t]; });   // a symbol-only token like (—) stays one symbol
     return toks.map(text => {
       const hasL = /\p{L}/u.test(text), hasD = /\p{N}/u.test(text);
       let counted = true;
@@ -650,14 +656,14 @@ footer .k{font-family:"IBM Plex Mono",monospace;font-size:12px}
     return '<div class="seam"><button type="button" data-seam="'+i+'" aria-label="Insert a line '+label+'">+</button><span class="label">'+label+'</span></div>';
   }
   function renderRows(focusIdx, caret){
-    const n = state.lines.length;
+    const n = state.lines.length, base = state.opts.base;
     let html = '';
     for(let i=0;i<n;i++){
-      html += seam(i, i===0 ? 'at the top' : 'between ' + i + ' and ' + (i+1));
+      html += seam(i, i===0 ? 'at the top' : 'between ' + (i-1+base) + ' and ' + (i+base));
       html += '<div class="row">'
-        + '<label class="row-label" for="line-'+i+'">Line '+(i+1)+'</label>'
+        + '<label class="row-label" for="line-'+i+'">Line '+(i+base)+'</label>'
         + '<input class="row-input" id="line-'+i+'" data-i="'+i+'" type="text" autocomplete="off" autocapitalize="characters" spellcheck="false" value="'+esc(state.lines[i])+'" placeholder="'+(i===0?'text of the first line':'')+'">'
-        + '<button type="button" class="del" data-del="'+i+'" title="Delete line '+(i+1)+'" aria-label="Delete line '+(i+1)+'"'+(n<=1?' disabled':'')+'>'+TRASH+'</button>'
+        + '<button type="button" class="del" data-del="'+i+'" title="Delete line '+(i+base)+'" aria-label="Delete line '+(i+base)+'"'+(n<=1?' disabled':'')+'>'+TRASH+'</button>'
         + '</div>';
     }
     html += seam(n, 'at the bottom');
@@ -692,7 +698,7 @@ footer .k{font-family:"IBM Plex Mono",monospace;font-size:12px}
   });
   rowsEl.addEventListener('keydown', e => {
     const inp = e.target.closest('input.row-input');
-    if(!inp) return;
+    if(!inp || e.isComposing || e.keyCode === 229) return;   // an input method is still composing
     const i = +inp.dataset.i;
     if(e.key === 'Enter'){
       e.preventDefault();
@@ -763,7 +769,8 @@ footer .k{font-family:"IBM Plex Mono",monospace;font-size:12px}
   Object.entries(optEls).forEach(([k,sel]) => {
     $(sel).addEventListener('change', e => {
       state.opts[k] = k==='base' ? +e.target.value : e.target.value;
-      if(k === 'group' && !state.interpDirty) reinterpret();
+      if((k === 'group' || k === 'order') && !state.interpDirty) reinterpret();
+      if(k === 'base') renderRows();
       update();
     });
   });
@@ -781,7 +788,9 @@ footer .k{font-family:"IBM Plex Mono",monospace;font-size:12px}
 
   /* ---------- output rendering ---------- */
   let lastText = '', lastCompact = '';
-  function showCase(s){ return state.opts.caseMode === 'upper' ? s.toUpperCase() : s; }
+  function showCase(s){   // one character stays one character: ß and ﬃ keep their own form
+    return state.opts.caseMode === 'upper' ? Array.from(s, c => { const u = c.toUpperCase(); return Array.from(u).length === 1 ? u : c; }).join('') : s;
+  }
 
   function update(){
     save();
@@ -821,7 +830,7 @@ footer .k{font-family:"IBM Plex Mono",monospace;font-size:12px}
 
   function letterVal(ch){
     const u = ch.toUpperCase();
-    if(u >= 'A' && u <= 'Z') return u.charCodeAt(0) - 65 + state.opts.convA;
+    if(/^[A-Z]$/.test(u)) return u.charCodeAt(0) - 65 + state.opts.convA;   // not ß → SS
     return null;
   }
   function digitalRoot(n){ n = Math.abs(n); while(n > 9) n = String(n).split('').reduce((a,d)=>a+ +d,0); return n; }
@@ -896,11 +905,14 @@ footer .k{font-family:"IBM Plex Mono",monospace;font-size:12px}
   /* ---------- copy / toast ---------- */
   function copy(text, msg){
     const done = () => toast(msg);
-    if(navigator.clipboard && navigator.clipboard.writeText){ navigator.clipboard.writeText(text).then(done, () => fallback()); }
+    if(navigator.clipboard && navigator.clipboard.writeText){ try{ navigator.clipboard.writeText(text).then(done, () => fallback()); }catch(e){ fallback(); } }
     else fallback();
     function fallback(){
       const ta = document.createElement('textarea'); ta.value = text; ta.style.position='fixed'; ta.style.opacity='0';
-      document.body.appendChild(ta); ta.select(); try{ document.execCommand('copy'); done(); }catch(e){ toast('Copy failed — select the text and copy it yourself'); } document.body.removeChild(ta);
+      const back = document.activeElement;
+      document.body.appendChild(ta); ta.select(); let ok = false; try{ ok = document.execCommand('copy'); }catch(e){} document.body.removeChild(ta);
+      if(back && back.focus) back.focus();
+      if(ok) done(); else toast('Copy failed — select the text and copy it yourself');
     }
   }
   $('#btn-copy').addEventListener('click', () => copy(lastText, 'Copied'));

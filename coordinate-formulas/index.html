@@ -465,7 +465,7 @@ table.nums td:last-child{overflow-wrap:anywhere;white-space:normal}
     <p class="lead">Paste the cache's formulas, one per line, in the order the puzzle gives them. Names can be single words, several words, or hyphenated; a hyphen with spaces around it is a minus sign.</p>
     <div class="field">
       <textarea class="numin txt" id="fx-in" rows="7" spellcheck="false" autocomplete="off" aria-labelledby="h1-s" aria-describedby="fx-help"></textarea>
-      <p class="help" id="fx-help">Use + − × ÷ (or x, *, /), ^ for powers, and brackets. “6 x Name”, “6 Name” and “6(Name)” all multiply; an x between two values means times, otherwise it’s a name. Powers go first, then × and ÷, then + and −, and a multiplication with no sign, like 3A or 2(B), goes before a ÷ next to it. The read-back shows the order in brackets. Labels like “A =” at the start of a line are ignored.</p>
+      <p class="help" id="fx-help">Use + − × ÷ (or x, *, /), ^ for powers, and brackets. “6 x Name”, “6 Name” and “6(Name)” all multiply; an x between two values means times (6 x 5, 3x2, 6 x −5), otherwise it’s a name (X + 5, 3X, 3X − 1). Powers go first, then × and ÷, then + and −, and a multiplication with no sign, like 3A or 2(B), goes before a ÷ next to it. The read-back shows the order in brackets. Labels like “A =” at the start of a line are ignored.</p>
       <label class="inline small"><input type="checkbox" id="fx-hyph"> Treat every hyphen as a minus sign (for formulas like A-B)</label>
     </div>
     <div id="fx-read"></div>
@@ -518,8 +518,11 @@ table.nums td:last-child{overflow-wrap:anywhere;white-space:normal}
   const LS = 'coordinate-formulas:v1';
   const EXAMPLE = { text: '(Quillon / 2) - 2\n(Ost Marrow - Bramblewick) / 2\n(5 x Fen-Dallow) + (Ysolde - Harrowgate)\nHarrowgate + 68\n(Ysolde - Quillon) + 78\n(6 x Ost Marrow) + 135',
     vals: { 'Quillon':'94', 'Ost Marrow':'31', 'Bramblewick':'7', 'Fen-Dallow':'60', 'Ysolde':'70', 'Harrowgate':'25' }, posted: 'N 45° 12.000 W 093° 55.000', ns: 'N', ew: 'W', hyph: false };
-  let st = { text: '', vals: {}, posted: '', ns: 'N', ew: 'W', hyph: false, slots: null };
+  // values live in objects with no prototype, so names like constructor or toString are just names
+  const bare = (o) => { const r = Object.create(null); if (o && typeof o === 'object') for (const k of Object.keys(o)) r[k] = o[k]; return r; };
+  let st = { text: '', vals: bare(), posted: '', ns: 'N', ew: 'W', hyph: false, slots: null };
   try { const s = JSON.parse(localStorage.getItem(LS) || 'null'); if (s) st = Object.assign(st, s); } catch (e) {}
+  st.vals = bare(st.vals);
   const save = () => { try { localStorage.setItem(LS, JSON.stringify(st)); } catch (e) {} };
   const SLOTS = [['latDeg','Latitude degrees'],['latMin','Latitude minutes'],['latThou','Latitude thousandths'],['lonDeg','Longitude degrees'],['lonMin','Longitude minutes'],['lonThou','Longitude thousandths'],['none','Not a coordinate part']];
 
@@ -528,7 +531,7 @@ table.nums td:last-child{overflow-wrap:anywhere;white-space:normal}
   const SPACES = /[\t\u00A0\u1680\u2000-\u200A\u202F\u205F\u3000]/g;
   const isLetter = (c) => new RegExp(`^[${L}]$`).test(c || '');
   function tokenize(line, hyph){
-    let s = line.replace(SPACES, ' ').replace(/^\s*[A-Za-z]\s*[=:]\s*/, '').replace(/[×✕]/g, '*').replace(/[÷]/g, '/').replace(/[−–—]/g, ' - ');
+    let s = line.replace(SPACES, ' ').replace(/^\s*[A-Za-z]\s*[=:]\s*/, '').replace(/[×✕]/g, '*').replace(/[÷]/g, '/').replace(/[−–—]/g, '−');
     // A word is letters, then letters, digits or apostrophes (so Q1 and Q2 are names); without the
     // hyphen option a hyphen between letters joins words (Fen-Dallow). Words with spaces between them
     // make one name (Ost Marrow).
@@ -540,12 +543,13 @@ table.nums td:last-child{overflow-wrap:anywhere;white-space:normal}
       if (/\s/.test(ch)) { i++; continue; }
       const num = s.slice(i).match(/^\d+(?:\.\d+)?/);
       if (num) { toks.push({ t:'num', v: parseFloat(num[0]) }); i += num[0].length; joinable = false; continue; }
-      if ('+-*/^()'.includes(ch)) { toks.push({ t:'op', v: ch }); i++; joinable = false; continue; }
-      // x on its own means "times", but only between two operands (6 x Name, A x2, A x(B));
-      // anywhere else (X + 5, 3X, x - 1) it is a name like any other.
+      if ('+-−*/^()'.includes(ch)) { toks.push({ t:'op', v: ch === '−' ? '-' : ch }); i++; joinable = false; continue; }
+      // x on its own means "times", but only between two operands (6 x Name, A x2, A x(B), 6 x -5);
+      // anywhere else (X + 5, 3X, 3X-1, 3X -1, x - 1) it is a name like any other. Before a minus it
+      // means times only with a space before it, so an x glued to the value before it stays a name.
       if ((ch === 'x' || ch === 'X') && operandEnd(toks[toks.length - 1]) && !(isLetter(s[i + 1]) || /['’]/.test(s[i + 1] || '') || (!hyph && s[i + 1] === '-' && isLetter(s[i + 2])))) {
-        const m = s.slice(i + 1).match(/^( *)(.?)(.?)/), gap = m[1].length > 0, nx = m[2];
-        if (/[0-9(]/.test(nx) || (gap && isLetter(nx)) || (nx === '-' && /[0-9(A-Za-z\u00C0-\u024F]/.test(m[3]))) { toks.push({ t:'op', v:'*' }); i++; joinable = false; continue; }
+        const m = s.slice(i + 1).match(/^( *)(.?)(.?)/), gap = m[1].length > 0, nx = m[2], spaced = s[i - 1] === ' ';
+        if (/[0-9(]/.test(nx) || (gap && isLetter(nx)) || (spaced && (nx === '-' || nx === '−') && /[0-9(A-Za-z\u00C0-\u024F]/.test(m[3]))) { toks.push({ t:'op', v:'*' }); i++; joinable = false; continue; }
       }
       const nm = s.slice(i).match(wordRe);
       if (nm) {
@@ -616,12 +620,55 @@ table.nums td:last-child{overflow-wrap:anywhere;white-space:normal}
   function parseCoord(t){
     t = t.toUpperCase().replace(/[°'′"″,]/g, ' ').trim();
     let m = t.match(/^([NS])\s*(\d{1,2})\s+(\d{1,2}(?:\.\d+)?)\s+([EW])\s*(\d{1,3})\s+(\d{1,2}(?:\.\d+)?)$/);
-    if (m) return { lat: (m[1] === 'S' ? -1 : 1) * (+m[2] + +m[3] / 60), lon: (m[4] === 'W' ? -1 : 1) * (+m[5] + +m[6] / 60) };
-    m = t.match(/^(-?\d+(?:\.\d+)?)\s+(-?\d+(?:\.\d+)?)$/);
-    if (m) return { lat: +m[1], lon: +m[2] };
-    return null;
+    let c = null;
+    if (m) { if (+m[3] >= 60 || +m[6] >= 60) return { err: 'minutes' }; c = { lat: (m[1] === 'S' ? -1 : 1) * (+m[2] + +m[3] / 60), lon: (m[4] === 'W' ? -1 : 1) * (+m[5] + +m[6] / 60) }; }
+    else if ((m = t.match(/^(-?\d+(?:\.\d+)?)\s+(-?\d+(?:\.\d+)?)$/))) c = { lat: +m[1], lon: +m[2] };
+    if (c && (Math.abs(c.lat) > 90 || Math.abs(c.lon) > 180)) return { err: 'range' };
+    return c;
   }
   function miles(a, b){ const R = 3958.8, r = Math.PI / 180, dLat = (b.lat - a.lat) * r, dLon = (b.lon - a.lon) * r; const h = Math.sin(dLat / 2) ** 2 + Math.cos(a.lat * r) * Math.cos(b.lat * r) * Math.sin(dLon / 2) ** 2; return 2 * R * Math.asin(Math.sqrt(h)); }
+
+
+  /* ---------- which part each line is ---------- */
+  // st.slotLines is every line of Step 1 as last seen, blank ones included, and st.slotAll the choice
+  // for each (null for a line that hasn't had one). A line keeps its choice while it is edited, even
+  // through being emptied and retyped; lines added get the usual layout; formulas pasted over the old
+  // ones (two or more lines, none in common), or typed over all of them, start again from the usual layout.
+  let fullOf = [];   // for each formula row (blank lines skipped), its index in st.slotLines
+  const likeness = (a, b) => { if (a === b) return 1e6; let p = 0; while (p < a.length && p < b.length && a[p] === b[p]) p++; let q = 0; while (q < a.length && q < b.length && a[a.length - 1 - q] === b[b.length - 1 - q]) q++; return Math.max(p, q); };
+  // pair each line of the shorter list with one of the longer list, in order, as alike as possible
+  function pairUp(short, long){
+    const k = short.length, m = long.length, best = Array.from({ length: k + 1 }, () => new Array(m + 1).fill(-Infinity));
+    for (let j = 0; j <= m; j++) best[k][j] = 0;
+    for (let i = k - 1; i >= 0; i--) for (let j = m - 1; j >= 0; j--) best[i][j] = Math.max(best[i][j + 1], likeness(short[i], long[j]) + best[i + 1][j + 1]);
+    const pick = []; for (let i = 0, j = 0; i < k; j++) if (best[i][j] === likeness(short[i], long[j]) + best[i + 1][j + 1]) { pick.push(j); i++; }
+    return pick;
+  }
+  function matchSlots(now){
+    const nb = (a) => a.filter(Boolean);
+    let was = Array.isArray(st.slotLines) && Array.isArray(st.slotAll) && st.slotAll.length === st.slotLines.length ? st.slotLines : null, had = was ? st.slotAll : null;
+    if (!was && Array.isArray(st.slots)) {   // saved before lines were tracked: the choices go to the lines in order
+      let r = 0; was = now; had = now.map((l) => (l ? st.slots[r++] : null) || null);
+    }
+    let slots;
+    const fresh = !nb(now).some((l) => was && was.includes(l));   // no formula line is still there as it was
+    if (!was || !Array.isArray(st.slots)
+        || (nb(now).length >= 2 && (!nb(was).length || (nb(was).length >= 2 && fresh)))   // pasted over, or into an empty box
+        || (nb(was).length >= 2 && nb(now).length < nb(was).length && fresh)) slots = now.map(() => null);   // typed over a selection of every line
+    else {
+      let p = 0; while (p < was.length && p < now.length && was[p] === now[p]) p++;
+      let q = 0; while (q < was.length - p && q < now.length - p && was[was.length - 1 - q] === now[now.length - 1 - q]) q++;
+      const wm = was.slice(p, was.length - q), nm = now.slice(p, now.length - q), mid = nm.map(() => null);
+      if (wm.length === nm.length) wm.forEach((_, i) => { mid[i] = had[p + i]; });                                         // edited in place
+      else if (wm.length < nm.length) pairUp(wm, nm).forEach((j, i) => { mid[j] = had[p + i]; });                        // lines added
+      else pairUp(nm, wm).forEach((j, i) => { mid[i] = had[p + j]; });                                                    // lines removed
+      slots = [...had.slice(0, p), ...mid, ...had.slice(was.length - q)];
+    }
+    // a formula line with no choice yet gets the usual part for its place, unless another line has it
+    fullOf = []; now.forEach((l, i) => { if (l) fullOf.push(i); });
+    fullOf.forEach((f, r) => { if (!slots[f]) { const u = r < 6 ? SLOTS[r][0] : 'none'; slots[f] = u !== 'none' && !slots.includes(u) ? u : 'none'; } });
+    st.slotLines = now; st.slotAll = slots; st.slots = fullOf.map((f) => slots[f]);
+  }
 
   /* ---------- render ---------- */
   let lines = [];
@@ -638,23 +685,19 @@ table.nums td:last-child{overflow-wrap:anywhere;white-space:normal}
       s2.classList.remove('waiting');
       const box = $('#fx-vars'), have = [...box.querySelectorAll('input')].map((i) => i.dataset.name);
       if (have.join('\u0001') !== all.join('\u0001')) {
-        box.innerHTML = all.map((n, i) => `<label class="var"><span class="nm">${esc(n)}</span><input type="text" inputmode="decimal" data-name="${esc(n)}" value="${esc(st.vals[n] || '')}" aria-label="Value of ${esc(n)}" autocomplete="off"></label>`).join('');
+        box.innerHTML = all.map((n, i) => `<label class="var"><span class="nm">${esc(n)}</span><input type="text" inputmode="decimal" data-name="${esc(n)}" value="${esc(st.vals[n] ?? '')}" aria-label="Value of ${esc(n)}" autocomplete="off"></label>`).join('');
       }
     }
     // results
     // a comma decimal (45,5) and any kind of minus sign are fine; anything else unreadable is flagged
-    const vals = {}, unread = [];
+    const vals = bare(), unread = [];
     for (const n of all) {
-      const t = String(st.vals[n] || '').trim().replace(/^[−–—]/, '-'), u = /^-?\d+,\d+$/.test(t) ? t.replace(',', '.') : t;
+      const t = String(st.vals[n] ?? '').trim().replace(/^[−–—]/, '-'), u = /^-?\d+,\d+$/.test(t) ? t.replace(',', '.') : t;
       if (/^-?\d+(\.\d+)?$/.test(u)) vals[n] = parseFloat(u); else if (t) unread.push(n);
       const box = $('#fx-vars').querySelector(`input[data-name="${CSS.escape(n)}"]`);
       if (box) { if (t && !(n in vals)) box.setAttribute('aria-invalid', 'true'); else box.removeAttribute('aria-invalid'); }
     }
-    // keep each line's choice when lines are edited, added or removed, and give new lines the usual
-    // layout; formulas pasted over the old ones (no line in common) start again from the usual layout
-    if (!Array.isArray(st.slots) || (Array.isArray(st.slotLines) && st.slotLines.length && raw.length && !raw.some((l) => st.slotLines.includes(l)))) st.slots = [];
-    st.slots = lines.map((_, i) => st.slots[i] || (i < 6 ? SLOTS[i][0] : 'none'));
-    if (raw.length) st.slotLines = raw;
+    matchSlots(st.text.split('\n').map((l) => l.trim()));
     const s3 = $('#s3');
     if (!lines.length) { s3.classList.add('waiting'); s3.querySelector('.wait').textContent = 'Needs formulas in Step 1.'; return renderDist(null); }
     s3.classList.remove('waiting');
@@ -679,6 +722,8 @@ table.nums td:last-child{overflow-wrap:anywhere;white-space:normal}
       if (g.v < lo || g.v > hi) { checks.push(['bad', `Line ${g.line} gives ${String(g.v).replace('-', '−')} for the ${label}, outside ${lo} to ${hi}.`]); complete = false; continue; }
       part[k] = String(g.v).padStart(w, '0');
     }
+    if (part.latDeg && +part.latDeg === 90 && (+part.latMin || +part.latThou)) { checks.push(['bad', 'Latitude can’t go past 90°, so with 90 degrees the minutes must be 00.000.']); complete = false; }
+    if (part.lonDeg && +part.lonDeg === 180 && (+part.lonMin || +part.lonThou)) { checks.push(['bad', 'Longitude can’t go past 180°, so with 180 degrees the minutes must be 00.000.']); complete = false; }
     const ns = st.ns, ew = st.ew;
     $('#fx-coord').innerHTML = `<div class="reading coord"><span>${esc(`${ns} ${part.latDeg || '__'}° ${part.latMin || '__'}.${part.latThou || '___'}`)}</span> <span>${esc(`${ew} ${part.lonDeg || '___'}° ${part.lonMin || '__'}.${part.lonThou || '___'}`)}</span></div>`;
     if (complete) checks.push(['ok', 'Every part is a whole number in range.']);
@@ -690,6 +735,7 @@ table.nums td:last-child{overflow-wrap:anywhere;white-space:normal}
     const out = [];
     const p = st.posted.trim() ? parseCoord(st.posted) : null;
     if (st.posted.trim() && !p) out.push(['warn', 'I can’t read those coordinates. Try the form N 45° 12.000 W 093° 55.000.']);
+    else if (p && p.err) out.push(['warn', p.err === 'minutes' ? 'Those coordinates have 60 or more minutes. Minutes run from 0 to 59.999.' : 'Those coordinates are out of range. Latitude goes up to 90° and longitude up to 180°.']);
     else if (!p) out.push(['info', 'Add the listed coordinates to see how far away your result is.']);
     else if (!c) out.push(['info', 'Finish the coordinates in Step 3 to see the distance.']);
     else {
@@ -705,13 +751,13 @@ table.nums td:last-child{overflow-wrap:anywhere;white-space:normal}
   $('#fx-in').addEventListener('input', (e) => { st.text = e.target.value; save(); render(); });
   $('#fx-hyph').addEventListener('change', (e) => { st.hyph = e.target.checked; save(); render(); });
   $('#fx-vars').addEventListener('input', (e) => { const n = e.target.dataset.name; if (n !== undefined) { st.vals[n] = e.target.value; save(); render(); } });
-  $('#fx-table').addEventListener('change', (e) => { const i = e.target.dataset.slot; if (i !== undefined) { st.slots[+i] = e.target.value; save(); render(); } });
+  $('#fx-table').addEventListener('change', (e) => { const i = e.target.dataset.slot; if (i !== undefined) { const had = document.activeElement === e.target; st.slots[+i] = e.target.value; if (Array.isArray(st.slotAll) && fullOf[+i] !== undefined) st.slotAll[fullOf[+i]] = e.target.value; save(); render(); if (had) { const sel = $(`#fx-table select[data-slot="${i}"]`); if (sel) sel.focus(); } } });
   $('#fx-ns').addEventListener('change', (e) => { st.ns = e.target.value; save(); render(); });
   $('#fx-ew').addEventListener('change', (e) => { st.ew = e.target.value; save(); render(); });
   $('#fx-posted').addEventListener('input', (e) => { st.posted = e.target.value; save(); render(); });
-  $('#btn-example').addEventListener('click', () => { st = Object.assign(st, JSON.parse(JSON.stringify(EXAMPLE)), { slots: null }); fill(); save(); render(); });
-  $('#btn-clear').addEventListener('click', () => { st = { text: '', vals: {}, posted: '', ns: 'N', ew: 'W', hyph: false, slots: null }; fill(); save(); render(); });
-  if (!st.text) Object.assign(st, JSON.parse(JSON.stringify(EXAMPLE)));
+  $('#btn-example').addEventListener('click', () => { st = Object.assign(st, JSON.parse(JSON.stringify(EXAMPLE)), { slots: null }); st.vals = bare(st.vals); fill(); save(); render(); });
+  $('#btn-clear').addEventListener('click', () => { st = { text: '', vals: bare(), posted: '', ns: 'N', ew: 'W', hyph: false, slots: null }; fill(); save(); render(); });
+  if (!st.text) { Object.assign(st, JSON.parse(JSON.stringify(EXAMPLE))); st.vals = bare(st.vals); }
   fill(); render();
 })();
 </script>

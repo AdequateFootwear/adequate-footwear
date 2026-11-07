@@ -1433,13 +1433,14 @@ function cdiv(a, b) {
   if (isZeroExact(b.re) && isZeroExact(b.im)) fail('Division by zero.');
   if (isZeroExact(b.im)) return C(rdivR(a.re, b.re), rdivR(a.im, b.re));
   if (isZeroExact(b.re)) return C(rdivR(a.im, b.im), rneg(rdivR(a.re, b.im)));
-  const kb = Math.max(rmag(b.re), rmag(b.im)), ka = Math.max(rmag(a.re), rmag(a.im));
-  if (sqOut(kb) || (ka > -Infinity && Math.abs(ka + kb) > MAX_BITS - 64)) { // Smith's method: no squares of the divisor on the way
+  const kr = rmag(b.re), ki = rmag(b.im), kb = Math.max(kr, ki), kl = Math.min(kr, ki);
+  const ks = [rmag(a.re), rmag(a.im)].filter((k) => k > -Infinity), ka = Math.max(...ks), kal = Math.min(...ks);
+  if (sqOut(kb) || sqOut(kl) || (ks.length && (Math.abs(ka + kb) > MAX_BITS - 64 || Math.abs(kal + kl) > MAX_BITS - 64))) { // Smith's method: no squares of the divisor, nor products of its parts with a's, on the way (any of them might leave the range, above or below)
     const big = rmag(b.re) >= rmag(b.im) ? 're' : 'im';
     if (!isNZ(b[big])) return withPrec(10, () => {
-      const p = big === 're' ? b.re : b.im, o = big === 're' ? b.im : b.re, r = rdivR(o, p), den = radd(p, rmul(o, r));
-      const u = big === 're' ? radd(a.re, rmul(a.im, r)) : radd(rmul(a.re, r), a.im);
-      const v = big === 're' ? rsub(a.im, rmul(a.re, r)) : rsub(rmul(a.im, r), a.re);
+      const p = big === 're' ? b.re : b.im, o = big === 're' ? b.im : b.re, xr = (x) => mulDivR(x, o, p), den = radd(p, xr(o)); // x·r for the ratio r = o/p, which may itself be below the range
+      const u = big === 're' ? radd(a.re, xr(a.im)) : radd(xr(a.re), a.im);
+      const v = big === 're' ? rsub(a.im, xr(a.re)) : rsub(xr(a.im), a.re);
       return C(round2W(rdivR(u, den)), round2W(rdivR(v, den)));
     });
   }
@@ -1449,6 +1450,19 @@ function cdiv(a, b) {
     const im = rdivR(rsub(rmul(a.im, b.re), rmul(a.re, b.im)), den);
     return C(round2W(re), round2W(im));
   });
+}
+function mulDivR(x, y, z) { // x·y/z with only the result range-checked, as x·y or y/z alone may leave the range; a result below the range is carried as zero to within its bound
+  if (isZeroExact(x) || isZeroExact(y)) return Q0;
+  const hi = rmag(x) + rmag(y) - rmag(z) + 3; // |x·y/z| < 2^hi, errors of the inputs included
+  if (isNZ(x) || isNZ(y) || hi < -MAX_BITS) return nz(hi);
+  if (x.k === 'q' && y.k === 'q' && z.k === 'q' && hi > 8 - MAX_BITS) return qCap(x.n * y.n * z.d, x.d * y.d * z.n); // exact, and surely in range: |x·y/z| > 2^(hi - 7)
+  const X = toF(x), Y = toF(y), Z = toF(z);
+  if (isNZ(Z)) fail('Division by a value that is zero to within the working precision.');
+  let num = X.m * Y.m, den = Z.m; const sh = W + 2 + blen(den) - blen(num);
+  if (sh >= 0) num <<= BigInt(sh); else den <<= BigInt(-sh);
+  const m = rdiv(num, den), e = X.e + Y.e - Z.e - sh;
+  if (blen(m) + e < -MAX_BITS) return nz(blen(m) + e + 1); // just below the range
+  return fmk(m, e, accSum(X.a, Y.a, Z.a, X.a + Y.a, W) - 0.1);
 }
 const sqOut = (k) => Math.abs(2 * k) > MAX_BITS - 64; // whether squaring a part of size 2^k would leave the range
 function bigPart(z) { // [larger part, the other] by size, when squaring either part would leave the range; else null
@@ -3610,10 +3624,10 @@ function updateOffset(info) {
   if (!N.isRealC(a.value)) { out.innerHTML = '<p class="hp-err">The amount must be a real number.</p>'; return; }
   let amt = a.value.re;
   if (amt.k === 'f') { const s = N.fmtReal(amt, 'dec', 15).replace('−', '-'); amt = /×/.test(s) ? null : decQ(s); if (!amt) { out.innerHTML = '<p class="hp-err">That amount is too large or too small to use here.</p>'; return; } }
-  const deltaMin = c.unit === 'deg' ? N.rmul(amt, MIN(60)) : amt;
+  const deltaMin = c.unit === 'deg' ? N.Q(amt.n * 60n, amt.d) : amt; // exact fractions throughout, never cut to a decimal for their size, so a huge offset still wraps exactly
   const signed = c.op === '-' ? N.rneg(deltaMin) : deltaMin;
   const start = isLat ? p.lat : p.lon;
-  let end = N.radd(start, signed);
+  let end = N.Q(start.n * signed.d + signed.n * start.d, start.d * signed.d);
   const steps = [];
   const sth = isLat ? startTh[0] : startTh[1];
   const hemi = (q) => (isLat ? (N.rsign(q) < 0 ? 'S' : 'N') : (N.rsign(q) < 0 ? 'W' : 'E'));
@@ -3626,7 +3640,7 @@ function updateOffset(info) {
   if (!isLat) {
     const turns = -N.fdivB(10800n * end.d - end.n, 21600n * end.d); // whole turns of 360° to take off (on, when negative), leaving −180° < longitude ≤ 180°
     if (turns !== 0n) {
-      end = N.rsub(end, N.Q(21600n * turns)); const k = N.babs(turns);
+      end = N.Q(end.n - 21600n * turns * end.d, end.d); const k = N.babs(turns);
       steps.push(`That crosses the 180° meridian, so take 360° (21600 minutes) ${turns > 0n ? 'off' : 'on'}${k > 1n ? `, ${k} times` : ''}: ${esc(minText(end))} minutes.`);
     }
   }

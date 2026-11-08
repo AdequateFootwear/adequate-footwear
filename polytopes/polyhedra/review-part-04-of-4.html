@@ -1,0 +1,628 @@
+<!-- Review copy: lines 673-1299 of polytopes/polyhedra/index.html, split so Copilot can review it. Not served. -->
+const $ = (id) => document.getElementById(id);
+const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+
+/* ---------- names ---------- */
+const POLY = { 3: 'triangle', 4: 'square', 5: 'pentagon', 6: 'hexagon', 7: 'heptagon', 8: 'octagon', 9: 'enneagon', 10: 'decagon', 11: 'hendecagon', 12: 'dodecagon' };
+const STAR = { 5: 'pentagram', 7: 'heptagram', 8: 'octagram', 9: 'enneagram', 10: 'decagram', 11: 'hendecagram', 12: 'dodecagram' };
+const PREF = { 3: 'triangular', 4: 'square', 5: 'pentagonal', 6: 'hexagonal', 7: 'heptagonal', 8: 'octagonal', 9: 'enneagonal', 10: 'decagonal', 11: 'hendecagonal', 12: 'dodecagonal' };
+const SPREF = { 5: 'pentagrammic', 7: 'heptagrammic', 8: 'octagrammic', 9: 'enneagrammic', 10: 'decagrammic', 11: 'hendecagrammic', 12: 'dodecagrammic' };
+const FAMS = { platonic: 'Platonic solid', archimedean: 'Archimedean solid', catalan: 'Catalan solid (dual of an Archimedean solid)', kepler: 'Kepler–Poinsot polyhedron (regular star polyhedron)', star: 'Nonconvex uniform polyhedron', prism: 'Prism or antiprism', johnson: 'Snub antiprism (Johnson solid)' };
+const plural = (w, c) => (c === 1 ? w : (/(x|s)$/.test(w) ? w + 'es' : w + 's'));
+function ftName(k, c) {
+  if (!/^\d/.test(k)) return plural(k, c);
+  const [n, d] = k.split('/').map(Number);
+  if (!d) return plural(POLY[n] || n + '-gon', c);
+  return plural(STAR[n] || 'star polygon', c) + ' {' + k + '}';
+}
+const gcd = (a, b) => (b ? gcd(b, a % b) : a);
+
+/* ---------- geometry helpers ---------- */
+const sub = (a, b) => [a[0] - b[0], a[1] - b[1], a[2] - b[2]];
+const add = (a, b) => [a[0] + b[0], a[1] + b[1], a[2] + b[2]];
+const dot = (a, b) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
+const cross = (a, b) => [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]];
+const len = (a) => Math.hypot(a[0], a[1], a[2]);
+const scl = (a, s) => [a[0] * s, a[1] * s, a[2] * s];
+const unit = (a) => scl(a, 1 / len(a));
+function centroid(P) { let c = [0, 0, 0]; P.forEach((p) => { c = add(c, p); }); return scl(c, 1 / P.length); }
+function plane(P) {
+  const c = centroid(P); let n = [0, 0, 0];
+  for (let i = 0; i < P.length; i++) n = add(n, cross(sub(P[i], c), sub(P[(i + 1) % P.length], c)));
+  if (len(n) < 1e-9) n = cross(sub(P[1], P[0]), sub(P[2], P[0]));
+  n = unit(n); let d = dot(n, c);
+  if (d < 0) { n = scl(n, -1); d = -d; }
+  return { n, d, c };
+}
+const r9 = (x) => Math.round(x * 1e9) / 1e9;
+const uniq = (arr) => [...new Set(arr.map(r9))].sort((a, b) => a - b);
+function numericFacts(V, F, labels) {
+  const E = new Map();
+  F.forEach((f, i) => f.forEach((a, j) => { const b = f[(j + 1) % f.length]; const k = a < b ? a + ',' + b : b + ',' + a; if (!E.has(k)) E.set(k, []); E.get(k).push(i); }));
+  const out = {};
+  out.R = uniq(V.map(len));
+  const edges = [...E.keys()].map((k) => k.split(',').map(Number));
+  out.mid = uniq(edges.map(([a, b]) => len(scl(add(V[a], V[b]), 0.5))));
+  out.elen = uniq(edges.map(([a, b]) => len(sub(V[a], V[b]))));
+  const planes = F.map((f) => plane(f.map((i) => V[i])));
+  out.convex = planes.every((p) => p.d > 1e-6 && V.every((v) => dot(v, p.n) - p.d < 1e-6));
+  out.inr = {};
+  planes.forEach((p, i) => { (out.inr[labels[i]] = out.inr[labels[i]] || []).push(p.d); });
+  Object.keys(out.inr).forEach((k) => { out.inr[k] = uniq(out.inr[k]); });
+  const dih = new Map();
+  const C = planes.map((p) => p.c);
+  E.forEach((fs, k) => {
+    if (fs.length !== 2) return;
+    const [a, b] = k.split(',').map(Number);
+    const e = unit(sub(V[b], V[a])); const m = scl(add(V[a], V[b]), 0.5);
+    const us = fs.map((i) => { let u = sub(C[i], m); u = sub(u, scl(e, dot(u, e))); return unit(u); });
+    const ang = Math.acos(Math.max(-1, Math.min(1, dot(us[0], us[1])))) * 180 / Math.PI;
+    const key = [labels[fs[0]], labels[fs[1]]].sort((x, y) => x.length - y.length || (x < y ? -1 : 1)).join('–');
+    if (!dih.has(key)) dih.set(key, []);
+    dih.get(key).push(ang);
+  });
+  out.dih = [];
+  [...dih.keys()].sort().forEach((k) => uniq(dih.get(k)).forEach((v) => out.dih.push([k, v])));
+  if (out.convex) {
+    let vol = 0, area = 0;
+    F.forEach((f, i) => {
+      const P = f.map((j) => V[j]); const c = planes[i].c; let s = [0, 0, 0];
+      for (let j = 0; j < P.length; j++) s = add(s, cross(sub(P[j], c), sub(P[(j + 1) % P.length], c)));
+      const a = len(s) / 2; area += a; vol += a * planes[i].d / 3;
+    });
+    out.vol = vol; out.area = area;
+  }
+  out.E = E.size;
+  return out;
+}
+
+/* ---------- prisms and antiprisms ---------- */
+const PB = { 'pri5': 'pip', 'pri3': 'trip', 'pri5/2': 'stip', 'pri6': 'hip', 'pri7': 'hep', 'pri7/2': 'ship', 'pri7/3': 'giship', 'pri8': 'op', 'pri8/3': 'stop', 'pri9': 'ep', 'pri9/2': 'step', 'pri9/4': 'gistep', 'pri10': 'dip', 'pri10/3': 'stiddip',
+  'ant4': 'squap', 'ant5': 'pap', 'ant5/2': 'stap', 'ant5/3': 'starp', 'ant6': 'hap', 'ant7': 'heap', 'ant7/2': 'sthap', 'ant7/3': 'gisthap', 'ant7/4': 'gisthirp', 'ant8': 'oap', 'ant8/3': 'stoap', 'ant8/5': 'storp', 'ant9': 'eap', 'ant9/2': 'steap', 'ant9/4': 'gisteap', 'ant9/5': 'gisterp', 'ant10': 'dap', 'ant10/3': 'stiddap', 'pri4': 'cube', 'ant3': 'oct' };
+const PU = { 'pri5': [76, 9, 0, 0], 'ant5': [77, 10, 0, 0], 'pri5/2': [78, 3, 0, 0], 'ant5/2': [79, 4, 0, 0], 'ant5/3': [80, 5, 0, 0] };
+function prismCheck(kind, n, d) {
+  if (!Number.isInteger(n) || !Number.isInteger(d) || n < 3 || n > 60 || d < 1) return 'Sides must be a whole number from 3 to 60, and the step at least 1.';
+  if (d >= n) return 'The step must be smaller than the number of sides.';
+  if (gcd(n, d) !== 1) return `${n} sides with step ${d} isn't a single polygon (they share the factor ${gcd(n, d)}), so it makes a compound, not a polyhedron.`;
+  if (kind === 'prism' && 2 * d > n) return `For a prism, a step of ${d} gives the same polygon as a step of ${n - d}. Use ${n - d}.`;
+  if (kind === 'anti' && 3 * d >= 2 * n) return `An antiprism needs sides ÷ step to be more than 3/2, and ${n}/${d} isn't.`;
+  return '';
+}
+function makePrism(kind, n, d) {
+  const anti = kind === 'anti';
+  const dd = Math.min(d, n - d);
+  const base = dd === 1 ? String(n) : n + '/' + dd;
+  const crossed = anti && 2 * d > n;
+  const pref = dd === 1 ? (PREF[n] || n + '-gonal') : (SPREF[n] || '{' + n + '/' + dd + '}');
+  const multi = dd > 1 && [...Array(Math.floor(n / 2) + 1).keys()].filter((k) => k > 1 && gcd(n, k) === 1).length > 1;
+  let name = pref + (crossed ? ' crossed antiprism' : anti ? ' antiprism' : ' prism');
+  if (dd > 1 && (multi || crossed) && (SPREF[n] || d !== dd)) name += ' {' + n + '/' + d + '}';
+  const Rp = 1 / (2 * Math.sin(Math.PI * dd / n));
+  const V = []; const F = [];
+  if (!anti) {
+    for (let z of [0.5, -0.5]) for (let i = 0; i < n; i++) V.push([Rp * Math.cos(2 * Math.PI * i / n), Rp * Math.sin(2 * Math.PI * i / n), z]);
+    const top = [], bot = [];
+    for (let j = 0; j < n; j++) { top.push((j * dd) % n); bot.push(n + (j * dd) % n); }
+    F.push(top, bot);
+    for (let a = 0; a < n; a++) { const b = (a + dd) % n; F.push([a, b, b + n, a + n]); }
+  } else {
+    const c = 2 * Rp * Math.sin(Math.PI * d / (2 * n));
+    const h = Math.sqrt(Math.max(0, 1 - c * c)) / 2;
+    for (let i = 0; i < n; i++) V.push([Rp * Math.cos(2 * Math.PI * i / n), Rp * Math.sin(2 * Math.PI * i / n), h]);
+    for (let i = 0; i < n; i++) { const t = 2 * Math.PI * i / n + Math.PI * d / n; V.push([Rp * Math.cos(t), Rp * Math.sin(t), -h]); }
+    const top = [], bot = [];
+    for (let j = 0; j < n; j++) { top.push((j * d) % n); bot.push(n + (j * d) % n); }
+    F.push(top, bot);
+    for (let a = 0; a < n; a++) { const b = (a + d) % n; F.push([a, b, n + a]); F.push([n + a, n + b, b]); }
+  }
+  const labels = F.map((f) => (f.length === n ? base : String(f.length)));
+  const nf = numericFacts(V, F, labels);
+  const key = (anti ? 'ant' : 'pri') + n + (d > 1 ? '/' + d : '');
+  const ft = {}; labels.forEach((l) => { ft[l] = (ft[l] || 0) + 1; });
+  let sym = anti && d % 2 === 1 ? 'D' + n + 'd' : 'D' + n + 'h', so = 4 * n;
+  if (key === 'pri4' || key === 'ant3') { sym = 'Oh'; so = 48; } // the square prism is the cube and the triangular antiprism the octahedron
+  const s = {
+    id: (anti ? 'A' : 'P') + n + '_' + d, fam: 'prism', name, alt: [], nick: [], acr: PB[key] || '', num: {}, gen: true,
+    wy: anti ? '| 2 2 ' + n + '/' + d : '2 ' + base + ' | 2',
+    V: V.length, E: nf.E, F: F.length, ft, cfg: anti ? '3.3.3.' + (d === 1 ? n : n + '/' + d) : '4.4.' + base, cw: 1,
+    sym, so, chiral: false, orient: true, chi: V.length - nf.E + F.length,
+    dual: dd === 1 ? pref + (anti ? ' trapezohedron' : ' bipyramid') : '', fv: V, f: F,
+  };
+  if (PU[key]) { s.num = { U: PU[key][0] }; }
+  if (key === 'pri4') s.alt = ['cube (U6)'];
+  if (key === 'ant3') s.alt = ['octahedron (U5)'];
+  Object.assign(s, nf);
+  s.labels = labels;
+  return s;
+}
+
+/* ---------- the catalogue ---------- */
+const SHAPES = RAW.map((s) => Object.assign(s, { fv: null }));
+for (let n = 3; n <= 12; n++) {
+  for (let d = 1; d < n; d++) {
+    if (!prismCheck('prism', n, d)) SHAPES.push(makePrism('prism', n, d));
+    if (!prismCheck('anti', n, d)) SHAPES.push(makePrism('anti', n, d));
+  }
+}
+const FAMORDER = { platonic: 0, archimedean: 1, catalan: 2, kepler: 3, star: 4, prism: 5, johnson: 6 };
+const sortKey = (s) => {
+  const m = s.id.match(/^([A-Z])(\d+)(?:_(\d+))?/);
+  const sub = m[1] === 'S' ? 999 : +m[2];
+  return [FAMORDER[s.fam], m[1] === 'A' ? 1 : 0, sub, m[3] ? +m[3] : 0];
+};
+SHAPES.sort((x, y) => { const a = sortKey(x), b = sortKey(y); for (let i = 0; i < a.length; i++) if (a[i] !== b[i]) return a[i] - b[i]; return 0; });
+const byId = new Map(SHAPES.map((s) => [s.id, s]));
+function coords(s) {
+  if (!s.fv) { const v = s.v; s.fv = []; for (let i = 0; i < v.length; i += 3) s.fv.push([v[i] / 1e4, v[i + 1] / 1e4, v[i + 2] / 1e4]); }
+  return s.fv;
+}
+const norm = (x) => String(x || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[’'`]/g, '').replace(/[^a-z0-9/]+/g, ' ').trim();
+SHAPES.forEach((s) => {
+  const nums = Object.entries(s.num || {}).filter(([, v]) => v).map(([k, v]) => k.toLowerCase() + v);
+  s.hay = ' ' + norm([s.name, ...(s.alt || []), ...(s.nick || []), s.acr, s.dual, ...nums].join(' | ')) + ' ' + nums.join(' ') + ' ';
+});
+
+/* ---------- vertex configurations ---------- */
+function parseCfg(t) {
+  t = t.replace(/^v/i, '').replace(/\)\s*\/\s*\d+\s*$/, ')').replace(/[()]/g, ' ');
+  const parts = [];
+  for (const tok of t.split(/[.,·\s]+/).filter(Boolean)) {
+    const m = tok.match(/^(\d+(?:\/\d+)?)(?:\^(\d+))?$/);
+    if (!m) return null;
+    for (let i = 0; i < (m[2] ? +m[2] : 1); i++) parts.push(m[1]);
+  }
+  return parts.length >= 3 ? parts : null;
+}
+const loose = (k) => { const [n, d] = k.split('/').map(Number); return d ? n + '/' + Math.min(d, n - d) : String(n); };
+function cfgMatch(a, b, strict) {
+  if (!a || !b || a.length !== b.length) return false;
+  const A = strict ? a : a.map(loose), B = strict ? b : b.map(loose);
+  const L = A.length;
+  for (const S of [B, [...B].reverse()]) for (let r = 0; r < L; r++) { let ok = true; for (let i = 0; i < L; i++) if (A[i] !== S[(i + r) % L]) { ok = false; break; } if (ok) return true; }
+  return false;
+}
+
+/* ---------- list and filters ---------- */
+let fam = '';
+let current = null;
+const ALLTYPES = [...new Set(SHAPES.flatMap((s) => Object.keys(s.ft)))].sort((a, b) => {
+  const da = /^\d/.test(a), db = /^\d/.test(b);
+  if (da !== db) return da ? -1 : 1;
+  if (!da) return a < b ? -1 : 1;
+  const [na, xa = 1] = a.split('/').map(Number), [nb, xb = 1] = b.split('/').map(Number);
+  return (xa > 1) - (xb > 1) || na - nb || xa - xb;
+});
+$('f-types').innerHTML = ALLTYPES.filter((k) => !/^\d/.test(k) || +k.split('/')[0] <= 12).map((k) => `<label class="inline small"><input type="checkbox" value="${esc(k)}"> ${esc(ftName(k, 2))}</label>`).join('');
+function matches(s) {
+  if (fam && s.fam !== fam) return false;
+  const q = norm($('q').value);
+  if (q) for (const w of q.split(' ')) if (!(/^[uwckj]\d+$/.test(w) ? s.hay.includes(' ' + w + ' ') : s.hay.includes(w))) return false;
+  for (const [id, key] of [['f-v', 'V'], ['f-e', 'E'], ['f-f', 'F']]) { const v = $(id).value.trim(); if (v && +v !== s[key]) return false; }
+  const cv = $('f-convex').value; if (cv && (cv === '1') !== !!s.convex) return false;
+  const ch = $('f-chiral').value; if (ch && (ch === '1') !== !!s.chiral) return false;
+  const sy = $('f-sym').value; if (sy && !(s.sym || '').startsWith(sy)) return false;
+  const want = [...$('f-types').querySelectorAll('input:checked')].map((i) => i.value);
+  for (const w of want) if (!s.ft[w]) return false;
+  const ct = $('f-cfg').value.trim();
+  if (ct) { const p = parseCfg(ct); if (!p) return false; const own = parseCfg(s.cfg || ''); if (!cfgMatch(p, own, false)) return false; }
+  return true;
+}
+function listMeta(s) { return `V ${s.V} · E ${s.E} · F ${s.F}` + (s.cfg ? ' · ' + s.cfg : ''); }
+function renderList() {
+  const hits = SHAPES.filter(matches);
+  const filtered = !!(fam || $('q').value.trim() || [...document.querySelectorAll('#filters input, #filters select')].some((e) => (e.type === 'checkbox' ? e.checked : e.value)));
+  $('count').textContent = hits.length ? (filtered ? `${hits.length} ${hits.length === 1 ? 'shape fits' : 'shapes fit'}.` : `${hits.length} shapes.`) : 'Nothing fits. Try fewer filters, or check the numbers.';
+  $('plist').innerHTML = hits.map((s) => `<li><button type="button" data-id="${esc(s.id)}"${current && current.id === s.id ? ' aria-current="true"' : ''}><span class="pn">${esc(s.name)}</span><span class="pm">${esc(listMeta(s))}</span></button></li>`).join('');
+}
+$('plist').addEventListener('click', (e) => { const b = e.target.closest('button[data-id]'); if (b) select(byId.get(b.dataset.id), true); });
+$('q').addEventListener('input', renderList);
+document.querySelectorAll('#filters input, #filters select').forEach((el) => el.addEventListener(el.type === 'checkbox' || el.tagName === 'SELECT' ? 'change' : 'input', renderList));
+document.querySelectorAll('.fchip').forEach((b) => b.addEventListener('click', () => {
+  fam = b.dataset.fam; document.querySelectorAll('.fchip').forEach((x) => { x.classList.toggle('on', x === b); x.setAttribute('aria-pressed', String(x === b)); }); renderList();
+}));
+$('f-clear').addEventListener('click', () => {
+  document.querySelectorAll('#filters input').forEach((i) => { if (i.type === 'checkbox') i.checked = false; else i.value = ''; });
+  document.querySelectorAll('#filters select').forEach((s) => { s.value = ''; });
+  renderList();
+});
+$('pb-go').addEventListener('click', () => {
+  const kind = $('pb-kind').value, n = +$('pb-n').value, d = +$('pb-d').value;
+  const why = prismCheck(kind, n, d);
+  $('pb-why').textContent = why;
+  if (why) return;
+  const id = (kind === 'anti' ? 'A' : 'P') + n + '_' + d;
+  let s = byId.get(id);
+  if (!s) { s = makePrism(kind, n, d); s.hay = ' ' + norm(s.name) + ' '; byId.set(id, s); }
+  select(s, true);
+});
+
+/* ---------- number formatting ---------- */
+const prec = () => +$('prec').value;
+function fmt(x) {
+  const p = prec();
+  if (Math.abs(x - Math.round(x)) < 1e-9) return String(Math.round(x));
+  return x.toFixed(p).replace(/0+$/, '').replace(/\.$/, '');
+}
+const deg = (x) => fmt(x) + '°';
+
+/* ---------- facts ---------- */
+function factRows(s) {
+  const rows = [];
+  const R = (k, v, note, help) => rows.push({ k, v, note: note === undefined ? String(v) : note, help });
+  rows.push({ head: 'Counting' });
+  R('Vertices (corners)', s.V);
+  R('Edges', s.E);
+  R('Faces', s.F);
+  Object.entries(s.ft).sort((a, b) => b[1] - a[1]).forEach(([k, c]) => R('Faces: ' + ftName(k, 2), c, String(c)));
+  if (s.vkinds) Object.entries(s.vkinds).forEach(([k, c]) => R(`Corners where ${k} faces meet`, c));
+  if (s.cfg) R(s.fam === 'catalan' ? 'Face configuration' : 'Faces around each corner', s.cfg + (s.cw > 1 ? ` (goes round the corner ${s.cw === 2 ? 'twice' : s.cw + ' times'})` : ''), s.cfg,
+    s.fam === 'catalan' ? 'Each face is the dual of a corner of the Archimedean solid: V3.6.6 means the corners of each face have 3, 6 and 6 faces meeting at them.' : 'A retrograde face (one wound backwards round the corner) is written n/(n−d), for example 3/2 or 5/3.');
+  if (s.vfaces) R('Faces at each corner', s.vfaces);
+  R('Euler characteristic (V − E + F)', s.chi);
+  if (s.orient !== null && s.orient !== undefined) R('Orientable (has an inside and outside)', s.orient ? 'yes' : 'no');
+  rows.push({ head: 'Shape' });
+  R('Family', FAMS[s.fam] || 'Other');
+  R('Convex', s.convex ? 'yes' : 'no');
+  R('Symmetry group', `${s.sym} (order ${s.so})`, s.sym);
+  R('Chiral (left- and right-handed forms)', s.chiral ? 'yes' : 'no');
+  if (s.wy) R('Wythoff symbol', s.wy);
+  if (s.dual) R('Dual', s.dual);
+  if (s.fangles) R('Face angles', s.fangles.map(deg).join(', '), s.fangles.map(fmt).join(', '));
+  rows.push({ head: s.fam === 'catalan' ? 'Sizes (as the dual of the Archimedean solid with edges 1, same midsphere)' : 'Sizes (edges of length 1)' });
+  if (s.elen && s.elen.length > 1) R('Edge lengths', s.elen.map(fmt).join(', '));
+  R(s.R.length > 1 ? 'Distances from the centre to the corners' : 'Circumradius (centre to each corner)', s.R.map(fmt).join(', '));
+  R('Midradius (radius of the sphere that touches every edge)', s.mid.map(fmt).join(', '));
+  Object.entries(s.inr || {}).forEach(([k, v]) => R(`Centre to the plane of the ${ftName(k, 2)}`, v.map(fmt).join(', ')));
+  if (s.convex && s.vol !== undefined) { R('Volume', fmt(s.vol)); R('Surface area', fmt(s.area)); }
+  if (s.dih && s.dih.length && s.id !== 'S1') {
+    if (s.convex) s.dih.forEach(([k, v]) => R(('Dihedral angle ' + dihLabel(k)).trim(), deg(v), fmt(v)));
+    else s.dih.forEach(([k, v]) => { const a = Math.min(v, 180 - v); R(('Angle between face planes ' + dihLabel(k)).trim(), `${deg(a)} or ${deg(180 - a)}`, `${fmt(a)} / ${fmt(180 - a)}`); });
+  }
+  rows.push({ head: 'Names and numbers' });
+  if (s.alt && s.alt.length) R('Also called', s.alt.join('; '));
+  if (s.nick && s.nick.length) R('Nicknames', s.nick.join('; ') + (s.olshevsky ? ' (George Olshevsky)' : ''), s.nick.join('; '));
+  if (s.acr) R('Short name (Bowers)', s.acr);
+  const N = s.num || {};
+  if (N.U) R('Uniform polyhedron number', 'U' + N.U);
+  if (N.W) R('Wenninger model number', 'W' + N.W);
+  if (N.C) R('Coxeter number', 'C' + N.C);
+  if (N.K) R('Kaleido number', 'K' + N.K);
+  if (N.J) R('Johnson solid number', 'J' + N.J);
+  return rows;
+}
+function dihLabel(k) {
+  const [a, b] = k.split('–');
+  if (!/^\d/.test(a)) return '';
+  const nm = (x) => { const [n, d] = x.split('/').map(Number); return d ? (STAR[n] || '{' + x + '}') : (POLY[n] || n + '-gon'); };
+  return `(${nm(a)}–${nm(b)})`;
+}
+function renderFacts() {
+  const s = current;
+  if (!s) { $('factbox').innerHTML = '<p class="muted">Pick a shape to see its facts.</p>'; return; }
+  const rows = factRows(s);
+  let html = `<p class="fname">${esc(s.name)}</p>`;
+  if (s.note) html += `<p class="help">${esc(s.note)}</p>`;
+  if (s.dualId && byId.get(s.dualId) && s.dualId !== s.id) html += `<p><button type="button" class="btn quiet" data-open="${esc(s.dualId)}">Open its dual: ${esc(byId.get(s.dualId).name)}</button></p>`;
+  html += '<dl class="flist">';
+  rows.forEach((r, i) => {
+    if (r.head) { html += `</dl><h3>${esc(r.head)}</h3><dl class="flist">`; return; }
+    html += `<div class="frow"><dt>${esc(r.k)}${r.help ? `<span class="fh">${esc(r.help)}</span>` : ''}</dt><dd><span class="fv">${esc(r.v)}</span><button type="button" class="nplus" data-i="${i}" aria-label="Add to notepad: ${esc(r.k)}">+</button></dd></div>`;
+  });
+  html += '</dl>';
+  $('factbox').innerHTML = html.replace('<dl class="flist"></dl>', '');
+  $('factbox').onclick = (e) => {
+    const o = e.target.closest('[data-open]'); if (o) { select(byId.get(o.dataset.open), true); return; }
+    const b = e.target.closest('.nplus'); if (!b) return;
+    const r = rows[+b.dataset.i];
+    addNote(`${s.name} · ${r.k.replace(/^Faces: /, '')}`, r.note);
+    b.textContent = '✓'; setTimeout(() => { b.textContent = '+'; }, 900);
+  };
+}
+$('prec').addEventListener('change', renderFacts);
+
+/* ---------- 3D view ---------- */
+const cv = $('cv');
+let gl = null, prog = null, buf = {}, nTri = 0, nLine = 0, nPt = 0;
+let quat = [0, 0, 0, 1], zoom = 1, spin = false, mirror = false, showEdges = true, corner = -1, hidden = new Set();
+const TYPECOL = { '3': 1, '4': 2, '5': 3, '6': 4, '8': 5, '10': 6, '5/2': 7, '8/3': 8, '10/3': 8 };
+function cssColor(name) {
+  const v = getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+  const m = v.match(/^#([0-9a-f]{6})$/i);
+  if (!m) return [0.5, 0.5, 0.5];
+  const n = parseInt(m[1], 16); return [(n >> 16 & 255) / 255, (n >> 8 & 255) / 255, (n & 255) / 255];
+}
+function typeColorVar(k, i) { return '--fc' + (TYPECOL[k] || ((i % 8) + 1)); }
+function qmul(a, b) {
+  return [a[3] * b[0] + a[0] * b[3] + a[1] * b[2] - a[2] * b[1], a[3] * b[1] - a[0] * b[2] + a[1] * b[3] + a[2] * b[0], a[3] * b[2] + a[0] * b[1] - a[1] * b[0] + a[2] * b[3], a[3] * b[3] - a[0] * b[0] - a[1] * b[1] - a[2] * b[2]];
+}
+function qaxis(ax, ang) { const s = Math.sin(ang / 2); const l = Math.hypot(...ax) || 1; return [ax[0] / l * s, ax[1] / l * s, ax[2] / l * s, Math.cos(ang / 2)]; }
+function qmat(q) {
+  const [x, y, z, w] = q;
+  return [1 - 2 * (y * y + z * z), 2 * (x * y + z * w), 2 * (x * z - y * w), 0, 2 * (x * y - z * w), 1 - 2 * (x * x + z * z), 2 * (y * z + x * w), 0, 2 * (x * z + y * w), 2 * (y * z - x * w), 1 - 2 * (x * x + y * y), 0, 0, 0, 0, 1];
+}
+function initGL() {
+  try { gl = cv.getContext('webgl', { antialias: true, alpha: true }) || cv.getContext('experimental-webgl'); } catch (e) { gl = null; }
+  if (!gl) { $('nogl').hidden = false; cv.hidden = true; return; }
+  const vs = `attribute vec3 p;attribute vec3 n;attribute vec3 c;uniform mat4 M;uniform mat4 P;uniform float mir;uniform float ps;varying vec3 vn;varying vec3 vc;
+void main(){vec3 q=vec3(p.x*mir,p.y,p.z);vn=mat3(M)*vec3(n.x*mir,n.y,n.z);vc=c;gl_Position=P*(M*vec4(q,1.0));gl_PointSize=ps;}`;
+  const fs = `precision mediump float;varying vec3 vn;varying vec3 vc;uniform float uflat;
+void main(){vec3 nn=normalize(vn);float d=abs(dot(nn,normalize(vec3(0.35,0.55,0.75))));float k=uflat>0.5?1.0:(0.38+0.62*d);gl_FragColor=vec4(vc*k,1.0);}`;
+  const sh = (t, src) => { const s = gl.createShader(t); gl.shaderSource(s, src); gl.compileShader(s); return s; };
+  prog = gl.createProgram();
+  gl.attachShader(prog, sh(gl.VERTEX_SHADER, vs)); gl.attachShader(prog, sh(gl.FRAGMENT_SHADER, fs));
+  gl.linkProgram(prog);
+  if (!gl.getProgramParameter(prog, gl.LINK_STATUS)) { gl = null; $('nogl').hidden = false; cv.hidden = true; return; }
+  gl.useProgram(prog);
+  ['tri', 'line', 'pt'].forEach((k) => { buf[k] = { p: gl.createBuffer(), n: gl.createBuffer(), c: gl.createBuffer() }; });
+  gl.enable(gl.DEPTH_TEST);
+}
+function buildMesh() {
+  if (!gl || !current) return;
+  const s = current, V = s.fv || coords(s);
+  const scale = 1 / Math.max(...V.map(len));
+  const keys = Object.keys(s.ft);
+  const col = {}; keys.forEach((k, i) => { col[k] = cssColor(typeColorVar(k, i)); });
+  const grey = cssColor('--fc0');
+  const labels = computeLabels(s);
+  const P = [], N = [], C = [];
+  s.f.forEach((f, fi) => {
+    const lab = labels[fi];
+    if (hidden.has(lab)) return;
+    const pts = f.map((i) => scl(V[i], scale));
+    const pl = plane(pts);
+    const cc = corner >= 0 ? (f.includes(corner) ? col[lab] : grey) : col[lab];
+    for (let i = 0; i < pts.length; i++) {
+      [pl.c, pts[i], pts[(i + 1) % pts.length]].forEach((q) => { P.push(...q); N.push(...pl.n); C.push(...cc); });
+    }
+  });
+  nTri = P.length / 3;
+  load('tri', P, N, C);
+  const L = [], LN = [], LC = [];
+  const ec = cssColor('--edge');
+  const seen = new Set();
+  s.f.forEach((f, fi) => {
+    if (hidden.has(labels[fi])) return;
+    f.forEach((a, j) => {
+      const b = f[(j + 1) % f.length]; const k = a < b ? a + ',' + b : b + ',' + a;
+      if (seen.has(k)) return; seen.add(k);
+      L.push(...scl(V[a], scale), ...scl(V[b], scale)); LN.push(0, 0, 1, 0, 0, 1); LC.push(...ec, ...ec);
+    });
+  });
+  nLine = L.length / 3;
+  load('line', L, LN, LC);
+  if (corner >= 0) { load('pt', scl(V[corner], scale), [0, 0, 1], cssColor('--edge')); nPt = 1; } else nPt = 0;
+  draw();
+}
+function load(k, P, N, C) {
+  const b = buf[k];
+  [[b.p, P], [b.n, N], [b.c, C]].forEach(([bb, arr]) => { gl.bindBuffer(gl.ARRAY_BUFFER, bb); gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(arr), gl.STATIC_DRAW); });
+}
+function bind(k) {
+  const b = buf[k];
+  [['p', b.p], ['n', b.n], ['c', b.c]].forEach(([a, bb]) => { const loc = gl.getAttribLocation(prog, a); gl.bindBuffer(gl.ARRAY_BUFFER, bb); gl.enableVertexAttribArray(loc); gl.vertexAttribPointer(loc, 3, gl.FLOAT, false, 0, 0); });
+}
+function resize() {
+  if (!gl) return;
+  const r = cv.getBoundingClientRect(); const dpr = Math.min(window.devicePixelRatio || 1, 2);
+  const w = Math.max(1, Math.round(r.width * dpr)), h = Math.max(1, Math.round(r.height * dpr));
+  if (cv.width !== w || cv.height !== h) { cv.width = w; cv.height = h; }
+  draw();
+}
+function draw() {
+  if (!gl || !current) return;
+  gl.viewport(0, 0, cv.width, cv.height);
+  gl.clearColor(0, 0, 0, 0); gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+  const asp = cv.width / cv.height, f = 1 / Math.tan(Math.PI / 12), dist = 4.2 / zoom, nr = 0.1, fr = 20;
+  const P = [f / asp, 0, 0, 0, 0, f, 0, 0, 0, 0, (fr + nr) / (nr - fr), -1, 0, 0, 2 * fr * nr / (nr - fr), 0];
+  const M = qmat(quat); M[14] = -dist;
+  const U = (n) => gl.getUniformLocation(prog, n);
+  gl.uniformMatrix4fv(U('P'), false, new Float32Array(P));
+  gl.uniformMatrix4fv(U('M'), false, new Float32Array(M));
+  gl.uniform1f(U('mir'), mirror ? -1 : 1);
+  gl.uniform1f(U('ps'), 9 * Math.min(window.devicePixelRatio || 1, 2));
+  gl.enable(gl.POLYGON_OFFSET_FILL); gl.polygonOffset(1, 1);
+  gl.uniform1f(U('uflat'), 0); bind('tri'); gl.drawArrays(gl.TRIANGLES, 0, nTri);
+  gl.disable(gl.POLYGON_OFFSET_FILL);
+  if (showEdges) { gl.uniform1f(U('uflat'), 1); bind('line'); gl.drawArrays(gl.LINES, 0, nLine); }
+  if (nPt) { gl.disable(gl.DEPTH_TEST); gl.uniform1f(U('uflat'), 1); bind('pt'); gl.drawArrays(gl.POINTS, 0, 1); gl.enable(gl.DEPTH_TEST); }
+}
+function computeLabels(s) {
+  if (s.labels) return s.labels;
+  const V = coords(s);
+  s.labels = s.f.map((f) => {
+    const P = f.map((i) => V[i]);
+    if (s.fam === 'catalan') {
+      const sides = P.map((p, i) => len(sub(p, P[(i + 1) % P.length])));
+      const k = new Set(sides.map((x) => x.toFixed(3))).size;
+      if (P.length === 3) return k === 1 ? 'equilateral triangle' : k === 2 ? 'isosceles triangle' : 'scalene triangle';
+      if (P.length === 4) return k === 1 ? 'rhombus' : 'kite';
+      return 'irregular pentagon';
+    }
+    const c = centroid(P); const a = sub(P[0], c), b = sub(P[1], c);
+    const ang = Math.acos(Math.max(-1, Math.min(1, dot(a, b) / len(a) / len(b))));
+    const d = Math.round(ang * P.length / (2 * Math.PI));
+    return d === 1 ? String(P.length) : P.length + '/' + d;
+  });
+  return s.labels;
+}
+function renderLegend() {
+  const s = current; if (!s) return;
+  const keys = Object.keys(s.ft);
+  $('legend').innerHTML = keys.map((k, i) => `<button type="button" class="lg${hidden.has(k) ? ' off' : ''}" data-k="${esc(k)}" aria-pressed="${!hidden.has(k)}"><span class="sw" style="background:var(${typeColorVar(k, i)})"></span>${esc(s.ft[k] + ' ' + ftName(k, s.ft[k]))}</button>`).join('');
+}
+$('legend').addEventListener('click', (e) => {
+  const b = e.target.closest('.lg'); if (!b) return;
+  const k = b.dataset.k;
+  if (hidden.has(k)) hidden.delete(k); else hidden.add(k);
+  renderLegend(); buildMesh();
+  const again = [...$('legend').querySelectorAll('.lg')].find((x) => x.dataset.k === k); if (again) again.focus();
+});
+let drag = null;
+cv.addEventListener('pointerdown', (e) => { drag = { x: e.clientX, y: e.clientY }; cv.setPointerCapture(e.pointerId); setSpin(false); });
+cv.addEventListener('pointermove', (e) => {
+  if (!drag) return;
+  const dx = e.clientX - drag.x, dy = e.clientY - drag.y; drag = { x: e.clientX, y: e.clientY };
+  const a = Math.hypot(dx, dy); if (!a) return;
+  quat = qmul(qaxis([dy, dx, 0], a * 0.012), quat); draw();
+});
+['pointerup', 'pointercancel'].forEach((t) => cv.addEventListener(t, () => { drag = null; }));
+cv.addEventListener('keydown', (e) => {
+  const m = { ArrowLeft: [0, -1], ArrowRight: [0, 1], ArrowUp: [-1, 0], ArrowDown: [1, 0] }[e.key];
+  if (!m) return;
+  e.preventDefault(); setSpin(false);
+  quat = qmul(qaxis([m[0], m[1], 0], Math.PI / 18), quat); draw();
+});
+let raf = 0;
+function tick() { if (!spin) return; quat = qmul(qaxis([0.2, 1, 0], 0.008), quat); draw(); raf = requestAnimationFrame(tick); }
+function setSpin(on) { spin = on; $('v-spin').setAttribute('aria-pressed', on); cancelAnimationFrame(raf); if (on) raf = requestAnimationFrame(tick); }
+$('v-spin').addEventListener('click', () => setSpin(!spin));
+$('v-reset').addEventListener('click', () => { quat = qmul(qaxis([1, 0, 0], 0.45), qaxis([0, 1, 0], 0.5)); zoom = 1; $('v-zoom').value = 1; draw(); });
+$('v-edges').addEventListener('click', () => { showEdges = !showEdges; $('v-edges').setAttribute('aria-pressed', showEdges); draw(); });
+$('v-corner').addEventListener('click', () => { corner = corner >= 0 ? -1 : 0; $('v-corner').setAttribute('aria-pressed', corner >= 0); buildMesh(); });
+$('v-mirror').addEventListener('click', () => { mirror = !mirror; $('v-mirror').setAttribute('aria-pressed', mirror); draw(); });
+$('v-zoom').addEventListener('input', () => { zoom = +$('v-zoom').value; draw(); });
+if (window.ResizeObserver) new ResizeObserver(resize).observe(cv); else window.addEventListener('resize', resize);
+if (window.matchMedia) window.matchMedia('(prefers-color-scheme: dark)').addEventListener?.('change', () => buildMesh());
+
+function select(s, scroll) {
+  if (!s) return;
+  current = s; hidden = new Set(); corner = -1; mirror = false;
+  $('v-corner').setAttribute('aria-pressed', 'false'); $('v-mirror').setAttribute('aria-pressed', 'false');
+  $('v-mirror').hidden = !s.chiral;
+  coords(s); computeLabels(s);
+  $('sname').textContent = s.name;
+  cv.setAttribute('aria-label', `3D view of the ${s.name}. Drag, or use the arrow keys, to turn it.`);
+  renderLegend(); buildMesh(); renderFacts(); renderList();
+  try { localStorage.setItem('aft.polyhedra.last', s.id); } catch (e) { /* storage unavailable */ }
+  if (scroll) $('look').scrollIntoView({ behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth', block: 'start' });
+}
+
+/* ---------- notepad (shared by the Polytopes tools) ---------- */
+const NKEY = 'aft.polytopes.notes';
+let notes = [];
+try { notes = JSON.parse(localStorage.getItem(NKEY) || '[]'); if (!Array.isArray(notes)) notes = []; } catch (e) { notes = []; }
+const saveNotes = () => { try { localStorage.setItem(NKEY, JSON.stringify(notes)); } catch (e) { /* storage unavailable */ } };
+function flash(msg) { $('n-msg').textContent = msg; clearTimeout(flash.t); flash.t = setTimeout(() => { $('n-msg').textContent = ''; }, 2500); }
+function addNote(label, value) { notes.push({ label: String(label).slice(0, 200), value: String(value).slice(0, 10000) }); saveNotes(); renderNotes(); flash('Added to the notepad.'); }
+function renderNotes() {
+  $('nempty').hidden = notes.length > 0;
+  $('nlist').innerHTML = notes.map((n, i) => `<li><span class="nl">${esc(n.label)}</span><button type="button" class="nv" data-i="${i}" title="Put this in the last box you used">${esc(n.value)}</button><button type="button" class="ndel" data-i="${i}" aria-label="Delete note: ${esc(n.label)}">×</button></li>`).join('');
+}
+let lastBox = null;
+document.querySelectorAll('.hin').forEach((el) => el.addEventListener('focus', () => { lastBox = el; }));
+$('nlist').addEventListener('click', (e) => {
+  const v = e.target.closest('.nv'), d = e.target.closest('.ndel');
+  if (d) {
+    const i = +d.dataset.i; notes.splice(i, 1); saveNotes(); renderNotes(); flash('Note deleted.');
+    const next = $('nlist').querySelector(`.ndel[data-i="${Math.min(i, notes.length - 1)}"]`); (next || $('n-label')).focus();
+    return;
+  }
+  if (v) {
+    const val = notes[+v.dataset.i].value;
+    if (!lastBox) { copy(val, 'Copied.'); return; }
+    if (lastBox.id === 'h-dig') lastBox.value += val.replace(/\D/g, '');
+    else if (lastBox.id === 'h-conv') lastBox.value = val;
+    else {
+      const nums = val.replace(/−/g, '-').match(/-?\d+(?:\.\d+)?/g) || [];
+      if (nums.length !== 1) { flash(nums.length ? 'That note holds more than one number. Type the one you want.' : 'That note has no number in it.'); return; }
+      lastBox.value = nums[0];
+    }
+    lastBox.dispatchEvent(new Event('input')); lastBox.focus();
+  }
+});
+$('n-add').addEventListener('click', () => {
+  const l = $('n-label').value.trim(), v = $('n-val').value.trim();
+  if (!l && !v) return;
+  addNote(l || 'Note', v); $('n-label').value = ''; $('n-val').value = '';
+});
+$('n-clear').addEventListener('click', () => { if (!notes.length || !confirm('Clear every note?')) return; notes = []; saveNotes(); renderNotes(); });
+function copy(text, msg) {
+  const done = () => { $('n-msg').textContent = msg; setTimeout(() => { $('n-msg').textContent = ''; }, 1600); };
+  if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(text).then(done, () => { $('n-msg').textContent = 'Copying is blocked here; select the text instead.'; });
+}
+$('n-copy').addEventListener('click', () => copy(notes.map((n) => `${n.label}: ${n.value}`).join('\n'), 'Copied all notes.'));
+
+/* ---------- coordinate helpers ---------- */
+const num = (t) => { const v = String(t).trim().replace('−', '-').replace(',', '.'); return v === '' || isNaN(+v) ? null : +v; };
+function arith() {
+  const a = num($('h-a').value), b = num($('h-b').value), op = $('h-op').value;
+  let r = null;
+  if (a !== null && b !== null) r = op === '+' ? a + b : op === '−' ? a - b : op === '×' ? a * b : (b === 0 ? null : a / b);
+  $('h-r').textContent = r === null ? '' : String(+r.toFixed(10));
+}
+['h-a', 'h-b'].forEach((id) => $(id).addEventListener('input', arith));
+$('h-op').addEventListener('change', arith);
+$('h-keep').addEventListener('click', () => { if ($('h-r').textContent) addNote(`${$('h-a').value} ${$('h-op').value} ${$('h-b').value}`, $('h-r').textContent); });
+const pad = (x, w) => String(x).padStart(w, '0');
+function dmm(deg, pos, neg, w) {
+  const h = deg < 0 ? neg : pos; let a = Math.abs(deg); let d = Math.floor(a); let m = (a - d) * 60;
+  m = Math.round(m * 1000) / 1000; if (m >= 60) { d += 1; m -= 60; }
+  return `${h} ${pad(d, w)}° ${pad(m.toFixed(3), 6)}`;
+}
+function digitsOut() {
+  const t = $('h-dig').value.replace(/\D/g, ''), ns = $('h-ns').value, ew = $('h-ew').value;
+  const half = (s, h, w) => `${h} ${s.slice(0, w)}° ${s.slice(w, w + 2)}.${s.slice(w + 2)}`;
+  let out = '', bad = '';
+  if (!t) out = '';
+  else if (t.length === 15) out = half(t.slice(0, 7), ns, 2) + ' ' + half(t.slice(7), ew, 3);
+  else if (t.length === 14) out = half(t.slice(0, 7), ns, 2) + ' ' + half('0' + t.slice(7), ew, 3);
+  else if (t.length === 7) out = half(t, ns, 2);
+  else if (t.length === 8) out = half(t, ew, 3);
+  else bad = `${t.length} digits. A full coordinate needs 14 or 15.`;
+  if (out) {
+    const parts = [...out.matchAll(/([NSEW]) (\d+)° (\d\d)\.(\d{3})/g)];
+    if (parts.some((m) => +m[3] >= 60)) bad = 'Minutes of 60 or more can’t be right.';
+    else if (parts.some((m) => { const lim = 'NS'.includes(m[1]) ? 90 : 180; const dg = +m[2]; return dg > lim || (dg === lim && +(m[3] + m[4]) > 0); })) bad = 'That is off the globe: latitude goes up to 90° and longitude up to 180°.';
+  }
+  $('h-digout').innerHTML = bad ? `<span class="why">${esc(bad)}</span>` : out ? `${esc(out)} <button type="button" class="btn quiet sm" id="h-digkeep">Note it</button>` : '';
+  const k = $('h-digkeep'); if (k) k.onclick = () => addNote('Coordinates', out);
+}
+['h-dig', 'h-ns', 'h-ew'].forEach((id) => $(id).addEventListener(id === 'h-dig' ? 'input' : 'change', digitsOut));
+function convOut() {
+  const t = $('h-conv').value.trim();
+  const hs = (t.toUpperCase().match(/[NSEW]/g) || []);
+  const nums = (t.replace(/(\d),(\d)/g, '$1.$2').match(/-?\d+(?:\.\d+)?/g) || []).map(Number);
+  let lat = null, lon = null;
+  if (nums.length === 2) [lat, lon] = nums;
+  const sg = (x) => (x < 0 || Object.is(x, -0) ? -1 : 1);
+  if (nums.length === 4) { lat = sg(nums[0]) * (Math.abs(nums[0]) + nums[1] / 60); lon = sg(nums[2]) * (Math.abs(nums[2]) + nums[3] / 60); }
+  else if (nums.length === 6) { lat = sg(nums[0]) * (Math.abs(nums[0]) + nums[1] / 60 + nums[2] / 3600); lon = sg(nums[3]) * (Math.abs(nums[3]) + nums[4] / 60 + nums[5] / 3600); }
+  let out = '', bad = '';
+  if (!t) out = '';
+  else if (lat === null) bad = 'Give two numbers (decimal degrees), four (degrees and minutes) or six (degrees, minutes, seconds).';
+  else {
+    if (hs[0] === 'S') lat = -Math.abs(lat); if (hs[1] === 'W' || hs[0] === 'W') lon = -Math.abs(lon);
+    if (Math.abs(lat) > 90 || Math.abs(lon) > 180) bad = 'That is off the globe: latitude goes up to 90 and longitude up to 180.';
+    else out = dmm(lat, 'N', 'S', 2) + ' ' + dmm(lon, 'E', 'W', 3);
+  }
+  $('h-convout').innerHTML = bad ? `<span class="why">${esc(bad)}</span>` : out ? `${esc(out)} <button type="button" class="btn quiet sm" id="h-convkeep">Note it</button>` : '';
+  const k = $('h-convkeep'); if (k) k.onclick = () => addNote('Coordinates', out);
+}
+$('h-conv').addEventListener('input', convOut);
+
+/* ---------- example ---------- */
+$('btn-example').addEventListener('click', () => {
+  $('f-clear').click();
+  fam = ''; document.querySelectorAll('.fchip').forEach((x) => { x.classList.toggle('on', x.dataset.fam === ''); x.setAttribute('aria-pressed', String(x.dataset.fam === '')); });
+  $('q').value = '';
+  $('filters').open = true;
+  $('f-v').value = 24; $('f-chiral').value = '1';
+  renderList();
+  $('count').textContent += ' Example clue (made up): “the solid with 24 corners that comes in a left- and a right-handed form”. Pick it, then tap + beside Edges to note the count.';
+  $('find').scrollIntoView({ behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth', block: 'start' });
+});
+
+/* ---------- start ---------- */
+initGL();
+quat = qmul(qaxis([1, 0, 0], 0.45), qaxis([0, 1, 0], 0.5));
+let start = 'U12';
+try { const l = localStorage.getItem('aft.polyhedra.last'); if (l && byId.has(l)) start = l; } catch (e) { /* storage unavailable */ }
+renderNotes();
+select(byId.get(start), false);
+resize();
+if (!matchMedia('(prefers-reduced-motion: reduce)').matches) setSpin(true);
+})();
+</script>
+</body>
+</html>
+

@@ -465,6 +465,7 @@ ul.plist button[aria-current]{background:var(--accent-soft);box-shadow:inset 4px
 @media (max-width:700px){.viewer{grid-template-columns:minmax(0,1fr)}}
 .stage{position:relative;aspect-ratio:1/1;width:100%;border:1px solid var(--line);border-radius:12px;background:radial-gradient(circle at 50% 40%,var(--surface) 0%,var(--surface-2) 78%);overflow:hidden}
 #cv{width:100%;height:100%;display:block;touch-action:none;cursor:grab}
+#cv[hidden]{display:none}
 #cv:active{cursor:grabbing}
 #cv:focus-visible{outline:3px solid var(--focus);outline-offset:-3px}
 .nogl{padding:16px;color:var(--muted)}
@@ -509,7 +510,7 @@ dl.flist{margin:0}
 #s-val{width:8em}
 #w-val{width:9em}
 .vctl .btn:disabled{opacity:.5;cursor:not-allowed}
-#p-why:empty{display:none}
+#p-why:empty,#s-why:empty{display:none}
 #which .calc label:first-child{flex:1 1 16em;min-width:0}
 #w-kind{width:100%;min-width:0}
 #p-note:empty{display:none}
@@ -525,6 +526,8 @@ ul.notes li{display:grid;grid-template-columns:minmax(0,1fr) auto auto;gap:8px;a
 .nv{font-family:"IBM Plex Mono",monospace;font-size:14.5px;border:1px solid var(--line-strong);border-radius:6px;background:var(--surface-2);color:var(--ink);padding:3px 8px;cursor:pointer;max-width:12em;overflow-wrap:anywhere;text-align:left}
 .ndel{border:0;background:none;color:var(--muted);font-size:20px;line-height:1;cursor:pointer;padding:4px 8px}
 .ndel:hover{color:var(--error)}
+textarea.ncopy{display:block;width:100%;border:1px solid var(--line-strong);border-radius:6px;background:var(--surface);padding:7px 9px;font-family:"IBM Plex Mono",monospace;font-size:14.5px;color:var(--ink);resize:vertical}
+textarea.ncopy[hidden]{display:none}
 .nadd{display:flex;flex-wrap:wrap;gap:8px;margin:10px 0}
 .nadd .coordin{flex:1 1 10em;width:auto}
 .helper{border-top:1px solid var(--line);padding:10px 0}
@@ -592,7 +595,7 @@ input.hin.wide{width:min(100%,18em)}
   </section>
 
   <section class="panel" id="look" aria-labelledby="h-look">
-    <div class="panel-head"><span class="step">2</span><h2 id="h-look"><span id="pname">Pentagon</span></h2></div>
+    <div class="panel-head"><span class="step">2</span><h2 id="h-look" tabindex="-1"><span id="pname">Pentagon</span></h2></div>
     <div class="viewer">
       <div class="stage2"><svg id="pic" viewBox="-1.2 -1.2 2.4 2.4" role="img" aria-labelledby="pic-t"><title id="pic-t">Drawing of the polygon</title></svg></div>
       <div class="vctl">
@@ -618,8 +621,9 @@ input.hin.wide{width:min(100%,18em)}
       <label>Size: <select id="s-kind" aria-label="Which measurement sets the size">
         <option value="edge">edge length</option><option value="R">circumradius</option><option value="r">inradius</option><option value="area">area inside the outline</option><option value="perim">perimeter</option>
       </select></label>
-      <label>= <input type="text" id="s-val" value="1" inputmode="decimal" aria-label="Size value" autocomplete="off"></label>
+      <label>= <input type="text" id="s-val" value="1" inputmode="decimal" aria-label="Size value" aria-describedby="s-why" autocomplete="off"></label>
     </div>
+    <p class="why" id="s-why" role="alert"></p>
     <p class="help">Every length and area below is for this size. Tap <b>+</b> to copy a fact to your notepad.</p>
     <div id="factbox"></div>
   </section>
@@ -655,6 +659,7 @@ input.hin.wide{width:min(100%,18em)}
       <button type="button" class="btn quiet" id="n-add">Add</button>
     </div>
     <div class="btnrow"><button type="button" class="btn quiet" id="n-copy">Copy all</button><button type="button" class="btn quiet" id="n-clear">Clear the notepad</button><span class="muted" id="n-msg" aria-live="polite"></span></div>
+    <textarea id="n-copybox" class="ncopy" rows="4" readonly hidden aria-label="Text to copy, selected for copying by hand"></textarea>
 
     <h3>Quick coordinate helpers</h3>
     <div class="helper">
@@ -777,7 +782,8 @@ function crossings(n) { // Poonen & Rubinstein (1998), interior points where dia
     + 24n * (42n * N * dv(12) + 60n * N * dv(18) + 35n * N * dv(24) - 38n * N * dv(30) - 82n * N * dv(42) - 330n * N * dv(60) - 144n * N * dv(84) - 96n * N * dv(90) - 144n * N * dv(120) - 96n * N * dv(210));
   return v / 24n;
 }
-function catalan(k) { let c = 1n; for (let i = 0n; i < BigInt(k); i++) c = c * 2n * (2n * i + 1n) / (i + 2n); return c; }
+const catalanNext = (c, k) => c * 2n * (2n * k + 1n) / (k + 2n); // C(k+1) from C(k)
+function catalan(k) { let c = 1n; for (let i = 0n; i < BigInt(k); i++) c = catalanNext(c, i); return c; }
 function constructible(n) {
   let m = n; while (m % 2 === 0) m /= 2;
   const used = [];
@@ -795,8 +801,12 @@ let hiddenK = new Set();
 const prec = () => +$('prec').value;
 function fmt(x) {
   if (!isFinite(x)) return '—';
-  if (Math.abs(x - Math.round(x)) < 1e-9 * Math.max(1, Math.abs(x))) return String(Math.round(x));
-  return x.toFixed(prec()).replace(/0+$/, '').replace(/\.$/, '');
+  // round to the chosen decimals, but never past the 15 significant digits a double holds, so rounding noise stays hidden
+  const mag = x === 0 ? 0 : Math.floor(Math.log10(Math.abs(x)));
+  if (mag >= 15) return String(Number(x.toPrecision(15))); // no decimals left to show (toFixed would print noise digits past the 15th); from 1e21 this is in e+ form
+  const t = x.toFixed(Math.min(prec(), Math.max(0, 14 - mag)));
+  const s = t.includes('.') ? t.replace(/0+$/, '').replace(/\.$/, '') : t;
+  return s === '-0' ? '0' : s;
 }
 const deg = (x) => fmt(x) + '°';
 const short = (x) => (+x.toFixed(2)).toString(); // labels in the drawing
@@ -840,11 +850,20 @@ function geom(size, kind) {
 }
 
 /* ---------- facts ---------- */
+function readSize() { // the whole box must be one positive number; a comma may stand for the decimal point
+  const t = String($('s-val').value).trim().replace(/^([^,]*),([^,]*)$/, '$1.$2');
+  const v = /^\+?(\d+\.?\d*|\.\d+)(e[+-]?\d+)?$/i.test(t) ? Number(t) : NaN;
+  const ok = isFinite(v) && v > 0;
+  // part way through typing one (0 or . on the way to 0.25, or 1e on the way to 1e3) is no mistake, so no alert yet
+  const typing = !ok && !!t && /^\+?\d*\.?\d*(e[+-]?)?$/i.test(t) && !(v > 0);
+  $('s-why').textContent = ok || typing ? '' : t ? `“${$('s-val').value.trim()}” isn't a size. Type one positive number, such as 2.5.` : 'Type a size to see the lengths and areas.';
+  $('s-val').setAttribute('aria-invalid', ok || typing ? 'false' : 'true');
+  return ok ? v : 0;
+}
 function factRows() {
   const n = N, d = D, info = describe(n, d);
-  const sz = parseFloat(String($('s-val').value).replace(',', '.'));
-  const size = isFinite(sz) && sz > 0 ? sz : 1;
-  const G = geom(size, $('s-kind').value);
+  const size = readSize();
+  const G = size ? geom(size, $('s-kind').value) : null;
   const rows = [];
   const R = (k, v, note, help) => rows.push({ k, v: String(v), note: note === undefined ? String(v) : String(note), help });
   rows.push({ head: 'Basics' });
@@ -864,6 +883,8 @@ function factRows() {
   if (d > 1) R('Central angle across each side', deg(360 * d / n), fmt(360 * d / n));
   if (d > 1) R('Angle inside the outline at each inner corner', deg(180 + 360 * (d - 1) / n), fmt(180 + 360 * (d - 1) / n), 'A reflex angle: the outline bends in there.');
   rows.push({ head: 'Sizes' });
+  const noSize = { k: 'Lengths and areas', v: 'type a size above', note: '', nonote: true };
+  if (!G) rows.push(noSize); else {
   R('Edge length', fmt(G.a));
   R('Circumradius (centre to each corner)', fmt(G.R));
   R(d === 1 ? 'Inradius, or apothem (centre to the middle of each side)' : 'Centre to the line of each side', fmt(G.r));
@@ -873,9 +894,11 @@ function factRows() {
   if (d > 1) R('Perimeter of the outline', fmt(2 * n * Math.sqrt(G.R * G.R + G.rho * G.rho - 2 * G.R * G.rho * Math.cos(Math.PI / n))));
   R(d === 1 ? 'Area' : 'Area inside the outline', fmt(G.areaOut));
   if (d > 1) R('Area counted by winding', fmt(G.areaWind), undefined, 'The middle counts once for each time the outline goes round it.');
+  }
   rows.push({ head: `Chords between the ${n} corners` });
   R('Diagonals (chords between corners that aren\'t neighbours)', n * (n - 3) / 2);
-  if (n <= 2000) {
+  if (n <= 2000 && !G) rows.push({ ...noSize, k: 'Lengths of the chords' });
+  else if (n <= 2000) {
     const half = Math.floor(n / 2);
     for (let k = 1; k <= Math.min(half, 30); k++) {
       const cnt = 2 * k === n ? n / 2 : n;
@@ -1019,21 +1042,36 @@ $('s-val').addEventListener('input', renderFacts);
 function whichList() {
   const kind = $('w-kind').value, raw0 = String($('w-val').value).trim();
   const angle = ['corner', 'ext', 'sum', 'central'].includes(kind);
-  const out = []; let more = false;
+  const out = []; let more = false, angleCount = '';
   if (!raw0) { $('w-count').textContent = ''; $('w-list').innerHTML = ''; return; }
   const add = (n, d, val) => { if (out.length < 60) out.push({ n, d, val }); else more = true; };
   if (angle) {
     const v = Number(raw0.replace(',', '.').replace(/[°\s]/g, ''));
     if (!isFinite(v)) { $('w-count').textContent = 'Type a number.'; $('w-list').innerHTML = ''; return; }
-    for (let n = 3; n <= 10000 && !more; n++) {
-      const dmax = kind === 'central' ? 1 : Math.floor((n - 1) / 2);
-      for (let d = 1; d <= dmax; d++) {
-        if (d > 1 && n > 400) break;
+    // each angle is linear in the step d, so only the steps within the tolerance need checking; the central angle 360/n doesn't depend on d at all
+    const T = 0.01, fits = [];
+    for (let n = 3; n <= 10000; n++) {
+      const dmax = Math.floor((n - 1) / 2);
+      if (kind === 'central') { if (Math.abs(360 / n - v) < T) fits.push({ n, d: 0, val: 360 / n, cnt: phi(n) / 2 }); continue; } // d: 0 stands for every step coprime to n
+      let lo, hi;
+      if (kind === 'corner') { lo = (180 - v - T) * n / 360; hi = (180 - v + T) * n / 360; }
+      else if (kind === 'ext') { lo = (v - T) * n / 360; hi = (v + T) * n / 360; }
+      else { lo = (180 * n - v - T) / 360; hi = (180 * n - v + T) / 360; }
+      for (let d = Math.max(1, Math.ceil(lo - 1e-9)); d <= Math.min(dmax, Math.floor(hi + 1e-9)); d++) {
         if (d > 1 && gcd(n, d) !== 1) continue; // compounds aren't single polygons
-        const val = kind === 'corner' ? 180 * (1 - 2 * d / n) : kind === 'ext' ? 360 * d / n : kind === 'sum' ? 180 * (n - 2 * d) : 360 / n;
-        if (Math.abs(val - v) < 0.01) add(n, d, deg(val));
+        const val = kind === 'corner' ? 180 * (1 - 2 * d / n) : kind === 'ext' ? 360 * d / n : 180 * (n - 2 * d);
+        if (Math.abs(val - v) < T) fits.push({ n, d, val, cnt: 1 });
       }
     }
+    const off = (f) => Math.round(Math.abs(f.val - v) * 1e9); // closest first, then fewest sides
+    fits.sort((a, b) => off(a) - off(b) || a.n - b.n || a.d - b.d);
+    for (const f of fits) {
+      if (out.length >= 60) break;
+      if (f.d) add(f.n, f.d, deg(f.val));
+      else for (let d = 1; d <= (f.n - 1) / 2 && out.length < 60; d++) if (d === 1 || gcd(f.n, d) === 1) add(f.n, d, deg(f.val));
+    }
+    const total = fits.reduce((t, f) => t + f.cnt, 0), exact = fits.reduce((t, f) => t + (off(f) ? 0 : f.cnt), 0);
+    angleCount = total < 2 ? '' : `${total.toLocaleString('en')} polygons fit to within ${T}°, closest first${exact && exact < total ? ` (${exact.toLocaleString('en')} exactly)` : ''}${total > 60 ? '; the 60 closest are listed.' : '.'}`;
   } else {
     const digits = raw0.replace(/[,\s  ._']/g, ''); // counts may be written with thousands separators
     if (!/^\d+$/.test(digits)) { $('w-count').textContent = 'Type a whole number.'; $('w-list').innerHTML = ''; return; }
@@ -1041,41 +1079,73 @@ function whichList() {
     if (kind === 'diag') { for (let n = 3; n <= 10000; n++) { const c = BigInt(n * (n - 3) / 2); if (c === V) add(n, 1, big(c)); if (c > V) break; } } // n(n−3)/2 only grows
     else if (kind === 'cross') { for (let n = 3; n <= 10000; n++) { const c = crossings(n); if (c === V) add(n, 1, big(c)); } } // not monotonic: I(11) = 330 but I(12) = 301
     else if (kind === 'regions') { for (const n in REGIONS) if (BigInt(REGIONS[n]) === V) add(+n, 1, big(V)); }
-    else if (kind === 'tri') { for (let n = 3; n <= 10000; n++) { const c = catalan(n - 2); if (c === V) add(n, 1, bigShow(c)); if (c > V) break; } }
+    else if (kind === 'tri') { let c = 1n; for (let n = 3; n <= 10000; n++) { if (n > 3) c = catalanNext(c, BigInt(n - 3)); if (c === V) add(n, 1, bigShow(c)); if (c > V) break; } } // c = C(n−2), carried forward
   }
-  $('w-count').textContent = more ? `More than 60 polygons fit; the first 60 are listed.` : out.length ? `${out.length} ${out.length === 1 ? 'polygon fits' : 'polygons fit'}.` : (kind === 'regions' ? 'Nothing up to 120 sides fits.' : 'Nothing fits. Check the value, or try another fact.');
+  $('w-count').textContent = angleCount || (more ? `More than 60 polygons fit; the first 60 are listed.` : out.length ? `${out.length} ${out.length === 1 ? 'polygon fits' : 'polygons fit'}.` : (kind === 'regions' ? 'Nothing up to 120 sides fits.' : 'Nothing fits. Check the value, or try another fact.'));
   $('w-list').innerHTML = out.map((o) => `<li><button type="button" data-nd="${o.n}/${o.d}"><span class="pn">${esc(describe(o.n, o.d).title)}</span><span class="pm">${esc(o.val)} · ${esc(describe(o.n, o.d).kind)}</span></button></li>`).join('');
 }
 $('w-kind').addEventListener('change', whichList); $('w-val').addEventListener('input', whichList);
-$('w-list').addEventListener('click', (e) => { const b = e.target.closest('button[data-nd]'); if (!b) return; const [n, d] = b.dataset.nd.split('/').map(Number); setND(n, d); $('look').scrollIntoView({ behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth', block: 'start' }); });
+$('w-list').addEventListener('click', (e) => {
+  const b = e.target.closest('button[data-nd]'); if (!b) return; const [n, d] = b.dataset.nd.split('/').map(Number), had = document.activeElement === b;
+  setND(n, d); $('look').scrollIntoView({ behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth', block: 'start' });
+  if (had) $('h-look').focus({ preventScroll: true }); // keyboard users follow the scroll to the shape, not stay in a long list
+});
 
 /* ---------- notepad (shared by the Polytopes tools) ---------- */
 const NKEY = 'aft.polytopes.notes';
-let notes = [];
-try { notes = JSON.parse(localStorage.getItem(NKEY) || '[]'); if (!Array.isArray(notes)) notes = []; } catch (e) { notes = []; }
-const saveNotes = () => { try { localStorage.setItem(NKEY, JSON.stringify(notes)); } catch (e) { /* storage unavailable */ } };
-function flash(msg) { $('n-msg').textContent = msg; clearTimeout(flash.t); flash.t = setTimeout(() => { $('n-msg').textContent = ''; }, 2500); }
-function addNote(label, value) { notes.push({ label: String(label).slice(0, 200), value: String(value).slice(0, 10000) }); saveNotes(); renderNotes(); flash('Added to the notepad.'); }
-function renderNotes() {
+// Every open Polytopes tool shares these notes, so each change starts from what is stored now (another tab may have
+// changed it), and a change made elsewhere redraws this page's list. If saving ever fails, this page's copy is the
+// only one, so it stops re-reading until a save works again.
+let notes = [], shown = [], notesSaved = true; // shown: the list as drawn, which taps and deletes act on
+function readNotes() {
+  let raw; try { raw = localStorage.getItem(NKEY); } catch (e) { return null; }
+  try { const a = JSON.parse(raw || '[]'); return Array.isArray(a) ? a : []; } catch (e) { return []; }
+}
+const freshNotes = () => { if (notesSaved) { const a = readNotes(); if (a) notes = a; } return notes; };
+freshNotes();
+const saveNotes = () => { try { localStorage.setItem(NKEY, JSON.stringify(notes)); notesSaved = true; } catch (e) { notesSaved = false; } };
+const noteKey = (n) => JSON.stringify([n && n.label, n && n.value]);
+function flash(msg, ms) { $('n-msg').textContent = msg; clearTimeout(flash.t); flash.t = setTimeout(() => { $('n-msg').textContent = ''; }, ms || 2500); }
+function addNote(label, value) { freshNotes(); notes.push({ label: String(label).slice(0, 200), value: String(value).slice(0, 10000) }); saveNotes(); renderNotes(); flash('Added to the notepad.'); }
+function renderNotes(keepBox) { // a change made here hides the copy-by-hand box; one from another tab leaves it be
+  if (!keepBox) $('n-copybox').hidden = true;
+  shown = notes.slice();
   $('nempty').hidden = notes.length > 0;
   $('nlist').innerHTML = notes.map((n, i) => `<li><span class="nl">${esc(n.label)}</span><button type="button" class="nv" data-i="${i}" title="Put this in the last box you used">${esc(n.value)}</button><button type="button" class="ndel" data-i="${i}" aria-label="Delete note: ${esc(n.label)}">×</button></li>`).join('');
 }
+window.addEventListener('storage', (e) => {
+  if ((e.key !== NKEY && e.key !== null) || !notesSaved) return;
+  const a = document.activeElement, inList = !!a && $('nlist').contains(a), cls = inList && a.classList.contains('ndel') ? 'ndel' : 'nv', at = inList ? +a.dataset.i : 0, key = noteKey(shown[at]);
+  freshNotes(); renderNotes(true);
+  if (!inList) return;
+  // stay on the same note if it is still there (the nearest copy of it), else on whatever now sits in its place
+  let to = -1; notes.forEach((n, i) => { if (noteKey(n) === key && (to < 0 || Math.abs(i - at) < Math.abs(to - at))) to = i; });
+  const k = $('nlist').querySelectorAll('.' + cls); (k[to >= 0 ? to : Math.min(at, k.length - 1)] || $('n-label')).focus();
+});
+// numbers as written: a sign (any minus sign), digits with or without a leading digit (.5), and an exponent (1e3)
+const minusFix = (t) => String(t).replace(/[\u2212\uFE63\uFF0D]/g, '-');
+const NUMS = /[-+]?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][-+]?\d+)?/g;
 let lastBox = null;
 document.querySelectorAll('.hin').forEach((el) => el.addEventListener('focus', () => { lastBox = el; }));
 $('nlist').addEventListener('click', (e) => {
   const v = e.target.closest('.nv'), d = e.target.closest('.ndel');
   if (d) {
-    const i = +d.dataset.i; notes.splice(i, 1); saveNotes(); renderNotes(); flash('Note deleted.');
-    const next = $('nlist').querySelector(`.ndel[data-i="${Math.min(i, notes.length - 1)}"]`); (next || $('n-label')).focus();
+    // delete the note that was shown, wherever it now sits in the stored list (another tab may have moved it)
+    const i = +d.dataset.i, k = noteKey(shown[i]); freshNotes();
+    const j = noteKey(notes[i]) === k ? i : notes.findIndex((n) => noteKey(n) === k);
+    if (j >= 0) { notes.splice(j, 1); saveNotes(); }
+    renderNotes(); flash(j >= 0 ? 'Note deleted.' : 'That note was already deleted in another tab.');
+    const next = $('nlist').querySelector(`.ndel[data-i="${Math.min(j >= 0 ? j : i, notes.length - 1)}"]`); (next || $('n-label')).focus();
     return;
   }
   if (v) {
-    const val = notes[+v.dataset.i].value;
+    const val = String(shown[+v.dataset.i].value);
     if (!lastBox) { copy(val, 'Copied.'); return; }
     if (lastBox.id === 'h-dig') lastBox.value += val.replace(/\D/g, '');
     else if (lastBox.id === 'h-conv') lastBox.value = val;
     else {
-      const nums = val.replace(/−/g, '-').match(/-?\d+(?:\.\d+)?/g) || [];
+      // No.5 is 5, not .5; and in a number straight after a letter (N48E2) the E is a letter too, not an exponent
+      const nums = minusFix(val).replace(/(\p{L})\.(?=\d)/gu, '$1 ').replace(/(\p{L}[-+]?\d+(?:\.\d*)?)(?=[eE])/gu, '$1 ').match(NUMS) || [];
       if (nums.length !== 1) { flash(nums.length ? 'That note holds more than one number. Type the one you want.' : 'That note has no number in it.'); return; }
       lastBox.value = nums[0];
     }
@@ -1087,20 +1157,40 @@ $('n-add').addEventListener('click', () => {
   if (!l && !v) return;
   addNote(l || 'Note', v); $('n-label').value = ''; $('n-val').value = '';
 });
-$('n-clear').addEventListener('click', () => { if (!notes.length || !confirm('Clear every note?')) return; notes = []; saveNotes(); renderNotes(); });
+$('n-clear').addEventListener('click', () => {
+  freshNotes(); renderNotes(true); if (!notes.length) return; if (!confirm('Clear every note?')) return; // nothing has changed yet, so the copy box stays
+  // clear the notes that were shown; one added in another tab while the question was open is kept. The browser
+  // passes on that tab's change only once this handler ends, so the clearing waits a moment for it.
+  const gone = shown.map(noteKey);
+  setTimeout(() => {
+    freshNotes(); notes = notes.filter((n) => { const j = gone.indexOf(noteKey(n)); if (j < 0) return true; gone.splice(j, 1); return false; });
+    saveNotes(); renderNotes(); if (notes.length) flash(notes.length === 1 ? 'Cleared. A note added in another tab meanwhile was kept.' : 'Cleared. Notes added in another tab meanwhile were kept.');
+  }, 0);
+});
 function copy(text, msg) {
-  const done = () => { $('n-msg').textContent = msg; setTimeout(() => { $('n-msg').textContent = ''; }, 1600); };
-  if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(text).then(done, () => { $('n-msg').textContent = 'Copying is blocked here; select the text instead.'; });
+  const box = $('n-copybox');
+  box.hidden = true;
+  const manual = () => { // last resort: show the text, selected, for copying by hand
+    box.value = text; box.hidden = false; box.focus(); box.select();
+    flash('Copying isn’t available here, so the text is selected in the box below: copy it from there.', 10000);
+  };
+  const fallback = () => {
+    const ta = document.createElement('textarea'), back = document.activeElement; let ok = false;
+    ta.value = text; ta.setAttribute('readonly', ''); ta.style.position = 'fixed'; ta.style.top = '0'; ta.style.opacity = '0';
+    document.body.appendChild(ta); ta.select(); try { ok = document.execCommand('copy'); } catch (e) { ok = false; } ta.remove(); if (back && back.focus) back.focus();
+    if (ok) flash(msg, 1600); else manual();
+  };
+  if (navigator.clipboard && navigator.clipboard.writeText) { try { navigator.clipboard.writeText(text).then(() => flash(msg, 1600), fallback); } catch (e) { fallback(); } } else fallback();
 }
-$('n-copy').addEventListener('click', () => copy(notes.map((n) => `${n.label}: ${n.value}`).join('\n'), 'Copied all notes.'));
+$('n-copy').addEventListener('click', () => { const all = freshNotes(); renderNotes(); if (!all.length) { flash('Nothing to copy yet.'); return; } copy(all.map((n) => `${n.label}: ${n.value}`).join('\n'), 'Copied all notes.'); });
 
 /* ---------- coordinate helpers ---------- */
-const num = (t) => { const v = String(t).trim().replace('−', '-').replace(',', '.'); return v === '' || isNaN(+v) ? null : +v; };
+const num = (t) => { const v = minusFix(t).trim().replace(',', '.'), m = v.match(NUMS); return m && m.length === 1 && m[0] === v ? +v : null; };
 function arith() {
   const a = num($('h-a').value), b = num($('h-b').value), op = $('h-op').value;
   let r = null;
   if (a !== null && b !== null) r = op === '+' ? a + b : op === '−' ? a - b : op === '×' ? a * b : (b === 0 ? null : a / b);
-  $('h-r').textContent = r === null ? '' : String(+r.toFixed(10));
+  $('h-r').textContent = r === null ? '' : isFinite(r) ? String(+r.toFixed(10)) : 'too big to work out here'; // as with 1e400
 }
 ['h-a', 'h-b'].forEach((id) => $(id).addEventListener('input', arith));
 $('h-op').addEventListener('change', arith);
@@ -1133,7 +1223,10 @@ function digitsOut() {
 function convOut() {
   const t = $('h-conv').value.trim();
   const hs = (t.toUpperCase().match(/[NSEW]/g) || []);
-  const nums = (t.replace(/(\d),(\d)/g, '$1.$2').match(/-?\d+(?:\.\d+)?/g) || []).map(Number);
+  // here an E is always east, so numbers are read without exponents; a point straight after a number (as when
+  // "48.85,2.35" becomes "48.85.2.35") ends that number rather than starting the next one as ".2", and a point
+  // straight after a letter (N.12, lat.12.5) is an abbreviation's, not the start of a number
+  const nums = (minusFix(t).replace(/(\p{L})\.(?=\d)/gu, '$1 ').replace(/(\d),(\d)/g, '$1.$2').match(/-?(?:\d+(?:\.\d+)?\.?|\.\d+)/g) || []).map((x) => parseFloat(x));
   let lat = null, lon = null;
   if (nums.length === 2) [lat, lon] = nums;
   const sg = (x) => (x < 0 || Object.is(x, -0) ? -1 : 1);
@@ -1142,6 +1235,7 @@ function convOut() {
   let out = '', bad = '';
   if (!t) out = '';
   else if (lat === null) bad = 'Give two numbers (decimal degrees), four (degrees and minutes) or six (degrees, minutes, seconds).';
+  else if (nums.length > 2 && nums.some((x, i) => i % (nums.length / 2) > 0 && (x < 0 || Object.is(x, -0) || x >= 60))) bad = 'Minutes and seconds go from 0 to just under 60, with no minus sign. Put a minus on the degrees, or use N, S, E or W.';
   else {
     if (hs[0] === 'S') lat = -Math.abs(lat); if (hs[1] === 'W' || hs[0] === 'W') lon = -Math.abs(lon);
     if (Math.abs(lat) > 90 || Math.abs(lon) > 180) bad = 'That is off the globe: latitude goes up to 90 and longitude up to 180.';
@@ -1155,7 +1249,7 @@ $('h-conv').addEventListener('input', convOut);
 /* ---------- example ---------- */
 $('btn-example').addEventListener('click', () => {
   $('w-kind').value = 'corner'; $('w-val').value = '156'; whichList();
-  $('w-count').textContent += ' Example clue (made up): “a regular polygon whose corners each measure 156°”. Pick it, then tap + beside the number of diagonals to note it.';
+  $('w-count').textContent += ' Example clue (made up): “a regular polygon whose corners each measure 156°”. Pick the exact fit at the top of the list, then tap + beside the number of diagonals to note it.';
   $('which').scrollIntoView({ behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth', block: 'start' });
 });
 

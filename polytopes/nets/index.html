@@ -465,6 +465,7 @@ ul.plist button[aria-current]{background:var(--accent-soft);box-shadow:inset 4px
 @media (max-width:700px){.viewer{grid-template-columns:minmax(0,1fr)}}
 .stage{position:relative;aspect-ratio:1/1;width:100%;border:1px solid var(--line);border-radius:12px;background:radial-gradient(circle at 50% 40%,var(--surface) 0%,var(--surface-2) 78%);overflow:hidden}
 #cv{width:100%;height:100%;display:block;touch-action:none;cursor:grab}
+#cv[hidden]{display:none}
 #cv:active{cursor:grabbing}
 #cv:focus-visible{outline:3px solid var(--focus);outline-offset:-3px}
 .nogl{padding:16px;color:var(--muted)}
@@ -619,6 +620,13 @@ dl.flist{margin:0}
   .pC-printing #pC-strips{position:absolute;left:0;top:0;width:100%}
   .pC-printing #partC .pC-strip{border:0;overflow:visible}
   #partC .pC-strip svg{min-width:0}
+  /* take everything else out of the layout too, so it leaves no blank pages after the strip; only the strip's own
+     ancestors stay, without their spacing (browsers without :has() keep the hidden-but-placed version above) */
+  @supports selector(:has(*)){
+    .pC-printing body *:not(:has(#pC-strips)):not(#pC-strips):not(#pC-strips *){display:none!important}
+    .pC-printing body *:has(#pC-strips){margin:0!important;padding:0!important;border:0!important;box-shadow:none!important;background:none!important}
+    .pC-printing #pC-strips{position:static;margin:0}
+  }
 }
 
 /* ---------- Polytopes: shared notepad ---------- */
@@ -628,6 +636,8 @@ ul.notes li{display:grid;grid-template-columns:minmax(0,1fr) auto auto;gap:8px;a
 .nv{font-family:"IBM Plex Mono",monospace;font-size:14.5px;border:1px solid var(--line-strong);border-radius:6px;background:var(--surface-2);color:var(--ink);padding:3px 8px;cursor:pointer;max-width:12em;overflow-wrap:anywhere;text-align:left}
 .ndel{border:0;background:none;color:var(--muted);font-size:20px;line-height:1;cursor:pointer;padding:4px 8px}
 .ndel:hover{color:var(--error)}
+textarea.ncopy{display:block;width:100%;border:1px solid var(--line-strong);border-radius:6px;background:var(--surface);padding:7px 9px;font-family:"IBM Plex Mono",monospace;font-size:14.5px;color:var(--ink);resize:vertical}
+textarea.ncopy[hidden]{display:none}
 .nadd{display:flex;flex-wrap:wrap;gap:8px;margin:10px 0}
 .nadd .coordin{flex:1 1 10em;width:auto}
 .helper{border-top:1px solid var(--line);padding:10px 0}
@@ -839,6 +849,7 @@ input.hin.wide{width:min(100%,18em)}
       <button type="button" class="btn quiet" id="n-add">Add</button>
     </div>
     <div class="btnrow"><button type="button" class="btn quiet" id="n-copy">Copy all</button><button type="button" class="btn quiet" id="n-clear">Clear the notepad</button><span class="muted" id="n-msg" aria-live="polite"></span></div>
+    <textarea id="n-copybox" class="ncopy" rows="4" readonly hidden aria-label="Text to copy, selected for copying by hand"></textarea>
 
     <h3>Quick coordinate helpers</h3>
     <div class="helper">
@@ -1086,7 +1097,7 @@ void main(){vec3 nn=normalize(vn);float d=abs(dot(nn,normalize(vec3(0.35,0.55,0.
 const pA_POLY = { 3: 'triangle', 4: 'square', 5: 'pentagon', 6: 'hexagon', 7: 'heptagon', 8: 'octagon', 9: 'enneagon', 10: 'decagon', 11: 'hendecagon', 12: 'dodecagon' };
 const pA_PREF = { 3: 'triangular', 4: 'square', 5: 'pentagonal', 6: 'hexagonal', 7: 'heptagonal', 8: 'octagonal', 9: 'enneagonal', 10: 'decagonal', 11: 'hendecagonal', 12: 'dodecagonal' };
 const pA_FAMS = [['platonic', 'Platonic solids'], ['archimedean', 'Archimedean solids'], ['catalan', 'Catalan solids'], ['prism', 'Prisms'], ['antiprism', 'Antiprisms'], ['johnson', 'Snub antiprisms']];
-const pA_NETCOUNT = { U1: 2, U6: 11, U5: 11, U23: 43380, U22: 43380 }; // known totals, Platonic solids only
+const pA_NETCOUNT = { U1: 2, U6: 11, U5: 11, U23: 43380, U22: 43380, P4: 11, A3: 11 }; // known totals, Platonic solids only (P4 and A3 are the cube and octahedron)
 const pA_TYPECOL = { 3: 1, 4: 2, 5: 3, 6: 4, 8: 5, 10: 6, 7: 7, 9: 8, 11: 7, 12: 8 };
 const pA_KEY = 'aft.nets.lastShape';
 const pA_EPS = 1e-6;
@@ -1492,8 +1503,8 @@ function pA_facts() {
     { k: 'Edges left as folds', v: String(F - 1), h: `Always faces − 1: every face except face 1 hangs from one neighbour by a fold. ${V - 1} + ${F - 1} = ${E} edges.`, l: 'edges left as folds in a net' },
   ];
   const total = pA_NETCOUNT[G.id];
-  if (total) rows.push({ k: 'Different nets', v: pA_fmt(total), h: 'The known total, counting nets that match after turning or flipping over as the same.', l: 'different nets' });
-  $('pA-facts').innerHTML = rows.map((r) => `<div class="frow"><dt>${esc(r.k)}${r.h ? `<span class="fh">${esc(r.h)}</span>` : ''}</dt><dd><span class="fv">${esc(r.v)}</span><button type="button" class="nplus" data-l="${esc(nm.charAt(0).toUpperCase() + nm.slice(1) + ': ' + r.l)}" data-v="${esc(r.v)}" aria-label="Add to notepad: ${esc(r.k)}">+</button></dd></div>`).join('');
+  if (total) rows.push({ k: 'Different nets', v: pA_fmt(total), n: String(total), h: 'The known total, counting nets that match after turning or flipping over as the same.', l: 'different nets' });
+  $('pA-facts').innerHTML = rows.map((r) => `<div class="frow"><dt>${esc(r.k)}${r.h ? `<span class="fh">${esc(r.h)}</span>` : ''}</dt><dd><span class="fv">${esc(r.v)}</span><button type="button" class="nplus" data-l="${esc(nm.charAt(0).toUpperCase() + nm.slice(1) + ': ' + r.l)}" data-v="${esc(r.n || r.v)}" aria-label="Add to notepad: ${esc(r.k)}">+</button></dd></div>`).join('');
 }
 
 /* ---------- Part B: draw your own net ---------- */
@@ -2644,31 +2655,59 @@ function partC_init() {
 
 /* ---------- notepad (shared by the Polytopes tools) ---------- */
 const NKEY = 'aft.polytopes.notes';
-let notes = [];
-try { notes = JSON.parse(localStorage.getItem(NKEY) || '[]'); if (!Array.isArray(notes)) notes = []; } catch (e) { notes = []; }
-const saveNotes = () => { try { localStorage.setItem(NKEY, JSON.stringify(notes)); } catch (e) { /* storage unavailable */ } };
-function flash(msg) { $('n-msg').textContent = msg; clearTimeout(flash.t); flash.t = setTimeout(() => { $('n-msg').textContent = ''; }, 2500); }
-function addNote(label, value) { notes.push({ label: String(label).slice(0, 200), value: String(value).slice(0, 10000) }); saveNotes(); renderNotes(); flash('Added to the notepad.'); }
-function renderNotes() {
+// Every open Polytopes tool shares these notes, so each change starts from what is stored now (another tab may have
+// changed it), and a change made elsewhere redraws this page's list. If saving ever fails, this page's copy is the
+// only one, so it stops re-reading until a save works again.
+let notes = [], shown = [], notesSaved = true; // shown: the list as drawn, which taps and deletes act on
+function readNotes() {
+  let raw; try { raw = localStorage.getItem(NKEY); } catch (e) { return null; }
+  try { const a = JSON.parse(raw || '[]'); return Array.isArray(a) ? a : []; } catch (e) { return []; }
+}
+const freshNotes = () => { if (notesSaved) { const a = readNotes(); if (a) notes = a; } return notes; };
+freshNotes();
+const saveNotes = () => { try { localStorage.setItem(NKEY, JSON.stringify(notes)); notesSaved = true; } catch (e) { notesSaved = false; } };
+const noteKey = (n) => JSON.stringify([n && n.label, n && n.value]);
+function flash(msg, ms) { $('n-msg').textContent = msg; clearTimeout(flash.t); flash.t = setTimeout(() => { $('n-msg').textContent = ''; }, ms || 2500); }
+function addNote(label, value) { freshNotes(); notes.push({ label: String(label).slice(0, 200), value: String(value).slice(0, 10000) }); saveNotes(); renderNotes(); flash('Added to the notepad.'); }
+function renderNotes(keepBox) { // a change made here hides the copy-by-hand box; one from another tab leaves it be
+  if (!keepBox) $('n-copybox').hidden = true;
+  shown = notes.slice();
   $('nempty').hidden = notes.length > 0;
   $('nlist').innerHTML = notes.map((n, i) => `<li><span class="nl">${esc(n.label)}</span><button type="button" class="nv" data-i="${i}" title="Put this in the last box you used">${esc(n.value)}</button><button type="button" class="ndel" data-i="${i}" aria-label="Delete note: ${esc(n.label)}">×</button></li>`).join('');
 }
+window.addEventListener('storage', (e) => {
+  if ((e.key !== NKEY && e.key !== null) || !notesSaved) return;
+  const a = document.activeElement, inList = !!a && $('nlist').contains(a), cls = inList && a.classList.contains('ndel') ? 'ndel' : 'nv', at = inList ? +a.dataset.i : 0, key = noteKey(shown[at]);
+  freshNotes(); renderNotes(true);
+  if (!inList) return;
+  // stay on the same note if it is still there (the nearest copy of it), else on whatever now sits in its place
+  let to = -1; notes.forEach((n, i) => { if (noteKey(n) === key && (to < 0 || Math.abs(i - at) < Math.abs(to - at))) to = i; });
+  const k = $('nlist').querySelectorAll('.' + cls); (k[to >= 0 ? to : Math.min(at, k.length - 1)] || $('n-label')).focus();
+});
+// numbers as written: a sign (any minus sign), digits with or without a leading digit (.5), and an exponent (1e3)
+const minusFix = (t) => String(t).replace(/[\u2212\uFE63\uFF0D]/g, '-');
+const NUMS = /[-+]?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][-+]?\d+)?/g;
 let lastBox = null;
 document.querySelectorAll('.hin').forEach((el) => el.addEventListener('focus', () => { lastBox = el; }));
 $('nlist').addEventListener('click', (e) => {
   const v = e.target.closest('.nv'), d = e.target.closest('.ndel');
   if (d) {
-    const i = +d.dataset.i; notes.splice(i, 1); saveNotes(); renderNotes(); flash('Note deleted.');
-    const next = $('nlist').querySelector(`.ndel[data-i="${Math.min(i, notes.length - 1)}"]`); (next || $('n-label')).focus();
+    // delete the note that was shown, wherever it now sits in the stored list (another tab may have moved it)
+    const i = +d.dataset.i, k = noteKey(shown[i]); freshNotes();
+    const j = noteKey(notes[i]) === k ? i : notes.findIndex((n) => noteKey(n) === k);
+    if (j >= 0) { notes.splice(j, 1); saveNotes(); }
+    renderNotes(); flash(j >= 0 ? 'Note deleted.' : 'That note was already deleted in another tab.');
+    const next = $('nlist').querySelector(`.ndel[data-i="${Math.min(j >= 0 ? j : i, notes.length - 1)}"]`); (next || $('n-label')).focus();
     return;
   }
   if (v) {
-    const val = notes[+v.dataset.i].value;
+    const val = String(shown[+v.dataset.i].value);
     if (!lastBox) { copy(val, 'Copied.'); return; }
     if (lastBox.id === 'h-dig') lastBox.value += val.replace(/\D/g, '');
     else if (lastBox.id === 'h-conv') lastBox.value = val;
     else {
-      const nums = val.replace(/−/g, '-').match(/-?\d+(?:\.\d+)?/g) || [];
+      // No.5 is 5, not .5; and in a number straight after a letter (N48E2) the E is a letter too, not an exponent
+      const nums = minusFix(val).replace(/(\p{L})\.(?=\d)/gu, '$1 ').replace(/(\p{L}[-+]?\d+(?:\.\d*)?)(?=[eE])/gu, '$1 ').match(NUMS) || [];
       if (nums.length !== 1) { flash(nums.length ? 'That note holds more than one number. Type the one you want.' : 'That note has no number in it.'); return; }
       lastBox.value = nums[0];
     }
@@ -2680,20 +2719,40 @@ $('n-add').addEventListener('click', () => {
   if (!l && !v) return;
   addNote(l || 'Note', v); $('n-label').value = ''; $('n-val').value = '';
 });
-$('n-clear').addEventListener('click', () => { if (!notes.length || !confirm('Clear every note?')) return; notes = []; saveNotes(); renderNotes(); });
+$('n-clear').addEventListener('click', () => {
+  freshNotes(); renderNotes(true); if (!notes.length) return; if (!confirm('Clear every note?')) return; // nothing has changed yet, so the copy box stays
+  // clear the notes that were shown; one added in another tab while the question was open is kept. The browser
+  // passes on that tab's change only once this handler ends, so the clearing waits a moment for it.
+  const gone = shown.map(noteKey);
+  setTimeout(() => {
+    freshNotes(); notes = notes.filter((n) => { const j = gone.indexOf(noteKey(n)); if (j < 0) return true; gone.splice(j, 1); return false; });
+    saveNotes(); renderNotes(); if (notes.length) flash(notes.length === 1 ? 'Cleared. A note added in another tab meanwhile was kept.' : 'Cleared. Notes added in another tab meanwhile were kept.');
+  }, 0);
+});
 function copy(text, msg) {
-  const done = () => { $('n-msg').textContent = msg; setTimeout(() => { $('n-msg').textContent = ''; }, 1600); };
-  if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(text).then(done, () => { $('n-msg').textContent = 'Copying is blocked here; select the text instead.'; });
+  const box = $('n-copybox');
+  box.hidden = true;
+  const manual = () => { // last resort: show the text, selected, for copying by hand
+    box.value = text; box.hidden = false; box.focus(); box.select();
+    flash('Copying isn’t available here, so the text is selected in the box below: copy it from there.', 10000);
+  };
+  const fallback = () => {
+    const ta = document.createElement('textarea'), back = document.activeElement; let ok = false;
+    ta.value = text; ta.setAttribute('readonly', ''); ta.style.position = 'fixed'; ta.style.top = '0'; ta.style.opacity = '0';
+    document.body.appendChild(ta); ta.select(); try { ok = document.execCommand('copy'); } catch (e) { ok = false; } ta.remove(); if (back && back.focus) back.focus();
+    if (ok) flash(msg, 1600); else manual();
+  };
+  if (navigator.clipboard && navigator.clipboard.writeText) { try { navigator.clipboard.writeText(text).then(() => flash(msg, 1600), fallback); } catch (e) { fallback(); } } else fallback();
 }
-$('n-copy').addEventListener('click', () => copy(notes.map((n) => `${n.label}: ${n.value}`).join('\n'), 'Copied all notes.'));
+$('n-copy').addEventListener('click', () => { const all = freshNotes(); renderNotes(); if (!all.length) { flash('Nothing to copy yet.'); return; } copy(all.map((n) => `${n.label}: ${n.value}`).join('\n'), 'Copied all notes.'); });
 
 /* ---------- coordinate helpers ---------- */
-const num = (t) => { const v = String(t).trim().replace('−', '-').replace(',', '.'); return v === '' || isNaN(+v) ? null : +v; };
+const num = (t) => { const v = minusFix(t).trim().replace(',', '.'), m = v.match(NUMS); return m && m.length === 1 && m[0] === v ? +v : null; };
 function arith() {
   const a = num($('h-a').value), b = num($('h-b').value), op = $('h-op').value;
   let r = null;
   if (a !== null && b !== null) r = op === '+' ? a + b : op === '−' ? a - b : op === '×' ? a * b : (b === 0 ? null : a / b);
-  $('h-r').textContent = r === null ? '' : String(+r.toFixed(10));
+  $('h-r').textContent = r === null ? '' : isFinite(r) ? String(+r.toFixed(10)) : 'too big to work out here'; // as with 1e400
 }
 ['h-a', 'h-b'].forEach((id) => $(id).addEventListener('input', arith));
 $('h-op').addEventListener('change', arith);
@@ -2726,7 +2785,10 @@ function digitsOut() {
 function convOut() {
   const t = $('h-conv').value.trim();
   const hs = (t.toUpperCase().match(/[NSEW]/g) || []);
-  const nums = (t.replace(/(\d),(\d)/g, '$1.$2').match(/-?\d+(?:\.\d+)?/g) || []).map(Number);
+  // here an E is always east, so numbers are read without exponents; a point straight after a number (as when
+  // "48.85,2.35" becomes "48.85.2.35") ends that number rather than starting the next one as ".2", and a point
+  // straight after a letter (N.12, lat.12.5) is an abbreviation's, not the start of a number
+  const nums = (minusFix(t).replace(/(\p{L})\.(?=\d)/gu, '$1 ').replace(/(\d),(\d)/g, '$1.$2').match(/-?(?:\d+(?:\.\d+)?\.?|\.\d+)/g) || []).map((x) => parseFloat(x));
   let lat = null, lon = null;
   if (nums.length === 2) [lat, lon] = nums;
   const sg = (x) => (x < 0 || Object.is(x, -0) ? -1 : 1);
@@ -2735,6 +2797,7 @@ function convOut() {
   let out = '', bad = '';
   if (!t) out = '';
   else if (lat === null) bad = 'Give two numbers (decimal degrees), four (degrees and minutes) or six (degrees, minutes, seconds).';
+  else if (nums.length > 2 && nums.some((x, i) => i % (nums.length / 2) > 0 && (x < 0 || Object.is(x, -0) || x >= 60))) bad = 'Minutes and seconds go from 0 to just under 60, with no minus sign. Put a minus on the degrees, or use N, S, E or W.';
   else {
     if (hs[0] === 'S') lat = -Math.abs(lat); if (hs[1] === 'W' || hs[0] === 'W') lon = -Math.abs(lon);
     if (Math.abs(lat) > 90 || Math.abs(lon) > 180) bad = 'That is off the globe: latitude goes up to 90 and longitude up to 180.';

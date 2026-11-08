@@ -1,0 +1,645 @@
+<!-- Review copy: lines 2115-2758 of polytopes/nets/index.html, split so Copilot can review it. Not served. -->
+        if (onOut) nOut++; else ok = false;
+      }
+      if (ok && nOut === 1) good.push(m);
+    }
+    if (good.length === 0) return { ok: false, why: 'the star will not open here' };
+    cands.push(good);
+  }
+  /* try every way the wings could open; physically only one may give a sound hexagon */
+  const results = [];
+  for (const m0 of cands[0]) for (const m1 of cands[1]) for (const m2 of cands[2]) {
+    const r = pC_open(st, leaves, wings, wingOf, [m0, m1, m2], e);
+    if (r.ok) results.push(r);
+  }
+  if (results.length === 0) return { ok: false, why: 'the star will not open here' };
+  if (results.length > 1) return { ok: false, why: 'ambiguous opening', ambiguous: true, n: results.length };
+  return results[0];
+}
+function pC_open(st, leaves0, wings, wingOf, ms, e) {
+  const { N } = st, leaves = pC_cloneLeaves(leaves0), halves = [];
+  wings.forEach((w, j) => {
+    const out = [pC_C[w.a], pC_C[w.b]], m = ms[j], P = w.L.slice(0, m), Q = w.L.slice(m);
+    Q.forEach((i) => { for (const l in leaves[i]) leaves[i][l] = pC_refl(leaves[i][l], out[0], out[1]); });
+    halves.push({ P, Q: Q.slice().reverse(), a: w.a });
+  });
+  /* lay the opened wings side by side: wing j+1 is moved so its hinge with wing j lies flat */
+  const affine = (src, dst) => { // the lattice map taking triangle src to triangle dst (3 points each)
+    const s1 = [src[1][0] - src[0][0], src[1][1] - src[0][1]], s2 = [src[2][0] - src[0][0], src[2][1] - src[0][1]];
+    const d1 = [dst[1][0] - dst[0][0], dst[1][1] - dst[0][1]], d2 = [dst[2][0] - dst[0][0], dst[2][1] - dst[0][1]];
+    const det = s1[0] * s2[1] - s2[0] * s1[1]; // ±1 for a lattice unit triangle
+    const inv = [[s2[1] / det, -s2[0] / det], [-s1[1] / det, s1[0] / det]]; // columns s1, s2 inverted
+    const M = [[d1[0] * inv[0][0] + d2[0] * inv[1][0], d1[0] * inv[0][1] + d2[0] * inv[1][1]], [d1[1] * inv[0][0] + d2[1] * inv[1][0], d1[1] * inv[0][1] + d2[1] * inv[1][1]]];
+    const f = (p) => { const q = [p[0] - src[0][0], p[1] - src[0][1]]; return [Math.round(M[0][0] * q[0] + M[0][1] * q[1] + dst[0][0]), Math.round(M[1][0] * q[0] + M[1][1] * q[1] + dst[0][1])]; };
+    f.det = M[0][0] * M[1][1] - M[0][1] * M[1][0];
+    return f;
+  };
+  const link = (j0, j1) => { // the hinge from wing j0 to wing j1
+    for (let x = 0; x < N; x++) { const y = pC_mod(x + 1, N); if (wingOf[x] === j0 && wingOf[y] === j1) return [x, y]; if (wingOf[y] === j0 && wingOf[x] === j1) return [y, x]; }
+    return null;
+  };
+  for (let j = 1; j < 3; j++) {
+    const lk = link(j - 1, j); if (!lk) return { ok: false, why: 'wings not joined' };
+    const [x, y] = lk, labs = pC_leafLabels(x, N), ly = pC_leafLabels(y, N), sh = labs.filter((l) => ly.includes(l));
+    const tx = labs.find((l) => !sh.includes(l)), ty = ly.find((l) => !sh.includes(l));
+    const f = affine([leaves[y][sh[0]], leaves[y][sh[1]], leaves[y][ty]], [leaves[x][sh[0]], leaves[x][sh[1]], pC_refl(leaves[x][tx], leaves[x][sh[0]], leaves[x][sh[1]])]);
+    if (f.det !== 1) return { ok: false, why: 'a wing would have to turn over' };
+    for (let i = 0; i < N; i++) if (wingOf[i] === j) for (const l in leaves[i]) leaves[i][l] = f(leaves[i][l]);
+  }
+  /* the new centre is corner C[e]: slide it to the middle, then turn the whole thing back a sixth of a turn, so the
+     corners you pinched (C[e+1], C[e+3], C[e+5]) are back where your fingers are */
+  const c = pC_C[e];
+  for (let i = 0; i < N; i++) for (const l in leaves[i]) { const q = [leaves[i][l][0] - c[0], leaves[i][l][1] - c[1]]; leaves[i][l] = [q[0] + q[1], -q[0]]; }
+  const stacks = [[], [], [], [], [], []];
+  for (const h of halves) for (const S of [h.P, h.Q]) {
+    const k = pC_sectorOf(leaves[S[0]], pC_leafLabels(S[0], N));
+    if (k < 0 || stacks[k].length) return { ok: false, why: 'the opened wings do not make a hexagon' };
+    stacks[k] = S;
+  }
+  const ns = { N, leaves, stacks, sides: st.sides };
+  const probs = pC_check(ns);
+  if (probs.length) return { ok: false, why: 'after the flex: ' + probs[0], probs };
+  return { ok: true, state: ns };
+}
+/* turn the whole flexagon over, left to right */
+function pC_turn(st) {
+  const leaves = st.leaves.map((lf) => { const o = {}; for (const k in lf) o[k] = pC_flipX(lf[k]); return o; });
+  const stacks = [0, 1, 2, 3, 4, 5].map((k) => st.stacks[pC_mod(2 - k, 6)].slice().reverse());
+  return { N: st.N, leaves, stacks, sides: st.sides };
+}
+/* turn it a sixth of a turn (anticlockwise) in the plane */
+function pC_spin(st, r) {
+  let leaves = pC_cloneLeaves(st.leaves), stacks = st.stacks.map((s) => s.slice());
+  for (let t = 0; t < pC_mod(r, 6); t++) {
+    leaves = leaves.map((lf) => { const o = {}; for (const k in lf) o[k] = pC_rot60(lf[k]); return o; });
+    stacks = [0, 1, 2, 3, 4, 5].map((k) => stacks[pC_mod(k - 1, 6)]);
+  }
+  return { N: st.N, leaves, stacks, sides: st.sides };
+}
+
+/* ---- building it: fold the flat strip exactly as the instructions say ----
+   folds: [{ h, up }] — fold the rest of the strip (triangles h+1 onwards) over the hinge between h and h+1, on top (up)
+   or underneath. Each fold is checked: the moving part must lie wholly on one side of the fold line, and nothing that
+   stays put may be in the way. Then the last triangle (the glue tab) must land exactly on the first, next to it. */
+function pC_build(N, folds) {
+  const M = N + 1; // triangles 0 … N, triangle N is the glue tab
+  const leaves = [];
+  for (let i = 0; i < M; i++) { const o = {}; [i, i + 1, i + 2].forEach((j) => { o[j] = pC_stripPt(j); }); leaves.push(o); }
+  let order = leaves.map((_, i) => i); // bottom → top, a global layer order
+  const region = (i) => [i, i + 1, i + 2].map((j) => pC_key(leaves[i][j])).sort().join('|');
+  const steps = [];
+  for (const fd of folds) {
+    const h = fd.h, a = leaves[h][h + 1], b = leaves[h][h + 2];
+    const mov = new Set(); for (let i = h + 1; i < M; i++) mov.add(i);
+    const side = (i) => { const c = [i, i + 1, i + 2].map((j) => pC_crossZ(a, b, leaves[i][j])); return Math.sign(c.reduce((s, v) => s + v, 0)); };
+    const ms = side(h + 1);
+    for (const i of mov) if (side(i) !== ms) return { ok: false, why: `fold ${h}: the moving part straddles the line` };
+    const movReg = new Set([...mov].map(region));
+    const pos = new Map(order.map((id, k) => [id, k]));
+    for (let i = 0; i < M; i++) {
+      if (mov.has(i) || side(i) !== ms || !movReg.has(region(i))) continue;
+      for (const m of mov) if (region(m) === region(i) && ((fd.up !== !!(fd.tuck && fd.tuck.includes(m))) ? pos.get(i) > pos.get(m) : pos.get(i) < pos.get(m))) return { ok: false, why: `fold ${h}: blocked` };
+    }
+    for (const i of mov) for (const j in leaves[i]) leaves[i][j] = pC_refl(leaves[i][j], a, b);
+    /* a tuck: the triangles listed in fd.tuck slip in on the other side (on top instead of underneath) */
+    const tk = new Set(fd.tuck || []), rest = order.filter((i) => !mov.has(i)), moved = order.filter((i) => mov.has(i)).reverse();
+    const main = moved.filter((i) => !tk.has(i)), tucked = moved.filter((i) => tk.has(i));
+    order = fd.up ? tucked.concat(rest, main) : main.concat(rest, tucked);
+    steps.push({ leaves: pC_cloneLeaves(leaves), order: order.slice() });
+  }
+  /* glue: tab N on triangle 0 */
+  for (let k = 0; k < 3; k++) if (!pC_eq(leaves[N][N + k], leaves[0][k])) return { ok: false, why: 'the tab does not land on triangle 0' };
+  const r0 = region(0), between = order.slice(Math.min(order.indexOf(0), order.indexOf(N)) + 1, Math.max(order.indexOf(0), order.indexOf(N))).filter((i) => region(i) === r0);
+  if (between.length) return { ok: false, why: 'something lies between the tab and triangle 0' };
+  /* which printed sides end up outside: sides[i] = [side facing triangle i's front direction, side facing its back],
+     each as { t: strip triangle, s: 'F' | 'B' }. For triangle 0 one of them belongs to the tab. */
+  const fu = (i) => { const s = pC_crossZ(leaves[i][i], leaves[i][i + 1], leaves[i][i + 2]) > 0 ? 1 : -1; return (i % 2 === 0) ? s < 0 : s > 0; };
+  const tabAbove = order.indexOf(N) > order.indexOf(0);
+  const t0front = fu(0), tabUpSide = fu(N) ? 'F' : 'B', tabDownSide = fu(N) ? 'B' : 'F';
+  const sides = [];
+  for (let i = 0; i < N; i++) sides.push([{ t: i, s: 'F' }, { t: i, s: 'B' }]);
+  // the tab covers the side of triangle 0 that faces it
+  const coveredUp = tabAbove; // tab is above 0: 0's up side is glued
+  const glued0 = (coveredUp === t0front) ? 'F' : 'B'; // triangle 0's glued side
+  const tabOuter = tabAbove ? tabUpSide : tabDownSide, tabGlued = tabAbove ? tabDownSide : tabUpSide;
+  if (glued0 === 'F') sides[0][0] = { t: N, s: tabOuter }; else sides[0][1] = { t: N, s: tabOuter };
+  /* the ring: N leaves, corner labels mod N, stacked by sector */
+  const ring = [];
+  for (let i = 0; i < N; i++) { const o = {}; [i, i + 1, i + 2].forEach((j) => { o[pC_mod(j, N)] = leaves[i][j].slice(); }); ring.push(o); }
+  /* centre: the point every triangle shares */
+  const cnt = new Map(); ring.forEach((lf) => Object.values(lf).forEach((p) => cnt.set(pC_key(p), (cnt.get(pC_key(p)) || 0) + 1)));
+  const cen = [...cnt.entries()].find(([, c]) => c === N);
+  if (!cen) return { ok: false, why: 'the triangles do not share a centre' };
+  const [cx, cy] = cen[0].split(',').map(Number);
+  ring.forEach((lf) => { for (const k in lf) lf[k] = [lf[k][0] - cx, lf[k][1] - cy]; });
+  const stacks = [[], [], [], [], [], []];
+  order.filter((i) => i < N).forEach((i) => { const k = pC_sectorOf(ring[i], pC_leafLabels(i, N)); if (k >= 0) stacks[k].push(i); });
+  const st = { N, leaves: ring, stacks, sides, glue: { t0: glued0, tab: tabGlued } };
+  const probs = pC_check(st);
+  if (probs.length) return { ok: false, why: probs[0], probs };
+  return { ok: true, state: st, steps };
+}
+/* what you see: the printed side on top of each sector (front) or underneath (back), and how it is turned */
+function pC_view(st, back) {
+  const out = [];
+  for (let k = 0; k < 6; k++) {
+    const s = st.stacks[k], i = back ? s[0] : s[s.length - 1];
+    const fu = pC_frontUp(st.leaves[i], i, st.N);
+    const showFront = back ? !fu : fu; // the side facing the viewer
+    out.push({ leaf: i, side: st.sides[i][showFront ? 0 : 1] });
+  }
+  return out;
+}
+
+/* ---------- Part C: the two flexagons, their strips, and the page ---------- */
+const pC_KEY = 'aft.nets.flexagon';
+const pC_ROLL = [1, 3, 5, 7, 9, 11, 13, 15, 17];
+/* face[s][t]: the face number printed on side s ('F' or 'B') of strip triangle t (0 = a glue face, left blank).
+   These are the usual numberings (Martin Gardner, 1956): checked against the model, which finds exactly these faces. */
+const pC_DEFS = {
+  tri: {
+    name: 'Trihexaflexagon', short: 'trihexa', N: 9, nFaces: 3, first: 'F',
+    folds: [1, 4, 7].map((h) => ({ h, up: false })),
+    face: { F: [1, 1, 2, 2, 3, 3, 1, 1, 2, 2], B: [0, 3, 3, 1, 1, 2, 2, 3, 3, 0] },
+  },
+  hexa: {
+    name: 'Hexahexaflexagon', short: 'hexahexa', N: 18, nFaces: 6, first: 'B',
+    folds: pC_ROLL.map((h, k) => ({ h, up: k % 2 === 0 })).concat([2, 8, 14].map((h, k) => ({ h, up: false, tuck: k === 2 ? [17, 18] : [] }))),
+    face: {
+      B: [1, 2, 3, 1, 2, 3, 1, 2, 3, 1, 2, 3, 1, 2, 3, 1, 2, 3, 0],
+      F: [0, 4, 4, 5, 5, 6, 6, 4, 4, 5, 5, 6, 6, 4, 4, 5, 5, 6, 6],
+    },
+  },
+};
+const pC_COLS = ['green', 'gold', 'blue', 'rust', 'violet', 'teal', 'olive', 'rose'];
+const pC_POS = ['upper right', 'top', 'upper left', 'lower left', 'bottom', 'lower right']; // sector k sits here on screen
+const pC_READ = [1, 0, 5, 4, 3, 2]; // clockwise from the top
+let pC_which = 'tri';
+const pC_lab = { tri: { faces: {}, cells: {} }, hexa: { faces: {}, cells: {} } };
+const pC_built = {};
+const pC_sim = { st: null, k: 1, hist: [], trav: null };
+
+const pC_otherSide = (s) => (s === 'F' ? 'B' : 'F');
+const pC_sideNo = (def, s) => (s === def.first ? 1 : 2); // which drawn side (1 or 2) a strip side is
+const pC_faceOf = (def, t, s) => def.face[s][t];
+const pC_faceLab = (w, f) => { const v = pC_lab[w].faces[f]; return v && v.t !== undefined && v.t !== '' ? v.t : String(f); };
+const pC_faceCol = (w, f) => { const v = pC_lab[w].faces[f]; return v && v.c ? v.c : ((f - 1) % 8) + 1; };
+const pC_cellLab = (w, t, s) => { const v = pC_lab[w].cells[t + s]; if (v) return v; const f = pC_faceOf(pC_DEFS[w], t, s); return f ? pC_faceLab(w, f) : ''; };
+
+function pC_save() {
+  try { localStorage.setItem(pC_KEY, JSON.stringify({ v: 1, which: pC_which, lab: pC_lab })); } catch (e) { /* storage blocked */ }
+}
+function pC_restore() {
+  try {
+    const o = JSON.parse(localStorage.getItem(pC_KEY) || 'null');
+    if (!o || o.v !== 1) return;
+    if (o.which === 'tri' || o.which === 'hexa') pC_which = o.which;
+    for (const w of ['tri', 'hexa']) {
+      const L = o.lab && o.lab[w]; if (!L) continue;
+      const def = pC_DEFS[w];
+      for (let f = 1; f <= def.nFaces; f++) {
+        const v = L.faces && L.faces[f]; if (!v) continue;
+        const t = typeof v.t === 'string' ? v.t.slice(0, 3) : undefined, c = Number.isInteger(v.c) && v.c >= 1 && v.c <= 8 ? v.c : undefined;
+        pC_lab[w].faces[f] = { t, c };
+      }
+      for (const k in (L.cells || {})) {
+        const m = /^(\d+)([FB])$/.exec(k); if (!m || typeof L.cells[k] !== 'string') continue;
+        const t = +m[1]; if (t > def.N || !pC_faceOf(def, t, m[2])) continue;
+        pC_lab[w].cells[k] = L.cells[k].slice(0, 3);
+      }
+    }
+  } catch (e) { /* storage blocked or bad data: start fresh */ }
+}
+
+/* ---- drawing helpers ---- */
+const pC_f = (v) => +v.toFixed(3);
+const pC_scr = (p) => { const [x, y] = pC_cart(p); return [x, -y]; }; // lattice point to SVG (y down)
+const pC_pts = (P) => P.map((p) => pC_f(p[0]) + ',' + pC_f(p[1])).join(' ');
+/* where a printed side's text sits and how it is turned: the side was printed upright on the strip drawing
+   (side F as the strip lies, side B with the strip turned over top to bottom); pos are the lattice positions of strip
+   corners Pt, Pt+1, Pt+2 now. Returns the centre and the turn in degrees (SVG, clockwise), and false if that side
+   faces away. */
+function pC_textPose(t, s, pos) {
+  const src = [t, t + 1, t + 2].map((j) => { const [x, y] = pC_cart(pC_stripPt(j)); return s === 'F' ? [x, y] : [x, -y]; });
+  const dst = pos.map(pC_cart);
+  const a = [src[1][0] - src[0][0], src[1][1] - src[0][1]], b = [src[2][0] - src[0][0], src[2][1] - src[0][1]];
+  const c = [dst[1][0] - dst[0][0], dst[1][1] - dst[0][1]], d = [dst[2][0] - dst[0][0], dst[2][1] - dst[0][1]];
+  const det = a[0] * b[1] - a[1] * b[0];
+  // L = [c d] · [a b]^-1, and we want L applied to (1, 0)
+  const ix = [b[1] / det, -a[1] / det]; // first column of [a b]^-1
+  const ux = c[0] * ix[0] + d[0] * ix[1], uy = c[1] * ix[0] + d[1] * ix[1];
+  const iy = [-b[0] / det, a[0] / det];
+  const vx = c[0] * iy[0] + d[0] * iy[1], vy = c[1] * iy[0] + d[1] * iy[1];
+  const up = ux * vy - uy * vx > 0;
+  const cx = (dst[0][0] + dst[1][0] + dst[2][0]) / 3, cy = (dst[0][1] + dst[1][1] + dst[2][1]) / 3;
+  return { x: cx, y: -cy, ang: Math.round(Math.atan2(-uy, ux) * 180 / Math.PI), up };
+}
+function pC_text(x, y, ang, txt, cls, size) {
+  const tr = ang ? ` transform="rotate(${ang} ${pC_f(x)} ${pC_f(y)})"` : '';
+  return `<text x="${pC_f(x)}" y="${pC_f(y)}" class="${cls}" font-size="${size}"${tr}>${esc(txt)}</text>`;
+}
+const pC_fill = (w, t, s) => { const f = pC_faceOf(pC_DEFS[w], t, s); return f ? 'pC-f' + pC_faceCol(w, f) : 'pC-glue'; };
+
+/* the flat strip, one side: drawn as you see it (side B turned over top to bottom) */
+function pC_stripSVG(w, s) {
+  const def = pC_DEFS[w], M = def.N + 1, flip = s !== 'F';
+  let body = '', minY = Infinity, maxY = -Infinity;
+  for (let t = 0; t < M; t++) {
+    const P = [t, t + 1, t + 2].map((j) => { const [x, y] = pC_cart(pC_stripPt(j)); return [x, flip ? y : -y]; });
+    P.forEach((p) => { minY = Math.min(minY, p[1]); maxY = Math.max(maxY, p[1]); });
+    const cx = (P[0][0] + P[1][0] + P[2][0]) / 3, cy = (P[0][1] + P[1][1] + P[2][1]) / 3;
+    const f = pC_faceOf(def, t, s), own = pC_lab[w].cells[t + s];
+    const lab = f ? pC_cellLab(w, t, s) : 'glue';
+    const nm = `Side ${pC_sideNo(def, s)}, triangle ${t + 1}: ${f ? 'face ' + f + (lab !== String(f) ? ', labelled ' + lab : '') : 'glue'}`;
+    body += `<g class="pC-cell${own ? ' own' : ''}" data-cell="${t}${s}"><title>${esc(nm)}</title><polygon points="${pC_pts(P)}" class="pC-tri ${pC_fill(w, t, s)}"/>`;
+    body += pC_text(cx, cy + 0.02, 0, lab, f ? 'pC-tx' : 'pC-tx pC-gl', f ? (lab.length > 2 ? 0.2 : 0.3) : 0.16);
+    if (f && lab !== String(f)) body += pC_text(cx, cy + (flip === (t % 2 === 0) ? -0.17 : 0.2), 0, String(f), 'pC-tn', 0.11);
+    body += '</g>';
+  }
+  // triangle numbers along the edge
+  let nums = '';
+  for (let t = 0; t < M; t++) { const x = (t + 1) / 2; nums += pC_text(x, maxY + 0.17, 0, String(t + 1), 'pC-ix', 0.13); }
+  const W = (M + 1) / 2;
+  return `<svg viewBox="-0.08 ${pC_f(minY - 0.08)} ${pC_f(W + 0.16)} ${pC_f(maxY - minY + 0.34)}" style="--pC-minw:${Math.ceil((W + 0.16) * 104)}px" role="img" aria-label="Side ${pC_sideNo(def, s)} of the ${def.name.toLowerCase()} strip" xmlns="http://www.w3.org/2000/svg">${body}${nums}</svg>`;
+}
+
+/* a folding diagram: the strip part-folded, seen from above, with the next fold line dashed */
+function pC_foldSVG(w, step, nextH, label) {
+  const def = pC_DEFS[w], M = def.N + 1, L = step.leaves;
+  let lo = [Infinity, Infinity], hi = [-Infinity, -Infinity], body = '';
+  const up = (i) => { const s = pC_crossZ(L[i][i], L[i][i + 1], L[i][i + 2]) > 0 ? 1 : -1; return (i % 2 === 0) ? s < 0 : s > 0; };
+  for (const i of step.order) {
+    const P = [i, i + 1, i + 2].map((j) => pC_scr(L[i][j]));
+    P.forEach((p) => { lo = [Math.min(lo[0], p[0]), Math.min(lo[1], p[1])]; hi = [Math.max(hi[0], p[0]), Math.max(hi[1], p[1])]; });
+    const s = up(i) ? 'F' : 'B', f = pC_faceOf(def, i, s), ps = pC_textPose(i, s, [i, i + 1, i + 2].map((j) => L[i][j]));
+    body += `<polygon points="${pC_pts(P)}" class="pC-tri ${pC_fill(w, i, s)}"/>`;
+    body += pC_text(ps.x, ps.y, ps.ang, f ? String(f) : 'glue', f ? 'pC-tx' : 'pC-tx pC-gl', f ? 0.3 : 0.15);
+  }
+  if (nextH !== undefined) {
+    const a = pC_scr(L[nextH][nextH + 1]), b = pC_scr(L[nextH][nextH + 2]), dx = b[0] - a[0], dy = b[1] - a[1];
+    body += `<line x1="${pC_f(a[0] - dx * 0.25)}" y1="${pC_f(a[1] - dy * 0.25)}" x2="${pC_f(b[0] + dx * 0.25)}" y2="${pC_f(b[1] + dy * 0.25)}" class="pC-foldline"/>`;
+    lo = [Math.min(lo[0], a[0] - Math.abs(dx) * 0.25, b[0] - Math.abs(dx) * 0.25), Math.min(lo[1], a[1] - Math.abs(dy) * 0.25, b[1] - Math.abs(dy) * 0.25)];
+    hi = [Math.max(hi[0], a[0] + Math.abs(dx) * 0.25, b[0] + Math.abs(dx) * 0.25), Math.max(hi[1], a[1] + Math.abs(dy) * 0.25, b[1] + Math.abs(dy) * 0.25)];
+  }
+  const pad = 0.1, vw = hi[0] - lo[0] + 2 * pad, vh = hi[1] - lo[1] + 2 * pad;
+  return `<svg viewBox="${pC_f(lo[0] - pad)} ${pC_f(lo[1] - pad)} ${pC_f(vw)} ${pC_f(vh)}" role="img" aria-label="${esc(label)}" style="max-width:${Math.round(Math.min(520, vw * 58))}px" xmlns="http://www.w3.org/2000/svg">${body}</svg>`;
+}
+
+/* ---- the folding instructions ---- */
+function pC_steps(w) {
+  const def = pC_DEFS[w], B = pC_built[w], S = B.steps;
+  const flat = { leaves: [], order: [] };
+  for (let i = 0; i <= def.N; i++) { const o = {}; [i, i + 1, i + 2].forEach((j) => { o[j] = pC_stripPt(j); }); flat.leaves.push(o); flat.order.push(i); }
+  const fig = (st, h, lab) => `<figure class="pC-fig">${pC_foldSVG(w, st, h, lab)}</figure>`;
+  const items = [];
+  items.push('Cut out the strip and crease every line firmly both ways (fold it forwards, then backwards), so the paper bends easily along each line. Thin card or stiff paper works best.');
+  if (w === 'tri') {
+    items.push(`Lay the strip down with side 1 (1&nbsp;1&nbsp;2&nbsp;2&nbsp;3&nbsp;3…) facing you and triangle 1 at the left. Fold the strip <b>back</b>, away from you, along the line between triangles 2 and 3 (dashed), so the rest of the strip goes behind.${fig(flat, 1, 'The flat strip, side 1 up, with the first fold line between triangles 2 and 3')}`);
+    items.push(`Fold back again along the line between triangles 5 and 6.${fig(S[0], 4, 'After the first fold, with the next fold line between triangles 5 and 6')}`);
+    items.push(`Fold back once more, along the line between triangles 8 and 9. The last triangle, the blank glue tab, now lies right behind the first triangle.${fig(S[1], 7, 'After the second fold, with the last fold line between triangles 8 and 9')}`);
+    items.push(`Glue the tab to the blank back of triangle 1. That's it: a hexagon with all 1s on one side and all 2s on the other.${fig(S[2], undefined, 'The finished trihexaflexagon: six 1s facing you')}`);
+  } else {
+    const rolled = S[pC_ROLL.length - 1];
+    items.push(`Lay the strip down with side 2 (4&nbsp;4&nbsp;5&nbsp;5&nbsp;6&nbsp;6…) facing you and triangle 1 at the left. Fold along the line between triangles 2 and 3 so the two 4s close face to face.${fig(flat, 1, 'The flat strip, side 2 up, with the first fold line between triangles 2 and 3')}`);
+    items.push(`Carry on along the strip: fold between triangles 4 and 5 so the two 5s meet, between 6 and 7 so the two 6s meet, and so on, every second line, always so that matching numbers meet face to face. The strip winds up into a double-thick strip, 10 triangles long, showing only 1s, 2s and 3s.${fig(S[0], 3, 'After the first fold: the two 4s are face to face; the next fold is between triangles 4 and 5')}${fig(rolled, undefined, 'The wound-up strip: 10 triangles, showing only 1s, 2s and 3s')}`);
+    items.push(`Now fold it like a trihexaflexagon. Fold the wound strip <b>back</b>, away from you, along the line between its 2nd and 3rd triangles (dashed).${fig(rolled, 2, 'The wound strip with the fold line between its 2nd and 3rd triangles')}`);
+    items.push(`Fold back again between its 5th and 6th triangles.${fig(S[pC_ROLL.length], 8, 'After the first of these folds, with the next fold line')}`);
+    items.push(`Fold back between its 8th and 9th triangles, but bring the very end <b>in front</b> of the first triangle (tuck it over, not under), so that the blank glue triangle at the end lies face down on the blank first triangle.${fig(S[pC_ROLL.length + 1], 14, 'After the second fold, with the last fold line')}`);
+    items.push(`Glue the two blank triangles together. The hexagon now shows six 3s facing you and six 1s on the back. To bring 1 to the front, pinch-flex it once: 2 or 6 comes up, depending on which set of corners you pinch. Then move one corner round and flex again: now 1 faces you, with 2 (or 6) on the back.${fig(S[S.length - 1], undefined, 'The finished hexahexaflexagon: six 3s facing you')}`);
+  }
+  $('pC-steps').innerHTML = items.map((t) => `<li>${t}</li>`).join('');
+}
+
+/* ---- the simulator ---- */
+const pC_e = (k) => (k + 1) % 2; // pinching at corner k (and k±2) brings corners of the other parity to the middle
+function pC_front(st, back) { // the face number on top (or underneath), or 0 if the six don't agree
+  const def = pC_DEFS[st.w], v = pC_view(st, back).map((x) => pC_faceOf(def, x.side.t, x.side.s));
+  return v.every((f) => f === v[0]) ? v[0] : 0;
+}
+const pC_key2 = (st, k) => JSON.stringify([st.stacks, st.leaves, k]);
+function pC_reset() {
+  const B = pC_built[pC_which];
+  pC_sim.st = { ...B.state, w: pC_which }; pC_sim.k = 1; pC_sim.hist = [{ f: pC_front(pC_sim.st, false) }]; pC_sim.trav = null;
+  pC_msg('');
+}
+function pC_wrapState(st) { st.w = pC_which; return st; }
+function pC_doFlex() {
+  const r = pC_flex(pC_sim.st, pC_e(pC_sim.k));
+  if (!r.ok) { pC_msg('It won’t open at this corner. Try the next corner.', true); return false; }
+  pC_sim.st = pC_wrapState(r.state);
+  const f = pC_front(pC_sim.st, false), b = pC_front(pC_sim.st, true);
+  pC_sim.hist.push({ f });
+  pC_msg(`Flexed: face ${f} is on top now, face ${b} underneath.`);
+  return true;
+}
+function pC_msg(t, warn) { const el = $('pC-msg'); el.textContent = t; el.classList.toggle('warn', !!warn); }
+function pC_traverse() {
+  /* settle a corner: if it won't open at k, step one corner round, as a solver would. The start and every state after a
+     flex are compared with their corners settled, so a corner that won't open never hides the way back to the start */
+  const settle = (s, k) => { const r = pC_flex(s, pC_e(k)); if (r.ok) return { k, r, moved: false }; const k2 = (k + 5) % 6; return { k: k2, r: pC_flex(s, pC_e(k2)), moved: true }; };
+  let st = pC_sim.st, nx = settle(st, pC_sim.k);
+  const start = pC_key2(st, nx.k % 2), seq = [{ f: pC_front(st, false) }];
+  for (let n = 0; n < 400; n++) {
+    if (!nx.r.ok) return { stuck: true, seq };
+    const k = nx.k;
+    st = pC_wrapState(nx.r.state);
+    seq.push({ f: pC_front(st, false), moved: nx.moved });
+    nx = settle(st, k);
+    // back where it started (perhaps turned round in your hand: that is the same position of the paper)
+    for (let r = 0; r < 6; r++) if (pC_key2(pC_spin(st, r), (nx.k + r) % 2) === start) return { seq, flexes: seq.length - 1 };
+  }
+  return { seq, long: true };
+}
+function pC_hexSVG() {
+  const w = pC_which, st = pC_sim.st, k = pC_sim.k, R = 1;
+  const view = pC_view(st, false);
+  let body = '';
+  view.forEach((v, sec) => {
+    const P = [[0, 0], pC_C[sec], pC_C[(sec + 1) % 6]].map(pC_scr);
+    const { t, s } = v.side, i = v.leaf;
+    const pos = [t, t + 1, t + 2].map((j) => st.leaves[i][pC_mod(j, st.N)]);
+    const ps = pC_textPose(t, s, pos), lab = pC_cellLab(w, t, s), own = pC_lab[w].cells[t + s];
+    body += `<g class="pC-sec${own ? ' own' : ''}" data-cell="${t}${s}"><polygon points="${pC_pts(P)}" class="pC-tri ${pC_fill(w, t, s)}"/>${pC_text(ps.x, ps.y, ps.ang, lab, 'pC-tx', lab.length > 2 ? 0.2 : 0.27)}</g>`;
+  });
+  // the three corners to pinch at (the lines between the two triangles to pinch together)
+  for (const d of [0, 2, 4]) {
+    const c = pC_scr(pC_C[(k + d) % 6]);
+    body += `<line x1="0" y1="0" x2="${pC_f(c[0])}" y2="${pC_f(c[1])}" class="pC-spine${d ? '' : ' main'}"/>`;
+  }
+  const c = pC_scr(pC_C[k]);
+  body += `<circle cx="${pC_f(c[0] * 1.07)}" cy="${pC_f(c[1] * 1.07)}" r="0.075" class="pC-pin"/>`;
+  const f = pC_front(st, false), read = pC_READ.map((sec) => pC_cellLab(w, view[sec].side.t, view[sec].side.s));
+  const lbl = `Face ${f} of the ${pC_DEFS[w].name.toLowerCase()}. Clockwise from the top: ${read.join(', ')}. Pinch at the ${pC_CORNER[k]} corner.`;
+  return `<svg viewBox="${-1.18 * R} ${-1.05 * R} ${2.36 * R} ${2.1 * R}" role="img" aria-label="${esc(lbl)}" xmlns="http://www.w3.org/2000/svg">${body}</svg>`;
+}
+const pC_CORNER = ['right', 'upper right', 'upper left', 'left', 'lower left', 'lower right']; // corner k on screen
+function pC_renderSim() {
+  const w = pC_which, st = pC_sim.st, def = pC_DEFS[w];
+  $('pC-hex').innerHTML = pC_hexSVG();
+  const f = pC_front(st, false), b = pC_front(st, true);
+  $('pC-face').innerHTML = `Face <b>${f}</b> on top <span class="pC-under">· face ${b} underneath</span>`;
+  const view = pC_view(st, false);
+  const read = pC_READ.map((sec) => pC_cellLab(w, view[sec].side.t, view[sec].side.s));
+  $('pC-read').textContent = read.join(' ');
+  $('pC-corner').textContent = `Pinch at the ${pC_CORNER[pC_sim.k]} corner (marked), and the two corners two steps round from it.`;
+  // buttons for the six visible triangles
+  $('pC-vis').innerHTML = pC_READ.map((sec) => {
+    const { t, s } = view[sec].side, fc = pC_faceOf(def, t, s);
+    return `<button type="button" class="btn small quiet pC-visb" data-cell="${t}${s}" aria-label="Relabel the ${pC_POS[sec]} triangle (side ${pC_sideNo(def, s)}, triangle ${t + 1}, face ${fc})">${pC_POS[sec]}: <b>${esc(pC_cellLab(w, t, s))}</b></button>`;
+  }).join('');
+  // history
+  $('pC-hist').innerHTML = pC_sim.hist.map((x, i) => `${!i ? '' : x.turn ? '<span class="pC-arr pC-tarr">turned over</span>' : '<span class="pC-arr" aria-hidden="true">→</span>'}<span class="pC-chip pC-f${pC_faceCol(w, x.f)}${x.turn ? ' pC-turned' : ''}">${x.f}</span>`).join('');
+  const nf = pC_sim.hist.filter((x, i) => i && !x.turn).length, nt = pC_sim.hist.filter((x) => x.turn).length;
+  $('pC-histn').textContent = `${nf} flex${nf === 1 ? '' : 'es'}${nt ? `, turned over ${nt === 1 ? 'once' : nt + ' times'}` : ''}`;
+}
+function pC_renderTrav() {
+  const T = pC_sim.trav, el = $('pC-trav');
+  if (!T) { el.innerHTML = ''; $('pC-travnote').hidden = true; return; }
+  const w = pC_which;
+  if (T.stuck) { el.innerHTML = '<p class="pC-warn">It won’t flex at this corner or the next one, so the traverse stops here.</p>'; $('pC-travnote').hidden = true; return; }
+  if (T.long) { el.innerHTML = `<p class="pC-warn">After ${T.seq.length - 1} flexes it still hadn’t come back to where it started, so the traverse stopped there.</p>`; $('pC-travnote').hidden = true; return; }
+  const seq = T.seq.map((x, i) => `${i ? `<span class="pC-arr" aria-hidden="true">${x.moved ? '↻→' : '→'}</span>` : ''}<span class="pC-chip pC-f${pC_faceCol(w, x.f)}">${x.f}</span>`).join('');
+  const cnt = {}; T.seq.slice(1).forEach((x) => { cnt[x.f] = (cnt[x.f] || 0) + 1; });
+  const counts = Object.keys(cnt).sort().map((f) => `face ${f}: ${cnt[f]}`).join(', ');
+  const moves = T.seq.filter((x) => x.moved).length;
+  el.innerHTML = `<div class="pC-seq">${seq}</div><p class="help">${T.flexes} flexes, then it is back where it started (${moves} corner move${moves === 1 ? '' : 's'}, marked ↻). Times each face turned up: ${counts}.</p>`;
+  $('pC-travnote').hidden = false;
+}
+function pC_renderLabels() {
+  const w = pC_which, def = pC_DEFS[w];
+  let h = '';
+  for (let f = 1; f <= def.nFaces; f++) {
+    const v = pC_lab[w].faces[f] || {}, col = pC_faceCol(w, f);
+    h += `<div class="pC-frow"><span class="pC-sw pC-f${col}" aria-hidden="true">${f}</span><label>Label <input type="text" class="pC-in" maxlength="3" data-face="${f}" aria-label="Face ${f} label" value="${esc(v.t !== undefined ? v.t : '')}" placeholder="${f}" autocomplete="off" spellcheck="false"></label><label>Colour <select data-fcol="${f}" aria-label="Face ${f} colour">${pC_COLS.map((c, i) => `<option value="${i + 1}"${i + 1 === col ? ' selected' : ''}>${c}</option>`).join('')}</select></label></div>`;
+  }
+  $('pC-faces').innerHTML = h;
+  // the single-triangle picker
+  const sel = $('pC-cell'), cur = sel.value;
+  let o = '';
+  for (const s of [def.first, pC_otherSide(def.first)]) {
+    o += `<optgroup label="Side ${pC_sideNo(def, s)}">`;
+    for (let t = 0; t <= def.N; t++) { const f = pC_faceOf(def, t, s); if (f) o += `<option value="${t}${s}">Side ${pC_sideNo(def, s)}, triangle ${t + 1} (face ${f})</option>`; }
+    o += '</optgroup>';
+  }
+  sel.innerHTML = o;
+  if (cur && sel.querySelector(`option[value="${cur}"]`)) sel.value = cur;
+  pC_syncCell();
+}
+function pC_syncCell() {
+  const v = $('pC-cell').value; $('pC-cellv').value = pC_lab[pC_which].cells[v] || '';
+  const n = Object.keys(pC_lab[pC_which].cells).length;
+  $('pC-ncells').textContent = n ? `${n} single triangle${n === 1 ? '' : 's'} labelled.` : 'No single triangles labelled yet.';
+}
+function pC_renderStrips() {
+  const w = pC_which, def = pC_DEFS[w];
+  $('pC-s1').innerHTML = pC_stripSVG(w, def.first);
+  $('pC-s2').innerHTML = pC_stripSVG(w, pC_otherSide(def.first));
+  const g = [];
+  for (const s of ['F', 'B']) for (const t of [0, def.N]) if (!pC_faceOf(def, t, s)) g.push(`side ${pC_sideNo(def, s)} of triangle ${t + 1}`);
+  $('pC-glue').textContent = `Glue: ${g.join(' to ')}.`;
+}
+function pC_renderAll() {
+  const w = pC_which, def = pC_DEFS[w];
+  $('pC-tri').setAttribute('aria-pressed', String(w === 'tri'));
+  $('pC-hexa').setAttribute('aria-pressed', String(w === 'hexa'));
+  document.querySelectorAll('.pC-name').forEach((el) => { el.textContent = def.name.toLowerCase(); });
+  $('pC-count').textContent = w === 'tri' ? 'A strip of 10 triangles; 3 faces.' : 'A strip of 19 triangles; 6 faces.';
+  pC_renderStrips(); pC_steps(w); pC_renderLabels(); pC_renderSim(); pC_renderTrav();
+}
+function pC_relabelRedraw() { pC_save(); pC_renderStrips(); pC_steps(pC_which); pC_renderSim(); pC_renderTrav(); }
+function pC_pickCell(cell) {
+  const sel = $('pC-cell'); if (!sel.querySelector(`option[value="${cell}"]`)) return;
+  sel.value = cell; pC_syncCell(); $('pC-lab').open = true; $('pC-cellv').focus(); $('pC-cellv').select();
+}
+/* the example: a made-up puzzle, letters written on single triangles of face 1. Face 1 turns up three times in a
+   traverse but in only two arrangements (two of the three are one arrangement turned a sixth); the letters come round
+   in the same order every time, and only in one arrangement does each letter line up with the centre */
+function pC_example() {
+  pC_which = 'hexa'; pC_lab.hexa = { faces: {}, cells: {} };
+  pC_reset();
+  let st = pC_sim.st, k = pC_sim.k, seen = 0, target = null;
+  for (let n = 0; n < 40 && !target; n++) {
+    let r = pC_flex(st, pC_e(k)); if (!r.ok) { k = (k + 5) % 6; r = pC_flex(st, pC_e(k)); }
+    st = pC_wrapState(r.state);
+    if (pC_front(st, false) === 1 && ++seen === 2) target = st;
+  }
+  const view = pC_view(target, false), word = 'LICHEN';
+  pC_READ.forEach((sec, j) => { const { t, s } = view[sec].side; pC_lab.hexa.cells[t + s] = word[j]; });
+  pC_save(); pC_renderAll();
+  pC_msg('Example loaded: a made-up letter on each of face 1’s six triangles. Face 1 turns up three times in a traverse, but in only two different arrangements: two of the three are the same arrangement turned a sixth of a turn. The letters always come round in the order LICHEN; what changes is how each one is turned. In one arrangement every letter leans; in the other, every letter lines up with the centre, three pointing out and three pointing in. Flex to find it.');
+}
+
+function partC_init() {
+  for (const w of ['tri', 'hexa']) {
+    const def = pC_DEFS[w], r = pC_build(def.N, def.folds);
+    if (!r.ok) { $('pC-msg').textContent = 'Something went wrong building the ' + def.name + '.'; return; }
+    pC_built[w] = r;
+  }
+  pC_restore(); pC_reset(); pC_renderAll();
+  const choose = (w) => { if (pC_which === w) return; pC_which = w; pC_save(); pC_reset(); pC_renderAll(); };
+  $('pC-tri').addEventListener('click', () => choose('tri'));
+  $('pC-hexa').addEventListener('click', () => choose('hexa'));
+  $('pC-flex').addEventListener('click', () => { pC_doFlex(); pC_renderSim(); });
+  $('pC-next').addEventListener('click', () => { pC_sim.k = (pC_sim.k + 5) % 6; pC_msg(`Pinch corner moved to the ${pC_CORNER[pC_sim.k]}.`); pC_renderSim(); });
+  $('pC-turn').addEventListener('click', () => {
+    pC_sim.st = pC_wrapState(pC_turn(pC_sim.st)); pC_sim.k = pC_mod(3 - pC_sim.k, 6);
+    pC_sim.hist.push({ f: pC_front(pC_sim.st, false), turn: true });
+    pC_msg(`Turned over: face ${pC_front(pC_sim.st, false)} on top now. The pinch corner stays with the same bit of paper.`); pC_renderSim();
+  });
+  $('pC-restart').addEventListener('click', () => { pC_reset(); pC_renderSim(); pC_renderTrav(); pC_msg('Back to how it looks just after gluing.'); });
+  $('pC-histclr').addEventListener('click', () => { pC_sim.hist = [{ f: pC_front(pC_sim.st, false) }]; pC_renderSim(); });
+  $('pC-travb').addEventListener('click', () => { pC_sim.trav = pC_traverse(); pC_renderTrav(); });
+  $('pC-travadd').addEventListener('click', () => {
+    const T = pC_sim.trav; if (!T || T.stuck || T.long) return;
+    addNote(`${pC_DEFS[pC_which].name} traverse`, T.seq.map((x) => x.f).join(' '));
+  });
+  $('pC-readadd').addEventListener('click', () => addNote(`${pC_DEFS[pC_which].name} face ${pC_front(pC_sim.st, false)}, clockwise from top`, $('pC-read').textContent));
+  $('pC-ex').addEventListener('click', pC_example);
+  $('pC-print').addEventListener('click', () => {
+    document.documentElement.classList.add('pC-printing');
+    const done = () => { document.documentElement.classList.remove('pC-printing'); window.removeEventListener('afterprint', done); };
+    window.addEventListener('afterprint', done);
+    window.print(); setTimeout(done, 1500);
+  });
+  $('pC-faces').addEventListener('input', (e) => {
+    const el = e.target; if (!el.dataset.face) return;
+    const f = +el.dataset.face, v = pC_lab[pC_which].faces[f] || {};
+    pC_lab[pC_which].faces[f] = { t: el.value.trim().slice(0, 3), c: v.c };
+    pC_relabelRedraw();
+  });
+  $('pC-faces').addEventListener('change', (e) => {
+    const el = e.target; if (!el.dataset.fcol) return;
+    const f = +el.dataset.fcol, v = pC_lab[pC_which].faces[f] || {};
+    pC_lab[pC_which].faces[f] = { t: v.t, c: +el.value };
+    el.closest('.pC-frow').querySelector('.pC-sw').className = 'pC-sw pC-f' + el.value;
+    pC_relabelRedraw();
+  });
+  $('pC-cell').addEventListener('change', pC_syncCell);
+  $('pC-cellv').addEventListener('input', () => {
+    const c = $('pC-cell').value, v = $('pC-cellv').value.trim().slice(0, 3);
+    if (v) pC_lab[pC_which].cells[c] = v; else delete pC_lab[pC_which].cells[c];
+    pC_syncCell(); pC_relabelRedraw();
+  });
+  $('pC-cellclr').addEventListener('click', () => {
+    if (!Object.keys(pC_lab[pC_which].cells).length) return;
+    pC_lab[pC_which].cells = {}; pC_syncCell(); pC_relabelRedraw(); pC_msg('Single-triangle labels cleared.');
+  });
+  $('pC-facesclr').addEventListener('click', () => { pC_lab[pC_which].faces = {}; pC_save(); pC_renderAll(); });
+  for (const id of ['pC-s1', 'pC-s2', 'pC-hex']) $(id).addEventListener('click', (e) => { const g = e.target.closest('[data-cell]'); if (g) pC_pickCell(g.dataset.cell); });
+  $('pC-vis').addEventListener('click', (e) => { const b = e.target.closest('[data-cell]'); if (b) pC_pickCell(b.dataset.cell); });
+}
+
+/* ---------- notepad (shared by the Polytopes tools) ---------- */
+const NKEY = 'aft.polytopes.notes';
+let notes = [];
+try { notes = JSON.parse(localStorage.getItem(NKEY) || '[]'); if (!Array.isArray(notes)) notes = []; } catch (e) { notes = []; }
+const saveNotes = () => { try { localStorage.setItem(NKEY, JSON.stringify(notes)); } catch (e) { /* storage unavailable */ } };
+function flash(msg) { $('n-msg').textContent = msg; clearTimeout(flash.t); flash.t = setTimeout(() => { $('n-msg').textContent = ''; }, 2500); }
+function addNote(label, value) { notes.push({ label: String(label).slice(0, 200), value: String(value).slice(0, 10000) }); saveNotes(); renderNotes(); flash('Added to the notepad.'); }
+function renderNotes() {
+  $('nempty').hidden = notes.length > 0;
+  $('nlist').innerHTML = notes.map((n, i) => `<li><span class="nl">${esc(n.label)}</span><button type="button" class="nv" data-i="${i}" title="Put this in the last box you used">${esc(n.value)}</button><button type="button" class="ndel" data-i="${i}" aria-label="Delete note: ${esc(n.label)}">×</button></li>`).join('');
+}
+let lastBox = null;
+document.querySelectorAll('.hin').forEach((el) => el.addEventListener('focus', () => { lastBox = el; }));
+$('nlist').addEventListener('click', (e) => {
+  const v = e.target.closest('.nv'), d = e.target.closest('.ndel');
+  if (d) {
+    const i = +d.dataset.i; notes.splice(i, 1); saveNotes(); renderNotes(); flash('Note deleted.');
+    const next = $('nlist').querySelector(`.ndel[data-i="${Math.min(i, notes.length - 1)}"]`); (next || $('n-label')).focus();
+    return;
+  }
+  if (v) {
+    const val = notes[+v.dataset.i].value;
+    if (!lastBox) { copy(val, 'Copied.'); return; }
+    if (lastBox.id === 'h-dig') lastBox.value += val.replace(/\D/g, '');
+    else if (lastBox.id === 'h-conv') lastBox.value = val;
+    else {
+      const nums = val.replace(/−/g, '-').match(/-?\d+(?:\.\d+)?/g) || [];
+      if (nums.length !== 1) { flash(nums.length ? 'That note holds more than one number. Type the one you want.' : 'That note has no number in it.'); return; }
+      lastBox.value = nums[0];
+    }
+    lastBox.dispatchEvent(new Event('input')); lastBox.focus();
+  }
+});
+$('n-add').addEventListener('click', () => {
+  const l = $('n-label').value.trim(), v = $('n-val').value.trim();
+  if (!l && !v) return;
+  addNote(l || 'Note', v); $('n-label').value = ''; $('n-val').value = '';
+});
+$('n-clear').addEventListener('click', () => { if (!notes.length || !confirm('Clear every note?')) return; notes = []; saveNotes(); renderNotes(); });
+function copy(text, msg) {
+  const done = () => { $('n-msg').textContent = msg; setTimeout(() => { $('n-msg').textContent = ''; }, 1600); };
+  if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(text).then(done, () => { $('n-msg').textContent = 'Copying is blocked here; select the text instead.'; });
+}
+$('n-copy').addEventListener('click', () => copy(notes.map((n) => `${n.label}: ${n.value}`).join('\n'), 'Copied all notes.'));
+
+/* ---------- coordinate helpers ---------- */
+const num = (t) => { const v = String(t).trim().replace('−', '-').replace(',', '.'); return v === '' || isNaN(+v) ? null : +v; };
+function arith() {
+  const a = num($('h-a').value), b = num($('h-b').value), op = $('h-op').value;
+  let r = null;
+  if (a !== null && b !== null) r = op === '+' ? a + b : op === '−' ? a - b : op === '×' ? a * b : (b === 0 ? null : a / b);
+  $('h-r').textContent = r === null ? '' : String(+r.toFixed(10));
+}
+['h-a', 'h-b'].forEach((id) => $(id).addEventListener('input', arith));
+$('h-op').addEventListener('change', arith);
+$('h-keep').addEventListener('click', () => { if ($('h-r').textContent) addNote(`${$('h-a').value} ${$('h-op').value} ${$('h-b').value}`, $('h-r').textContent); });
+const pad = (x, w) => String(x).padStart(w, '0');
+function dmm(deg, pos, neg, w) {
+  const h = deg < 0 ? neg : pos; let a = Math.abs(deg); let d = Math.floor(a); let m = (a - d) * 60;
+  m = Math.round(m * 1000) / 1000; if (m >= 60) { d += 1; m -= 60; }
+  return `${h} ${pad(d, w)}° ${pad(m.toFixed(3), 6)}`;
+}
+function digitsOut() {
+  const t = $('h-dig').value.replace(/\D/g, ''), ns = $('h-ns').value, ew = $('h-ew').value;
+  const half = (s, h, w) => `${h} ${s.slice(0, w)}° ${s.slice(w, w + 2)}.${s.slice(w + 2)}`;
+  let out = '', bad = '';
+  if (!t) out = '';
+  else if (t.length === 15) out = half(t.slice(0, 7), ns, 2) + ' ' + half(t.slice(7), ew, 3);
+  else if (t.length === 14) out = half(t.slice(0, 7), ns, 2) + ' ' + half('0' + t.slice(7), ew, 3);
+  else if (t.length === 7) out = half(t, ns, 2);
+  else if (t.length === 8) out = half(t, ew, 3);
+  else bad = `${t.length} digits. A full coordinate needs 14 or 15.`;
+  if (out) {
+    const parts = [...out.matchAll(/([NSEW]) (\d+)° (\d\d)\.(\d{3})/g)];
+    if (parts.some((m) => +m[3] >= 60)) bad = 'Minutes of 60 or more can’t be right.';
+    else if (parts.some((m) => { const lim = 'NS'.includes(m[1]) ? 90 : 180; const dg = +m[2]; return dg > lim || (dg === lim && +(m[3] + m[4]) > 0); })) bad = 'That is off the globe: latitude goes up to 90° and longitude up to 180°.';
+  }
+  $('h-digout').innerHTML = bad ? `<span class="why">${esc(bad)}</span>` : out ? `${esc(out)} <button type="button" class="btn quiet sm" id="h-digkeep">Note it</button>` : '';
+  const k = $('h-digkeep'); if (k) k.onclick = () => addNote('Coordinates', out);
+}
+['h-dig', 'h-ns', 'h-ew'].forEach((id) => $(id).addEventListener(id === 'h-dig' ? 'input' : 'change', digitsOut));
+function convOut() {
+  const t = $('h-conv').value.trim();
+  const hs = (t.toUpperCase().match(/[NSEW]/g) || []);
+  const nums = (t.replace(/(\d),(\d)/g, '$1.$2').match(/-?\d+(?:\.\d+)?/g) || []).map(Number);
+  let lat = null, lon = null;
+  if (nums.length === 2) [lat, lon] = nums;
+  const sg = (x) => (x < 0 || Object.is(x, -0) ? -1 : 1);
+  if (nums.length === 4) { lat = sg(nums[0]) * (Math.abs(nums[0]) + nums[1] / 60); lon = sg(nums[2]) * (Math.abs(nums[2]) + nums[3] / 60); }
+  else if (nums.length === 6) { lat = sg(nums[0]) * (Math.abs(nums[0]) + nums[1] / 60 + nums[2] / 3600); lon = sg(nums[3]) * (Math.abs(nums[3]) + nums[4] / 60 + nums[5] / 3600); }
+  let out = '', bad = '';
+  if (!t) out = '';
+  else if (lat === null) bad = 'Give two numbers (decimal degrees), four (degrees and minutes) or six (degrees, minutes, seconds).';
+  else {
+    if (hs[0] === 'S') lat = -Math.abs(lat); if (hs[1] === 'W' || hs[0] === 'W') lon = -Math.abs(lon);
+    if (Math.abs(lat) > 90 || Math.abs(lon) > 180) bad = 'That is off the globe: latitude goes up to 90 and longitude up to 180.';
+    else out = dmm(lat, 'N', 'S', 2) + ' ' + dmm(lon, 'E', 'W', 3);
+  }
+  $('h-convout').innerHTML = bad ? `<span class="why">${esc(bad)}</span>` : out ? `${esc(out)} <button type="button" class="btn quiet sm" id="h-convkeep">Note it</button>` : '';
+  const k = $('h-convkeep'); if (k) k.onclick = () => addNote('Coordinates', out);
+}
+$('h-conv').addEventListener('input', convOut);
+
+/* ---------- start ---------- */
+renderNotes();
+partA_init();
+partB_init();
+partC_init();
+$('btn-example').addEventListener('click', () => { if (typeof partB_example === 'function') partB_example(); });
+})();
+</script>
+</body>
+</html>
+

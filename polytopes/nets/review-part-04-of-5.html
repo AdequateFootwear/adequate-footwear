@@ -1,0 +1,917 @@
+<!-- Review copy: lines 1199-2114 of polytopes/nets/index.html, split so Copilot can review it. Not served. -->
+    if ((Math.abs(len[0] - len[1]) < tol && Math.abs(len[2] - len[3]) < tol) || (Math.abs(len[1] - len[2]) < tol && Math.abs(len[3] - len[0]) < tol)) return 'kite';
+    return 'quadrilateral';
+  }
+  return 'irregular ' + (pA_POLY[n] || n + '-gon');
+}
+
+/* ---------- spanning trees of the faces (which edges stay as folds) ---------- */
+function pA_treeFromFolds(G, fold) { // fold: boolean per edge; checks it is a spanning tree of the faces
+  let cnt = 0; fold.forEach((x) => { if (x) cnt++; });
+  if (cnt !== G.F.length - 1) return null;
+  const seen = new Uint8Array(G.F.length); const st = [0]; seen[0] = 1; let k = 1;
+  while (st.length) { const i = st.pop(); G.fe[i].forEach((e) => { if (!fold[e]) return; const j = G.edges[e].f[0] === i ? G.edges[e].f[1] : G.edges[e].f[0]; if (!seen[j]) { seen[j] = 1; k++; st.push(j); } }); }
+  return k === G.F.length ? fold : null;
+}
+function pA_steepest(G, c) { // steepest-edge cut: every corner but the highest cuts the edge that climbs most steeply in direction c
+  const cut = new Array(G.edges.length).fill(false);
+  let top = 0; G.V.forEach((p, i) => { if (V3.dot(p, c) > V3.dot(G.V[top], c)) top = i; });
+  for (let v = 0; v < G.V.length; v++) {
+    if (v === top) continue;
+    let best = -1, bs = 0;
+    G.vadj[v].forEach((e) => { const u = G.edges[e].a === v ? G.edges[e].b : G.edges[e].a; const d = V3.sub(G.V[u], G.V[v]); const s = V3.dot(d, c) / V3.len(d); if (s > bs) { bs = s; best = e; } });
+    if (best < 0) return null;
+    cut[best] = true;
+  }
+  return pA_treeFromFolds(G, cut.map((x) => !x));
+}
+function pA_bfsTree(G, root, rng, depthFirst) {
+  const fold = new Array(G.edges.length).fill(false), seen = new Uint8Array(G.F.length);
+  const q = [root]; seen[root] = 1;
+  while (q.length) {
+    const i = depthFirst ? q.pop() : q.shift();
+    const es = G.fe[i].slice(); if (rng) for (let k = es.length - 1; k > 0; k--) { const j = Math.floor(rng() * (k + 1)); [es[k], es[j]] = [es[j], es[k]]; }
+    es.forEach((e) => { const j = G.edges[e].f[0] === i ? G.edges[e].f[1] : G.edges[e].f[0]; if (!seen[j]) { seen[j] = 1; fold[e] = true; q.push(j); } });
+  }
+  return fold;
+}
+function pA_wilson(G, rng) { // a uniformly random spanning tree of the faces (Wilson's algorithm)
+  const n = G.F.length, inTree = new Uint8Array(n), next = new Int32Array(n), via = new Int32Array(n);
+  const fold = new Array(G.edges.length).fill(false);
+  inTree[Math.floor(rng() * n)] = 1;
+  for (let s = 0; s < n; s++) {
+    let u = s;
+    while (!inTree[u]) { const es = G.fe[u]; const e = es[Math.floor(rng() * es.length)]; const w = G.edges[e].f[0] === u ? G.edges[e].f[1] : G.edges[e].f[0]; next[u] = w; via[u] = e; u = w; }
+    u = s; while (!inTree[u]) { inTree[u] = 1; fold[via[u]] = true; u = next[u]; }
+  }
+  return fold;
+}
+
+/* ---------- laying a tree out flat ---------- */
+function pA_layout(G, fold, root = 0) {
+  const n = G.F.length, P = new Array(n), parent = new Array(n).fill(-1), via = new Array(n).fill(-1), order = [root];
+  P[root] = G.L[root].map((p) => p.slice());
+  const seen = new Uint8Array(n); seen[root] = 1;
+  for (let k = 0; k < order.length; k++) {
+    const i = order[k];
+    G.fe[i].forEach((e, ki) => {
+      if (!fold[e]) return;
+      const E = G.edges[e], j = E.f[0] === i ? E.f[1] : E.f[0]; if (seen[j]) return;
+      seen[j] = 1; parent[j] = i; via[j] = e; order.push(j);
+      const a = G.F[i][ki], b = G.F[i][(ki + 1) % G.F[i].length];
+      const pa = P[i][ki], pb = P[i][(ki + 1) % G.F[i].length];
+      const la = G.L[j][G.F[j].indexOf(a)], lb = G.L[j][G.F[j].indexOf(b)];
+      const th = Math.atan2(pb[1] - pa[1], pb[0] - pa[0]) - Math.atan2(lb[1] - la[1], lb[0] - la[0]);
+      const c = Math.cos(th), s = Math.sin(th);
+      P[j] = G.L[j].map(([x, y]) => { const dx = x - la[0], dy = y - la[1]; return [pa[0] + c * dx - s * dy, pa[1] + s * dx + c * dy]; });
+    });
+  }
+  return { P, parent, via, order, fold };
+}
+function pA_overlaps(P) { // true if the interiors of any two (convex) faces overlap
+  const bb = P.map((f) => { let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity; f.forEach(([x, y]) => { x0 = Math.min(x0, x); x1 = Math.max(x1, x); y0 = Math.min(y0, y); y1 = Math.max(y1, y); }); return [x0, y0, x1, y1]; });
+  const sep = (A, B) => { // a separating axis among A's edge normals
+    for (let i = 0; i < A.length; i++) {
+      const p = A[i], q = A[(i + 1) % A.length], nx = q[1] - p[1], ny = p[0] - q[0], l = Math.hypot(nx, ny);
+      let a0 = Infinity, a1 = -Infinity, b0 = Infinity, b1 = -Infinity;
+      A.forEach(([x, y]) => { const d = (x * nx + y * ny) / l; a0 = Math.min(a0, d); a1 = Math.max(a1, d); });
+      B.forEach(([x, y]) => { const d = (x * nx + y * ny) / l; b0 = Math.min(b0, d); b1 = Math.max(b1, d); });
+      if (a1 <= b0 + pA_EPS || b1 <= a0 + pA_EPS) return true;
+    }
+    return false;
+  };
+  for (let i = 0; i < P.length; i++) for (let j = i + 1; j < P.length; j++) {
+    const A = bb[i], B = bb[j];
+    if (A[2] <= B[0] + pA_EPS || B[2] <= A[0] + pA_EPS || A[3] <= B[1] + pA_EPS || B[3] <= A[1] + pA_EPS) continue;
+    if (!sep(P[i], P[j]) && !sep(P[j], P[i])) return true;
+  }
+  return false;
+}
+const pA_cen2 = (f) => f.reduce((s, p) => [s[0] + p[0] / f.length, s[1] + p[1] / f.length], [0, 0]);
+function pA_signature(G, P) { // distances between face centres, sorted: the same for nets that match after turning or flipping one over
+  const C = P.map(pA_cen2), d = [];
+  for (let i = 0; i < C.length; i++) for (let j = i + 1; j < C.length; j++) d.push([Math.min(G.sides[i], G.sides[j]) * 100 + Math.max(G.sides[i], G.sides[j]), Math.hypot(C[i][0] - C[j][0], C[i][1] - C[j][1])]);
+  d.sort((a, b) => a[0] - b[0] || a[1] - b[1]);
+  return d;
+}
+function pA_sameNet(A, B) { // the stored corners are rounded, so allow a little slack
+  if (A.length !== B.length) return false;
+  for (let i = 0; i < A.length; i++) if (A[i][0] !== B[i][0] || Math.abs(A[i][1] - B[i][1]) > 2e-3) return false;
+  return true;
+}
+function pA_spread(P) { // how spread out the net is (mean squared distance of face centres from their middle)
+  const C = P.map(pA_cen2), m = pA_cen2(C);
+  return C.reduce((s, c) => s + (c[0] - m[0]) ** 2 + (c[1] - m[1]) ** 2, 0) / C.length;
+}
+function pA_hull(pts) {
+  const p = pts.slice().sort((a, b) => a[0] - b[0] || a[1] - b[1]);
+  const cr = (o, a, b) => (a[0] - o[0]) * (b[1] - o[1]) - (a[1] - o[1]) * (b[0] - o[0]);
+  const lo = [], up = [];
+  p.forEach((q) => { while (lo.length >= 2 && cr(lo[lo.length - 2], lo[lo.length - 1], q) <= 0) lo.pop(); lo.push(q); });
+  p.slice().reverse().forEach((q) => { while (up.length >= 2 && cr(up[up.length - 2], up[up.length - 1], q) <= 0) up.pop(); up.push(q); });
+  return lo.slice(0, -1).concat(up.slice(0, -1));
+}
+/* Turn the net (in its own plane) so its smallest bounding rectangle lies flat, longer side across, and re-root it at
+   its most central face. Face numbers then run outwards from that face in fold order. */
+function pA_finish(G, lay) {
+  const all = []; lay.P.forEach((f) => f.forEach((p) => all.push(p)));
+  const H = pA_hull(all);
+  const dirs = []; lay.P.forEach((f) => f.forEach((p, i) => { const q = f[(i + 1) % f.length]; dirs.push(Math.atan2(q[1] - p[1], q[0] - p[0])); }));
+  const alongEdge = (th) => dirs.some((d) => { const x = ((d - th) % Math.PI + Math.PI) % Math.PI; return x < 1e-6 || Math.PI - x < 1e-6; });
+  let best = null;
+  for (const strict of [true, false]) {
+    for (let i = 0; i < H.length; i++) {
+      const p = H[i], q = H[(i + 1) % H.length], th = Math.atan2(q[1] - p[1], q[0] - p[0]);
+      if (strict && !alongEdge(th)) continue;
+      const c = Math.cos(-th), s = Math.sin(-th);
+      let x0 = Infinity, x1 = -Infinity, y0 = Infinity, y1 = -Infinity;
+      H.forEach(([x, y]) => { const u = c * x - s * y, v = s * x + c * y; x0 = Math.min(x0, u); x1 = Math.max(x1, u); y0 = Math.min(y0, v); y1 = Math.max(y1, v); });
+      let rot = -th; if (y1 - y0 > x1 - x0) rot += Math.PI / 2;
+      const area = (x1 - x0) * (y1 - y0);
+      if (!best || area < best.area - 1e-9) best = { area, rot };
+    }
+    if (best) break;
+  }
+  const c = Math.cos(best.rot), s = Math.sin(best.rot);
+  let P = lay.P.map((f) => f.map(([x, y]) => [c * x - s * y, s * x + c * y]));
+  const C = P.map(pA_cen2), m = pA_cen2(C);
+  let root = 0; C.forEach((q, i) => { if (Math.hypot(q[0] - m[0], q[1] - m[1]) < Math.hypot(C[root][0] - m[0], C[root][1] - m[1]) - 1e-9) root = i; });
+  // re-root: walk the fold tree from the central face
+  const n = G.F.length, order = [root], parent = new Array(n).fill(-1), via = new Array(n).fill(-1), seen = new Uint8Array(n); seen[root] = 1;
+  for (let k = 0; k < order.length; k++) {
+    const i = order[k];
+    G.fe[i].forEach((e) => { if (!lay.fold[e]) return; const E = G.edges[e], j = E.f[0] === i ? E.f[1] : E.f[0]; if (seen[j]) return; seen[j] = 1; parent[j] = i; via[j] = e; order.push(j); });
+  }
+  let x0 = Infinity, y0 = Infinity; P.forEach((f) => f.forEach(([x, y]) => { x0 = Math.min(x0, x); y0 = Math.min(y0, y); }));
+  P = P.map((f) => f.map(([x, y]) => [x - x0, y - y0]));
+  const num = new Array(n); order.forEach((f, k) => { num[f] = k; }); // net index of each solid face
+  const net = { faces: [], parent: [], hinge: [], angle: [] };
+  order.forEach((f) => {
+    net.faces.push({ pts: P[f] });
+    if (parent[f] < 0) { net.parent.push(-1); net.hinge.push(null); net.angle.push(0); return; }
+    const E = G.edges[via[f]], ia = G.F[f].indexOf(E.a), ib = G.F[f].indexOf(E.b);
+    net.parent.push(num[parent[f]]); net.hinge.push([P[f][ia], P[f][ib]]); net.angle.push(E.angle);
+  });
+  return { net, order, num, fold: lay.fold, P };
+}
+/* Find up to `want` different non-overlapping nets, trying steepest-edge cuts in many directions, breadth- and
+   depth-first trees from different faces, and random trees. Seeded by the shape, so a shape always gives the same nets. */
+function pA_findNets(G, want, budgetMs, maxTries) {
+  const rng = pA_rng(pA_hash(G.id)), found = [], seen = [], stats = { tries: 0, overlap: 0, same: 0, bad: 0 };
+  const t0 = (typeof performance !== 'undefined' ? performance : Date).now();
+  const now = () => (typeof performance !== 'undefined' ? performance : Date).now() - t0;
+  const n = G.F.length;
+  const dir = () => { let v; do { v = [rng() * 2 - 1, rng() * 2 - 1, rng() * 2 - 1]; } while (V3.len(v) > 1 || V3.len(v) < 0.1); return V3.unit(v); };
+  while (found.length < want && stats.tries < maxTries && (now() < budgetMs || (!found.length && stats.tries < 4000))) {
+    const k = stats.tries++;
+    let fold;
+    const kind = k % 4;
+    if (kind === 0 || kind === 2) fold = pA_steepest(G, k < 4 * n ? V3.unit(V3.add(G.N[(k >> 1) % n], V3.scl(dir(), 0.05))) : dir());
+    else if (kind === 1) fold = k % 8 === 1 ? pA_bfsTree(G, Math.floor(rng() * n), k < 8 ? null : rng) : pA_bfsTree(G, Math.floor(rng() * n), rng, true);
+    else fold = pA_wilson(G, rng);
+    if (!fold) { stats.bad++; continue; }
+    const lay = pA_layout(G, fold);
+    if (pA_overlaps(lay.P)) { stats.overlap++; continue; }
+    const sig = pA_signature(G, lay.P);
+    if (seen.some((x) => pA_sameNet(x, sig))) { stats.same++; continue; }
+    seen.push(sig); found.push(lay);
+  }
+  found.sort((a, b) => pA_spread(a.P) - pA_spread(b.P));
+  return { nets: found.map((l) => pA_finish(G, l)), stats };
+}
+/* ---------- the page ---------- */
+let pA_list = [], pA_G = null, pA_nets = [], pA_cur = 0, pA_view = null, pA_t = 0, pA_raf = 0, pA_playing = false, pA_nums = true;
+const pA_vopts = { twoSided: true }; // label every face while the net is still open; only the outside faces once it is nearly closed
+function pA_colVar(sides) { return '--fc' + (pA_TYPECOL[sides] || 1); }
+function pA_kinds(G) { // [{ sides, kind, count }]
+  const m = new Map(); G.F.forEach((f, i) => { const k = G.kind[i]; if (!m.has(k)) m.set(k, { sides: G.sides[i], kind: k, count: 0 }); m.get(k).count++; });
+  return [...m.values()].sort((a, b) => a.sides - b.sides);
+}
+function partA_init() {
+  pA_list = pA_catalogue();
+  const sel = $('pA-shape');
+  sel.innerHTML = pA_FAMS.map(([fam, label]) => `<optgroup label="${esc(label)}">` + pA_list.filter((s) => s.fam === fam).sort((x, y) => x.F.length - y.F.length || (x.fam === 'prism' || x.fam === 'antiprism' ? 0 : x.name.localeCompare(y.name))).map((s) => `<option value="${esc(s.id)}">${esc(s.name)}</option>`).join('') + '</optgroup>').join('');
+  let last = 'U6';
+  try { const v = localStorage.getItem(pA_KEY); if (v && pA_list.some((s) => s.id === v)) last = v; } catch (e) { /* storage blocked */ }
+  sel.value = last;
+  pA_view = makeFoldView($('pA-cv'), $('pA-labels'), pA_vopts);
+  if (!pA_view.ok) $('pA-nogl').hidden = false;
+  sel.addEventListener('change', () => { pA_pick(sel.value); try { localStorage.setItem(pA_KEY, sel.value); } catch (e) { /* storage blocked */ } });
+  $('pA-t').addEventListener('input', () => { pA_stop(); pA_setT(Number($('pA-t').value) / 100); });
+  $('pA-play').addEventListener('click', () => { if (pA_playing) pA_stop(); else pA_play(); });
+  $('pA-reset').addEventListener('click', () => pA_view.reset());
+  $('pA-next').addEventListener('click', () => { if (pA_nets.length < 2) return; pA_cur = (pA_cur + 1) % pA_nets.length; pA_showNet(!reducedMotion()); });
+  $('pA-nums').addEventListener('click', () => { pA_nums = !pA_nums; $('pA-nums').setAttribute('aria-pressed', String(pA_nums)); pA_drawSvg(); pA_setT(pA_t); });
+  $('pA-facts').addEventListener('click', (e) => {
+    const b = e.target.closest('.nplus'); if (!b) return;
+    addNote(b.dataset.l, b.dataset.v);
+  });
+  window.addEventListener('pagehide', pA_stop);
+  pA_pick(last);
+}
+function pA_pick(id) {
+  pA_stop();
+  const s = pA_list.find((x) => x.id === id) || pA_list[0];
+  pA_G = pA_prepare(s);
+  const small = pA_NETCOUNT[s.id] && pA_NETCOUNT[s.id] <= 11;
+  const res = pA_findNets(pA_G, small ? pA_NETCOUNT[s.id] : 8, small ? 400 : 350, small ? 3000 : 1500);
+  pA_nets = res.nets; pA_cur = 0;
+  $('pA-name').textContent = s.name.charAt(0).toUpperCase() + s.name.slice(1);
+  pA_legend(); pA_facts();
+  pA_showNet(!reducedMotion());
+}
+function pA_showNet(animate) {
+  pA_stop();
+  const n = pA_nets.length, total = pA_NETCOUNT[pA_G.id];
+  $('pA-next').disabled = n < 2;
+  if (!n) { $('pA-which').textContent = 'No net found for this solid.'; return; }
+  $('pA-which').textContent = total && n === total ? `Net ${pA_cur + 1} of ${total}: that's every one there is.` : `Net ${pA_cur + 1}`;
+  pA_drawSvg();
+  if (animate) { pA_setT(0); pA_play(); } else pA_setT(reducedMotion() ? 0.6 : 1);
+}
+function pA_setT(t) {
+  pA_t = Math.max(0, Math.min(1, t));
+  const pct = Math.round(pA_t * 100) + '\u00a0%';
+  $('pA-t').value = String(Math.round(pA_t * 100)); $('pA-t').setAttribute('aria-valuetext', pct); $('pA-tv').textContent = pct;
+  const R = pA_nets[pA_cur]; if (!R) return;
+  const X = foldNet(R.net, pA_t);
+  pA_vopts.twoSided = pA_t < 0.75;
+  pA_view.setFaces(X.map((pts, k) => ({ pts, col: pA_colVar(pA_G.sides[R.order[k]]), label: pA_nums ? String(k + 1) : '' })));
+}
+function pA_play() {
+  if (pA_t >= 1) pA_setT(0);
+  pA_playing = true; $('pA-play').textContent = 'Pause';
+  let last = 0;
+  const step = (ts) => {
+    if (!pA_playing) return;
+    if (last) pA_setT(pA_t + (ts - last) / 3000);
+    last = ts;
+    if (pA_t >= 1) { pA_stop(); return; }
+    pA_raf = requestAnimationFrame(step);
+  };
+  pA_raf = requestAnimationFrame(step);
+}
+function pA_stop() {
+  pA_playing = false; cancelAnimationFrame(pA_raf);
+  const b = $('pA-play'); if (b) b.textContent = 'Play';
+}
+function pA_legend() {
+  $('pA-legend').innerHTML = pA_kinds(pA_G).map((k) => `<span class="lg pA-lg" role="listitem"><span class="sw" style="background:var(${pA_colVar(k.sides)})"></span>${k.count} ${esc(pA_plural(k.kind, k.count))}</span>`).join('');
+}
+function pA_drawSvg() {
+  const R = pA_nets[pA_cur], G = pA_G; if (!R) return;
+  let x1 = 0, y1 = 0; R.P.forEach((f) => f.forEach(([x, y]) => { x1 = Math.max(x1, x); y1 = Math.max(y1, y); }));
+  const m = 0.04 * Math.max(x1, y1, 1), W = x1 + 2 * m, H = y1 + 2 * m;
+  const X = (p) => (p[0] + m).toFixed(4), Y = (p) => (y1 - p[1] + m).toFixed(4); // drawn as seen from inside, like the 3D view at 0 %
+    let faces = '', cuts = '', folds = '', labels = '';
+  R.net.faces.forEach((f, k) => {
+    const fi = R.order[k], col = pA_colVar(G.sides[fi]);
+    faces += `<polygon points="${f.pts.map((p) => X(p) + ',' + Y(p)).join(' ')}" style="fill:var(${col});stroke:var(${col})" vector-effect="non-scaling-stroke"/>`;
+    f.pts.forEach((p, j) => { if (!R.fold[G.fe[fi][j]]) { const q = f.pts[(j + 1) % f.pts.length]; cuts += `M${X(p)} ${Y(p)}L${X(q)} ${Y(q)}`; } });
+    if (R.net.parent[k] >= 0) { const [a, b] = R.net.hinge[k]; folds += `M${X(a)} ${Y(a)}L${X(b)} ${Y(b)}`; }
+    if (pA_nums) {
+      const c = pA_cen2(f.pts); let r = Infinity;
+      f.pts.forEach((p, i) => { const q = f.pts[(i + 1) % f.pts.length], l = Math.hypot(q[0] - p[0], q[1] - p[1]); r = Math.min(r, Math.abs((q[0] - p[0]) * (c[1] - p[1]) - (q[1] - p[1]) * (c[0] - p[0])) / l); });
+      const txt = String(k + 1), fs = Math.min(r * 0.8, (2 * r * 0.85) / (0.62 * txt.length));
+      labels += `<text x="${X(c)}" y="${Y(c)}" font-size="${fs.toFixed(4)}" stroke-width="${(fs * 0.16).toFixed(4)}">${txt}</text>`;
+    }
+  });
+  const title = `A flat net of the ${G.name}: ${G.F.length} faces${pA_nums ? `, numbered 1 to ${G.F.length}` : ''}, joined by ${G.F.length - 1} folds.`;
+  $('pA-svg').setAttribute('viewBox', `0 0 ${W.toFixed(4)} ${H.toFixed(4)}`);
+  const mw = Math.min(W * 30, 1600); // big nets scroll sideways in their frame rather than shrinking to nothing
+  $('pA-svg').style.minWidth = mw.toFixed(0) + 'px';
+  $('pA-svg').style.maxHeight = `max(min(62vh, 560px), ${(mw * H / W).toFixed(0)}px)`; // lift the height cap to the height that width needs, so the net isn't letterboxed
+  $('pA-svg').innerHTML = `<title id="pA-svgt">${esc(title)}</title><g class="pA-faces">${faces}</g>` +
+    `<path class="pA-fold" d="${folds}" vector-effect="non-scaling-stroke"/><path class="pA-cut" d="${cuts}" vector-effect="non-scaling-stroke"/><g class="pA-nums">${labels}</g>`;
+}
+function pA_facts() {
+  const G = pA_G, F = G.F.length, E = G.edges.length, V = G.V.length, nm = G.name;
+  const parts = pA_kinds(G).map((k) => `${k.count} ${pA_plural(k.kind, k.count)}`).join(', ');
+  const rows = [
+    { k: 'Faces', v: String(F), h: parts, l: 'faces' },
+    { k: 'Edges', v: String(E), l: 'edges' },
+    { k: 'Corners', v: String(V), h: 'Also called vertices.', l: 'corners' },
+    { k: 'Edges cut to make the net', v: String(V - 1), h: `Always corners − 1. The cuts join up every corner without making a loop, so ${V} corners need ${V - 1} cuts.`, l: 'edges cut to make a net' },
+    { k: 'Edges left as folds', v: String(F - 1), h: `Always faces − 1: every face except face 1 hangs from one neighbour by a fold. ${V - 1} + ${F - 1} = ${E} edges.`, l: 'edges left as folds in a net' },
+  ];
+  const total = pA_NETCOUNT[G.id];
+  if (total) rows.push({ k: 'Different nets', v: pA_fmt(total), h: 'The known total, counting nets that match after turning or flipping over as the same.', l: 'different nets' });
+  $('pA-facts').innerHTML = rows.map((r) => `<div class="frow"><dt>${esc(r.k)}${r.h ? `<span class="fh">${esc(r.h)}</span>` : ''}</dt><dd><span class="fv">${esc(r.v)}</span><button type="button" class="nplus" data-l="${esc(nm.charAt(0).toUpperCase() + nm.slice(1) + ': ' + r.l)}" data-v="${esc(r.v)}" aria-label="Add to notepad: ${esc(r.k)}">+</button></dd></div>`).join('');
+}
+
+/* ---------- Part B: draw your own net ---------- */
+/* How the check works ("rolling"): the first cell is put on one face of the solid. Crossing an edge of a cell into the
+   next cell is like tipping the solid over that edge, so each cell lands on a face, and we also keep track of which edge
+   of that face each edge of the cell lies on. The drawing folds if every cell is joined to the rest, no two cells land
+   on the same face, and every pair of cells that share an edge in the drawing land on faces that really meet along
+   that same edge. Everything here is worked out from the grid and the solid's corners; nothing is looked up. */
+const pB_KEY = 'aft.nets.drawing';
+const pB_H = Math.sqrt(3) / 2;
+const pB_DIM = { sq: { rows: 8, cols: 8 }, tri: { rows: 6, cols: 12 } };
+const pB_PHI = (1 + Math.sqrt(5)) / 2;
+const pB_SOLID_DEF = {
+  cube: { name: 'cube', V: [[-1, -1, -1], [1, -1, -1], [1, 1, -1], [-1, 1, -1], [-1, -1, 1], [1, -1, 1], [1, 1, 1], [-1, 1, 1]] },
+  tetra: { name: 'tetrahedron', V: [[1, 1, 1], [1, -1, -1], [-1, 1, -1], [-1, -1, 1]] },
+  octa: { name: 'octahedron', V: [[1, 0, 0], [-1, 0, 0], [0, 1, 0], [0, -1, 0], [0, 0, 1], [0, 0, -1]] },
+  icosa: { name: 'icosahedron', V: [[0, 1, pB_PHI], [0, -1, pB_PHI], [0, 1, -pB_PHI], [0, -1, -pB_PHI], [1, pB_PHI, 0], [-1, pB_PHI, 0], [1, -pB_PHI, 0], [-1, -pB_PHI, 0], [pB_PHI, 0, 1], [-pB_PHI, 0, 1], [pB_PHI, 0, -1], [-pB_PHI, 0, -1]] },
+};
+const pB_solidCache = {};
+/* The solid's faces (convex hull of its corners), each face's corners in order round it, which face lies across
+   each edge (and which edge that is on the other face), the opposite face, and the fold angle (π − dihedral). */
+function pB_solid(key) {
+  if (pB_solidCache[key]) return pB_solidCache[key];
+  const V = pB_SOLID_DEF[key].V, faces = [], seen = new Set(), eps = 1e-7;
+  for (let i = 0; i < V.length; i++) for (let j = i + 1; j < V.length; j++) for (let k = j + 1; k < V.length; k++) {
+    let nrm = V3.cross(V3.sub(V[j], V[i]), V3.sub(V[k], V[i]));
+    if (V3.len(nrm) < 1e-9) continue;
+    nrm = V3.unit(nrm); let d = V3.dot(nrm, V[i]), pos = 0, neg = 0;
+    V.forEach((p) => { const s = V3.dot(nrm, p) - d; if (s > eps) pos++; else if (s < -eps) neg++; });
+    if (pos && neg) continue;
+    if (pos) { nrm = V3.scl(nrm, -1); d = -d; }
+    const mem = []; V.forEach((p, m) => { if (Math.abs(V3.dot(nrm, p) - d) < eps) mem.push(m); });
+    const id = mem.join(','); if (seen.has(id)) continue; seen.add(id);
+    const c = V3.centroid(mem.map((m) => V[m])), u = V3.unit(V3.sub(V[mem[0]], c)), w = V3.cross(nrm, u);
+    const ang = (m) => { const q = V3.sub(V[m], c); return Math.atan2(V3.dot(q, w), V3.dot(q, u)); };
+    mem.sort((a, b) => ang(a) - ang(b)); // anticlockwise seen from outside
+    faces.push({ vs: mem, nrm, c });
+  }
+  const n = faces[0].vs.length, dir = new Map();
+  faces.forEach((f, fi) => f.vs.forEach((a, k) => dir.set(a + '>' + f.vs[(k + 1) % n], [fi, k])));
+  const adj = faces.map((f) => f.vs.map((a, k) => dir.get(f.vs[(k + 1) % n] + '>' + a)));
+  const opp = faces.map((f) => faces.findIndex((g) => V3.len(V3.add(f.c, g.c)) < 1e-6));
+  const foldAngle = Math.acos(Math.max(-1, Math.min(1, V3.dot(faces[0].nrm, faces[adj[0][0][0]].nrm))));
+  const S = { key, name: pB_SOLID_DEF[key].name, F: faces.length, n, faces, adj, opp, foldAngle, V };
+  pB_solidCache[key] = S;
+  return S;
+}
+
+const pB_mod = (a, n) => ((a % n) + n) % n;
+const pB_up = (r, c) => pB_mod(r + c, 2) === 0; // triangle grid: (r + c) even points up
+/* corners of a cell, edge length 1, screen coordinates (y down), clockwise on screen */
+function pB_cellPts(type, r, c) {
+  if (type === 'sq') return [[c, r], [c + 1, r], [c + 1, r + 1], [c, r + 1]];
+  return pB_up(r, c) ? [[(c + 1) / 2, r * pB_H], [(c + 2) / 2, (r + 1) * pB_H], [c / 2, (r + 1) * pB_H]]
+    : [[c / 2, r * pB_H], [(c + 2) / 2, r * pB_H], [(c + 1) / 2, (r + 1) * pB_H]];
+}
+/* the same corners as exact integer keys, so shared edges can be matched */
+function pB_cellKeys(type, r, c) {
+  if (type === 'sq') return [`${c},${r}`, `${c + 1},${r}`, `${c + 1},${r + 1}`, `${c},${r + 1}`];
+  return pB_up(r, c) ? [`${c + 1},${r}`, `${c + 2},${r + 1}`, `${c},${r + 1}`] : [`${c},${r}`, `${c + 2},${r}`, `${c + 1},${r + 1}`];
+}
+
+/* cells: [[r, c], ...]. Returns { kind: 'empty' | 'apart' | 'clash' | 'tear' | 'ok', ... } */
+function pB_analyse(type, cells, solidKey) {
+  const S = pB_solid(solidKey), n = S.n, N = cells.length;
+  if (!N) return { kind: 'empty', S, N };
+  const keys = cells.map(([r, c]) => pB_cellKeys(type, r, c));
+  const emap = new Map(), adj = cells.map(() => []), pairs = [];
+  keys.forEach((ks, i) => ks.forEach((a, k) => {
+    const b = ks[(k + 1) % ks.length], e = a < b ? a + '|' + b : b + '|' + a, o = emap.get(e);
+    if (o) { adj[i].push([k, o[0], o[1]]); adj[o[0]].push([o[1], i, k]); pairs.push([o[0], o[1], i, k]); } else emap.set(e, [i, k]);
+  }));
+  // joined-up pieces
+  const comp = new Array(N).fill(-1), comps = [];
+  for (let s = 0; s < N; s++) {
+    if (comp[s] >= 0) continue;
+    const list = [s]; comp[s] = comps.length;
+    for (let q = 0; q < list.length; q++) adj[list[q]].forEach(([, j]) => { if (comp[j] < 0) { comp[j] = comps.length; list.push(j); } });
+    comps.push(list);
+  }
+  if (comps.length > 1) {
+    let main = 0; comps.forEach((l, i) => { if (l.length > comps[main].length) main = i; });
+    const apart = []; comps.forEach((l, i) => { if (i !== main) apart.push(...l); });
+    return { kind: 'apart', S, N, apart: apart.sort((a, b) => a - b) };
+  }
+  // roll the solid across the drawing
+  const face = new Array(N).fill(-1), rot = new Array(N).fill(0), parent = new Array(N).fill(-1), hingeEdge = new Array(N).fill(-1);
+  const seen = new Array(N).fill(false); seen[0] = true; face[0] = 0;
+  const queue = [0];
+  for (let q = 0; q < queue.length; q++) {
+    const i = queue[q];
+    adj[i].forEach(([k, j, kk]) => {
+      if (seen[j]) return;
+      const [g, jj] = S.adj[face[i]][(k + rot[i]) % n];
+      seen[j] = true; face[j] = g; rot[j] = pB_mod(jj - kk, n); parent[j] = i; hingeEdge[j] = kk; queue.push(j);
+    });
+  }
+  const byFace = new Map(); face.forEach((f, i) => { if (!byFace.has(f)) byFace.set(f, []); byFace.get(f).push(i); });
+  const clashes = [...byFace.values()].filter((l) => l.length > 1);
+  const tears = [];
+  pairs.forEach(([i, k, j, kk]) => {
+    const [g, jj] = S.adj[face[i]][(k + rot[i]) % n];
+    if (g !== face[j] || pB_mod(jj - kk - rot[j], n) !== 0) tears.push([Math.min(i, j), Math.max(i, j)]);
+  });
+  // a clash already explains any mismatched edges, so those are only reported when every cell has a face of its own
+  const kind = clashes.length ? 'clash' : tears.length ? 'tear' : 'ok';
+  return { kind, S, N, face, rot, parent, hingeEdge, clashes, tears: clashes.length ? [] : tears, missing: S.F - N };
+}
+
+/* a net for foldNet, built on the spanning tree the roll walked */
+function pB_net(type, cells, res) {
+  const pts = cells.map(([r, c]) => pB_cellPts(type, r, c));
+  return {
+    faces: pts.map((p) => ({ pts: p })),
+    parent: res.parent.slice(),
+    hinge: res.parent.map((p, i) => (p < 0 ? null : [pts[i][res.hingeEdge[i]], pts[i][(res.hingeEdge[i] + 1) % pts[i].length]])),
+    angle: res.parent.map((p) => (p < 0 ? 0 : res.S.foldAngle)),
+  };
+}
+/* self-check: fold fully and measure how far apart the corners are that should meet (and how close distinct corners come) */
+function pB_closure(type, cells, res) {
+  const P = foldNet(pB_net(type, cells, res), 1), n = res.S.n, groups = new Map();
+  P.forEach((pts, i) => pts.forEach((p, m) => {
+    const v = res.S.faces[res.face[i]].vs[(m + res.rot[i]) % n];
+    if (!groups.has(v)) groups.set(v, []); groups.get(v).push(p);
+  }));
+  let spread = 0; const reps = [];
+  groups.forEach((l) => { l.forEach((p) => { spread = Math.max(spread, V3.len(V3.sub(p, l[0]))); }); reps.push(l[0]); });
+  let gap = Infinity;
+  for (let a = 0; a < reps.length; a++) for (let b = a + 1; b < reps.length; b++) gap = Math.min(gap, V3.len(V3.sub(reps[a], reps[b])));
+  return { spread, gap, corners: groups.size };
+}
+
+/* ---------- presets (each one checked by the brute-force test in the notes below) ---------- */
+const pB_CUBE_NETS = [
+  'X...|XXXX|X...', 'X...|XXXX|.X..', 'X...|XXXX|..X.', 'X...|XXXX|...X', '.X..|XXXX|.X..', '.X..|XXXX|..X.',
+  'XX..|.XXX|.X..', 'XX..|.XXX|..X.', 'XX..|.XXX|...X', 'XX..|.XX.|..XX', 'XXX..|..XXX',
+].map((s) => { const out = []; s.split('|').forEach((row, r) => [...row].forEach((ch, c) => { if (ch === 'X') out.push([r, c]); })); return out; });
+const pB_parseTri = (s) => s.split(' ').map((p) => p.split(',').map(Number));
+const pB_TRI_NETS = {
+  tetra: ['0,1 0,2 0,3 1,2', '0,0 0,1 0,2 0,3'],
+  octa: [
+    '0,2 0,3 1,0 1,1 1,2 1,3 2,0 2,1',
+    '0,2 1,0 1,1 1,2 1,3 1,4 2,0 2,1',
+    '0,2 0,3 1,0 1,1 1,2 2,0 2,1 2,2',
+    '0,2 0,3 0,4 1,0 1,1 1,2 2,0 2,1',
+    '0,4 1,0 1,1 1,2 1,3 1,4 2,3 2,4',
+    '0,0 0,1 0,2 0,3 1,2 1,3 2,3 2,4',
+    '0,0 1,0 1,1 1,2 1,3 1,4 2,3 2,4',
+    '0,1 0,2 0,3 1,1 1,2 2,0 2,1 2,2',
+    '0,0 1,0 1,1 1,2 1,3 1,4 1,5 2,5',
+    '0,1 0,2 0,3 0,4 1,4 1,5 1,6 1,7',
+    '0,0 0,1 0,2 1,2 1,3 1,4 1,5 2,5',
+  ],
+  icosa: ['0,0 0,2 0,4 0,6 0,8 1,0 1,1 1,2 1,3 1,4 1,5 1,6 1,7 1,8 1,9 2,1 2,3 2,5 2,7 2,9'],
+};
+function pB_presets() {
+  const L = [];
+  pB_CUBE_NETS.forEach((cells, i) => L.push({ id: 'cube' + (i + 1), group: 'Cube (squares)', name: `Cube net ${i + 1}`, type: 'sq', cells }));
+  [['tetra', 'Tetrahedron'], ['octa', 'Octahedron'], ['icosa', 'Icosahedron']].forEach(([k, nm]) => pB_TRI_NETS[k].forEach((s, i) => L.push({
+    id: k + (i + 1), group: `${nm} (triangles)`, name: pB_TRI_NETS[k].length > 1 ? `${nm} net ${i + 1}` : `${nm} net`, type: 'tri', cells: pB_parseTri(s),
+  })));
+  return L;
+}
+/* move a shape into the middle of the grid (keeping triangles pointing the same way) */
+function pB_place(type, cells) {
+  const D = pB_DIM[type];
+  const rs = cells.map((p) => p[0]), cs = cells.map((p) => p[1]);
+  const r0 = Math.min(...rs), c0 = Math.min(...cs), R = Math.max(...rs) - r0 + 1, C = Math.max(...cs) - c0 + 1;
+  const dr = Math.floor((D.rows - R) / 2) - r0; let dc = Math.floor((D.cols - C) / 2) - c0;
+  if (type === 'tri' && pB_mod(dr + dc, 2)) dc += (Math.max(...cs) + dc + 1 < D.cols) ? 1 : -1;
+  return cells.map(([r, c]) => [r + dr, c + dc]);
+}
+
+/* ---------- the page ---------- */
+const pB_EXAMPLE = { cells: [[0, 0, 'K'], [0, 1, 'Q'], [1, 1, 'F'], [1, 2, 'Z'], [1, 3, 'H'], [2, 1, 'N']], clue: 'Example clue (made up): which letter is opposite Q?' };
+const pB_st = { type: 'sq', solid: 'auto', cells: { sq: new Map(), tri: new Map() }, cur: { sq: [3, 3], tri: [2, 5] }, mode: 'draw', t: 1, res: null, list: [] };
+let pB_view = null, pB_anim = 0;
+let pB_nbN = null; // cell count when the neighbours list was last shown (null: a new drawing or preset)
+
+function pB_save() {
+  try {
+    const dump = (m) => [...m].map(([k, lab]) => { const [r, c] = k.split(',').map(Number); return [r, c, lab]; });
+    localStorage.setItem(pB_KEY, JSON.stringify({ v: 1, type: pB_st.type, solid: pB_st.solid, sq: dump(pB_st.cells.sq), tri: dump(pB_st.cells.tri) }));
+  } catch (e) { /* storage unavailable: the drawing just isn't kept */ }
+}
+function pB_load() {
+  try {
+    const d = JSON.parse(localStorage.getItem(pB_KEY) || 'null');
+    if (!d || typeof d !== 'object') return;
+    if (d.type === 'sq' || d.type === 'tri') pB_st.type = d.type;
+    if (['auto', 'tetra', 'octa', 'icosa'].includes(d.solid)) pB_st.solid = d.solid;
+    ['sq', 'tri'].forEach((t) => {
+      if (!Array.isArray(d[t])) return;
+      const D = pB_DIM[t];
+      d[t].forEach((e) => {
+        if (!Array.isArray(e)) return;
+        const [r, c, lab] = e;
+        if (Number.isInteger(r) && Number.isInteger(c) && r >= 0 && c >= 0 && r < D.rows && c < D.cols) pB_st.cells[t].set(`${r},${c}`, pB_clean(lab));
+      });
+    });
+  } catch (e) { /* nothing saved, or storage unavailable */ }
+}
+const pB_clean = (s) => [...String(s == null ? '' : s).replace(/\s+/g, '')].slice(0, 3).join('');
+
+function pB_solidKey() {
+  if (pB_st.type === 'sq') return 'cube';
+  if (pB_st.solid !== 'auto') return pB_st.solid;
+  const n = pB_st.cells.tri.size;
+  return n <= 4 ? 'tetra' : n <= 8 ? 'octa' : 'icosa';
+}
+/* the drawn cells in reading order; cell numbers (#1, #2 …) follow this order */
+function pB_cellList() {
+  return [...pB_st.cells[pB_st.type].keys()].map((k) => k.split(',').map(Number)).sort((a, b) => a[0] - b[0] || a[1] - b[1]);
+}
+function pB_names(list) {
+  const m = pB_st.cells[pB_st.type], labs = list.map(([r, c]) => m.get(`${r},${c}`) || '');
+  const count = {}; labs.forEach((l) => { if (l) count[l] = (count[l] || 0) + 1; });
+  return labs.map((l, i) => (!l ? `#${i + 1}` : count[l] > 1 ? `${l} (#${i + 1})` : l));
+}
+const pB_an = (w) => (/^[aeiou]/.test(w) ? 'an ' : 'a ') + w;
+const pB_and = (a) => (a.length < 2 ? a.join('') : a.slice(0, -1).join(', ') + ' and ' + a[a.length - 1]);
+
+function pB_renderGrid(bad) {
+  const T = pB_st.type, D = pB_DIM[T], m = pB_st.cells[T], svg = $('pB-svg');
+  const W = T === 'sq' ? D.cols : (D.cols + 1) / 2, Hh = T === 'sq' ? D.rows : D.rows * pB_H, pad = 0.06;
+  svg.setAttribute('viewBox', `${-pad} ${-pad} ${W + 2 * pad} ${Hh + 2 * pad}`);
+  svg.setAttribute('class', T + (pB_st.mode === 'label' ? ' lab' : ''));
+  const num = new Map(); pB_st.list.forEach(([r, c], i) => num.set(`${r},${c}`, i));
+  const fs = T === 'sq' ? 0.4 : 0.29;
+  let cellsH = '', textH = '';
+  for (let r = 0; r < D.rows; r++) for (let c = 0; c < D.cols; c++) {
+    const k = `${r},${c}`, pts = pB_cellPts(T, r, c), on = m.has(k), isBad = on && bad.has(num.get(k));
+    cellsH += `<polygon class="pB-c${on ? ' on' : ''}${isBad ? ' bad' : ''}" data-r="${r}" data-c="${c}" points="${pts.map((p) => p.map((v) => v.toFixed(4)).join(',')).join(' ')}"/>`;
+    if (on) {
+      const ctr = pts.reduce((s, p) => [s[0] + p[0] / pts.length, s[1] + p[1] / pts.length], [0, 0]);
+      const lab = m.get(k);
+      textH += `<text class="pB-t${lab ? '' : ' num'}${isBad ? ' bad' : ''}" x="${ctr[0].toFixed(3)}" y="${ctr[1].toFixed(3)}" font-size="${(lab ? fs : fs * (T === 'sq' ? 0.78 : 0.86)).toFixed(3)}">${esc(lab || '#' + (num.get(k) + 1))}</text>`;
+    }
+  }
+  const [cr, cc] = pB_st.cur[T], cp = pB_cellPts(T, cr, cc);
+  const cc0 = cp.reduce((s, p) => [s[0] + p[0] / cp.length, s[1] + p[1] / cp.length], [0, 0]);
+  const inset = cp.map((p) => [cc0[0] + (p[0] - cc0[0]) * 0.8, cc0[1] + (p[1] - cc0[1]) * 0.8]);
+  const ip = inset.map((p) => p.map((v) => v.toFixed(4)).join(',')).join(' ');
+  svg.innerHTML = cellsH + textH + `<polygon class="pB-cur2" points="${ip}"/><polygon class="pB-cur" points="${ip}"/>`;
+}
+
+function pB_describeCell(T, r, c) {
+  const k = `${r},${c}`, m = pB_st.cells[T];
+  const shape = T === 'tri' ? (pB_up(r, c) ? ', pointing up' : ', pointing down') : '';
+  if (!m.has(k)) return `Row ${r + 1}, column ${c + 1}${shape}: empty.`;
+  const i = pB_st.list.findIndex(([a, b]) => a === r && b === c), lab = m.get(k);
+  return `Row ${r + 1}, column ${c + 1}${shape}: cell #${i + 1}${lab ? ', labelled ' + lab : ', no label'}.`;
+}
+
+function pB_renderResult() {
+  const res = pB_st.res, names = pB_names(pB_st.list), S = res.S, box = $('pB-res');
+  const li = (cls, ic, head, more) => `<li class="${cls}"><span class="ic" aria-hidden="true">${ic}</span><span><b>${head}</b>${more ? '<br>' + more : ''}</span></li>`;
+  let h = '';
+  const nm = (i) => esc(names[i]);
+  if (res.kind === 'empty') h = li('info', 'i', 'Nothing drawn yet.', pB_st.type === 'sq' ? 'Tap squares to draw a net. Each square is one face.' : 'Tap triangles to draw a net. Each triangle is one face.');
+  else if (res.kind === 'apart') h = li('bad', '!', 'These cells aren’t joined to the rest', `${pB_and(res.apart.map(nm))} ${res.apart.length > 1 ? 'are' : 'is'} cut off. Every face of a net needs a whole edge in common with another face; touching at a corner isn’t enough.`);
+  else if (res.kind === 'clash' || res.kind === 'tear') {
+    if (res.clashes.length) {
+      let more = res.clashes.map((g) => `${pB_and(g.map(nm))} would ${g.length > 2 ? 'all' : 'both'} cover the same face of the ${S.name}.`).join('<br>');
+      if (res.N > S.F) more += `<br>${pB_an(S.name).replace(/^a/, 'A')} has only ${S.F} faces, and this drawing has ${res.N} cells.`;
+      h += li('bad', '!', 'Doesn’t fold: these cells land on the same face', more);
+    }
+    if (res.tears.length) {
+      const more = res.tears.map(([a, b]) => `${nm(a)} and ${nm(b)} share an edge here, but folded up they’d have to sit apart.`).join('<br>');
+      h += li('bad', '!', 'Doesn’t fold: these cells would have to pass through each other', more + '<br>The paper would have to tear or cross itself.');
+    }
+  } else if (res.missing === 0) h = li('ok', '✓', `Folds into ${pB_an(S.name)}`, `All ${S.F} faces, each used once.`);
+  else h = li('ok', '✓', `Folds into an open ${S.name} with ${res.missing} face${res.missing > 1 ? 's' : ''} missing`, `A whole ${S.name} needs ${S.F} faces; this drawing has ${res.N}.`);
+  box.innerHTML = h;
+}
+
+function pB_renderFacts() {
+  const res = pB_st.res, S = res.S, names = pB_names(pB_st.list);
+  const cellOf = new Array(S.F).fill(-1); res.face.forEach((f, i) => { cellOf[f] = i; });
+  const row = (dt, dd, note) => `<div class="frow"><dt>${dt}</dt><dd><span class="fv">${dd}</span><button type="button" class="nplus" data-l="${esc(note[0])}" data-v="${esc(note[1])}" aria-label="Add to notepad: ${esc(note[0])}, ${esc(note[1])}">+</button></dd></div>`;
+  const nmF = (f) => (cellOf[f] >= 0 ? names[cellOf[f]] : 'a missing face');
+  let h = '';
+  const solidName = res.missing ? `open ${S.name}` : S.name;
+  if (S.key === 'tetra') {
+    h = `<p class="help">A tetrahedron has no opposite faces: every face touches every other face along an edge. Each corner is opposite one face instead.</p>`;
+  } else {
+    const done = new Set(), all = [];
+    res.face.forEach((f, i) => {
+      if (done.has(f)) return; const g = S.opp[f]; done.add(f); done.add(g);
+      const pair = `${names[i]} ↔ ${nmF(g)}`; all.push(pair);
+      h += row(`${esc(names[i])} is opposite`, esc(nmF(g)), [`Opposite faces (${solidName})`, pair]);
+    });
+    if (all.length > 1) h += row('All opposite pairs', esc(all.join(', ')), [`Opposite faces (${solidName})`, all.join(', ')]);
+    h = `<p class="help">Opposite faces are parallel and never touch.</p><dl class="flist">${h}</dl>`;
+  }
+  $('pB-opp').innerHTML = h;
+  let nb = '';
+  pB_st.list.forEach((p, i) => {
+    const f = res.face[i], ring = S.adj[f].map(([g]) => g);
+    const known = ring.filter((g) => cellOf[g] >= 0).map((g) => names[cellOf[g]]), miss = ring.length - known.length;
+    const txt = known.concat(miss ? [miss === 1 ? 'a missing face' : `${miss} missing faces`] : []);
+    nb += row(`${esc(names[i])} touches`, esc(txt.join(', ')), [`Neighbours of ${names[i]} (${solidName})`, txt.join(', ')]);
+  });
+  $('pB-nb').innerHTML = nb;
+  // open by default for small nets; only reset that when a drawing is loaded or the count crosses 8, so the solver's choice sticks
+  if (pB_nbN === null || (pB_nbN <= 8) !== (res.N <= 8)) $('pB-nbd').open = res.N <= 8;
+  pB_nbN = res.N;
+}
+
+function pB_draw3d() {
+  const res = pB_st.res;
+  if (!pB_view || !res || res.kind !== 'ok') return;
+  const names = pB_names(pB_st.list);
+  const P = foldNet(pB_net(pB_st.type, pB_st.list, res), pB_st.t);
+  // turn the net over (x, y, z) → (x, −y, −z): the drawing reads the right way round from the starting view,
+  // and the faces fold away from you, so the side you drew on ends up outside
+  pB_view.setFaces(P.map((pts, i) => ({ pts: pts.map(([x, y, z]) => [x, -y, -z]), col: `--fc${(i % 8) + 1}`, label: names[i] })));
+}
+function pB_setT(t) {
+  pB_st.t = t; $('pB-t').value = String(Math.round(t * 100));
+  $('pB-t').setAttribute('aria-valuetext', t >= 1 ? 'folded up' : t <= 0 ? 'flat' : `${Math.round(t * 100)}% folded`);
+  pB_draw3d();
+}
+function pB_stop() { if (pB_anim) cancelAnimationFrame(pB_anim); pB_anim = 0; }
+function pB_play() {
+  pB_stop();
+  if (reducedMotion()) { pB_setT(1); return; }
+  const t0 = performance.now(), dur = 2200;
+  const step = (now) => {
+    const u = Math.min(1, (now - t0) / dur), e = u < 0.5 ? 2 * u * u : 1 - Math.pow(-2 * u + 2, 2) / 2;
+    pB_setT(e); pB_anim = u < 1 ? requestAnimationFrame(step) : 0;
+  };
+  pB_setT(0); pB_anim = requestAnimationFrame(step);
+}
+
+function pB_refresh(o = {}) {
+  const T = pB_st.type;
+  pB_st.list = pB_cellList();
+  pB_st.res = pB_analyse(T, pB_st.list, pB_solidKey());
+  const res = pB_st.res;
+  pB_renderGrid(pB_badSet());
+  pB_renderResult();
+  // grid and solid controls
+  $('pB-sq').setAttribute('aria-pressed', String(T === 'sq')); $('pB-tri').setAttribute('aria-pressed', String(T === 'tri'));
+  const sel = $('pB-solid');
+  if (T === 'sq') { sel.innerHTML = '<option value="cube">Cube</option>'; sel.disabled = true; }
+  else {
+    const auto = { tetra: 'tetrahedron', octa: 'octahedron', icosa: 'icosahedron' }[pB_st.solid === 'auto' ? pB_solidKey() : 'x'];
+    sel.disabled = false;
+    sel.innerHTML = `<option value="auto">Pick by count${auto ? ' (' + auto + ')' : ''}</option><option value="tetra">Tetrahedron (4 faces)</option><option value="octa">Octahedron (8 faces)</option><option value="icosa">Icosahedron (20 faces)</option>`;
+    sel.value = pB_st.solid;
+  }
+  pB_syncLabel();
+  // the folded view
+  const ok = res.kind === 'ok';
+  $('pB-out').hidden = !ok;
+  if (ok) { pB_renderFacts(); pB_draw3d(); } else pB_stop();
+  if (o.edited) { $('pB-preset').value = ''; $('pB-clue').hidden = true; }
+  pB_save();
+}
+
+function pB_syncLabel() {
+  const T = pB_st.type, [r, c] = pB_st.cur[T], k = `${r},${c}`, m = pB_st.cells[T], inp = $('pB-lab');
+  const on = m.has(k), i = pB_st.list.findIndex(([a, b]) => a === r && b === c);
+  inp.disabled = !on;
+  if (document.activeElement !== inp) inp.value = on ? m.get(k) : '';
+  $('pB-labt').textContent = on ? `Label for cell #${i + 1}` : 'Label (pick a drawn cell first)';
+}
+
+function pB_toggle(r, c) {
+  const m = pB_st.cells[pB_st.type], k = `${r},${c}`;
+  if (m.has(k)) m.delete(k); else m.set(k, '');
+  pB_refresh({ edited: true });
+}
+function pB_say(msg) { $('pB-live').textContent = msg; }
+/* the result as one sentence for the announcement: each item's heading, then its detail, without the icon */
+function pB_resText() {
+  return [...$('pB-res').children].map((li) => {
+    const parts = ['']; li.querySelector('span:not(.ic)').childNodes.forEach((n) => { if (n.nodeName === 'BR') parts.push(''); else parts[parts.length - 1] += n.textContent; });
+    const [head, ...more] = parts.map((t) => t.trim()).filter(Boolean);
+    return [head.replace(/([^.!?])$/, '$1.')].concat(more).join(' ');
+  }).join(' ');
+}
+
+function pB_loadCells(type, cells, labelled) {
+  pB_stop();
+  pB_st.type = type; pB_st.solid = 'auto';
+  const placed = pB_place(type, cells.map((p) => [p[0], p[1]])), m = new Map();
+  placed.forEach(([r, c], i) => m.set(`${r},${c}`, labelled ? pB_clean(cells[i][2]) : ''));
+  pB_st.cells[type] = m;
+  pB_st.cur[type] = placed[0];
+  pB_nbN = null;
+}
+
+function partB_example() {
+  pB_loadCells('sq', pB_EXAMPLE.cells, true);
+  pB_refresh({ edited: true });
+  $('pB-clue').textContent = pB_EXAMPLE.clue; $('pB-clue').hidden = false;
+  $('partB').scrollIntoView({ behavior: reducedMotion() ? 'auto' : 'smooth', block: 'start' });
+  pB_play();
+}
+
+function partB_init() {
+  pB_load();
+  // presets
+  const P = pB_presets(); let opts = '<option value="">Choose a net…</option>', grp = '';
+  P.forEach((p) => { if (p.group !== grp) { opts += (grp ? '</optgroup>' : '') + `<optgroup label="${esc(p.group)}">`; grp = p.group; } opts += `<option value="${p.id}">${esc(p.name)}</option>`; });
+  $('pB-preset').innerHTML = opts + '</optgroup>';
+  $('pB-preset').addEventListener('change', (e) => {
+    const p = P.find((q) => q.id === e.target.value); if (!p) return;
+    pB_loadCells(p.type, p.cells, false); pB_refresh(); $('pB-clue').hidden = true;
+    pB_say(`${p.name} loaded.`);
+  });
+  pB_view = makeFoldView($('pB-cv'), $('pB-ov'));
+  if (!pB_view.ok) { $('pB-nogl').hidden = false; $('pB-cv').hidden = true; }
+  // grid type, target solid, tap mode
+  const setType = (t) => { if (pB_st.type === t) return; pB_stop(); pB_st.type = t; pB_refresh(); $('pB-preset').value = ''; $('pB-clue').hidden = true; };
+  $('pB-sq').addEventListener('click', () => setType('sq'));
+  $('pB-tri').addEventListener('click', () => setType('tri'));
+  $('pB-solid').addEventListener('change', (e) => { pB_st.solid = e.target.value; pB_refresh(); });
+  const setMode = (md) => { pB_st.mode = md; $('pB-mdraw').setAttribute('aria-pressed', String(md === 'draw')); $('pB-mlab').setAttribute('aria-pressed', String(md === 'label')); pB_refresh(); };
+  $('pB-mdraw').addEventListener('click', () => setMode('draw'));
+  $('pB-mlab').addEventListener('click', () => setMode('label'));
+  // tapping the grid
+  const svg = $('pB-svg');
+  svg.addEventListener('click', (e) => {
+    const g = e.target.closest('[data-r]'); if (!g) return;
+    const r = +g.dataset.r, c = +g.dataset.c, T = pB_st.type, k = `${r},${c}`;
+    pB_st.cur[T] = [r, c];
+    if (pB_st.mode === 'label') {
+      if (!pB_st.cells[T].has(k)) { pB_st.cells[T].set(k, ''); pB_refresh({ edited: true }); } else pB_refresh();
+      $('pB-lab').focus(); $('pB-lab').select();
+    } else { pB_toggle(r, c); pB_say(pB_resText()); } // tapping announces the result too, not only the keyboard
+  });
+  // (focus must not redraw the grid: a click that focuses it would lose its target)
+  svg.addEventListener('focus', () => { const [r, c] = pB_st.cur[pB_st.type]; pB_say(pB_describeCell(pB_st.type, r, c)); });
+  svg.addEventListener('keydown', (e) => {
+    if (e.ctrlKey || e.metaKey || e.altKey) return;
+    const T = pB_st.type, D = pB_DIM[T], m = pB_st.cells[T]; let [r, c] = pB_st.cur[T]; const k = `${r},${c}`;
+    const mv = { ArrowUp: [-1, 0], ArrowDown: [1, 0], ArrowLeft: [0, -1], ArrowRight: [0, 1] }[e.key];
+    if (mv) {
+      e.preventDefault();
+      r = Math.max(0, Math.min(D.rows - 1, r + mv[0])); c = Math.max(0, Math.min(D.cols - 1, c + mv[1]));
+      pB_st.cur[T] = [r, c]; pB_renderGrid(pB_badSet()); pB_syncLabel(); pB_say(pB_describeCell(T, r, c));
+      return;
+    }
+    if (e.key === ' ' || e.key === 'Enter') { e.preventDefault(); pB_toggle(r, c); pB_say(pB_describeCell(T, r, c) + ' ' + pB_resText()); return; }
+    if (e.key === 'Backspace' || e.key === 'Delete') {
+      if (!m.has(k)) return; e.preventDefault();
+      m.set(k, e.key === 'Delete' ? '' : [...m.get(k)].slice(0, -1).join('')); pB_refresh(); pB_say(pB_describeCell(T, r, c));
+      return;
+    }
+    if (e.key.length === 1 && /[\p{L}\p{N}]/u.test(e.key)) {
+      e.preventDefault();
+      const was = m.has(k), lab = was ? m.get(k) : '';
+      if ([...lab].length >= 3) { pB_say('Labels are up to 3 characters. Press Backspace to change it.'); return; }
+      m.set(k, lab + e.key); pB_refresh({ edited: !was }); pB_say(pB_describeCell(T, r, c));
+    }
+  });
+  // the label box
+  $('pB-lab').addEventListener('input', (e) => {
+    const T = pB_st.type, [r, c] = pB_st.cur[T], k = `${r},${c}`;
+    if (!pB_st.cells[T].has(k)) return;
+    const v = pB_clean(e.target.value); if (v !== e.target.value) e.target.value = v;
+    pB_st.cells[T].set(k, v); pB_refresh();
+  });
+  $('pB-lab').addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); svg.focus(); } });
+  $('pB-unlabel').addEventListener('click', () => { const m = pB_st.cells[pB_st.type]; m.forEach((v, k) => m.set(k, '')); pB_refresh(); pB_say('Labels cleared.'); });
+  $('pB-clear').addEventListener('click', () => { pB_st.cells[pB_st.type] = new Map(); pB_refresh({ edited: true }); pB_say('Grid cleared.'); });
+  // fold controls and notes
+  $('pB-t').addEventListener('input', (e) => { pB_stop(); pB_setT(+e.target.value / 100); });
+  $('pB-play').addEventListener('click', pB_play);
+  $('pB-reset').addEventListener('click', () => pB_view && pB_view.reset());
+  $('pB-out').addEventListener('click', (e) => { const b = e.target.closest('.nplus'); if (b) addNote(b.dataset.l, b.dataset.v); });
+  pB_refresh();
+  pB_setT(1);
+}
+function pB_badSet() {
+  const res = pB_st.res, bad = new Set(); if (!res) return bad;
+  if (res.kind === 'apart') res.apart.forEach((i) => bad.add(i));
+  if (res.kind === 'clash' || res.kind === 'tear') { res.clashes.forEach((g) => g.forEach((i) => bad.add(i))); res.tears.forEach((p) => p.forEach((i) => bad.add(i))); }
+  return bad;
+}
+
+/* ---------- Part C model: a physical hexaflexagon, worked out from the folded paper ----------
+   Points live on the triangle lattice: [a, b] means a·(1, 0) + b·(½, √3⁄2), so every corner is a pair of whole numbers
+   and every fold (a reflection in a lattice line) is exact.
+   The strip: corners P0, P1, P2, … zig-zag along the bottom (even) and top (odd) edges; triangle i has corners
+   Pi, Pi+1, Pi+2, and triangles i and i+1 are hinged along the edge Pi+1–Pi+2. Once glued into a ring of N triangles,
+   corner labels are taken mod N.
+   A flat state: every triangle (a "leaf") has the lattice positions of its three corners, and the hexagon's six sectors
+   each hold a stack of leaves, listed bottom to top. The hexagon is centred on [0, 0] with corners C[k] at 60k degrees,
+   and sector k is the triangle centre, C[k], C[k+1]. */
+const pC_R3 = Math.sqrt(3) / 2;
+const pC_C = [[1, 0], [0, 1], [-1, 1], [-1, 0], [0, -1], [1, -1]];
+const pC_cart = (p) => [p[0] + p[1] / 2, p[1] * pC_R3];
+const pC_latt = (x, y) => { const b = Math.round(y / pC_R3); return [Math.round(x - b / 2), b]; };
+const pC_eq = (p, q) => p[0] === q[0] && p[1] === q[1];
+const pC_key = (p) => p[0] + ',' + p[1];
+const pC_mod = (a, n) => ((a % n) + n) % n;
+function pC_refl(p, a, b) { // mirror lattice point p in the line through lattice points a and b
+  const [px, py] = pC_cart(p), [ax, ay] = pC_cart(a), [bx, by] = pC_cart(b);
+  const dx = bx - ax, dy = by - ay, t = ((px - ax) * dx + (py - ay) * dy) / (dx * dx + dy * dy);
+  return pC_latt(2 * (ax + t * dx) - px, 2 * (ay + t * dy) - py);
+}
+const pC_rot60 = (p) => [-p[1], p[0] + p[1]]; // a turn of +60° about the centre
+const pC_flipX = (p) => [-p[0] - p[1], p[1]]; // mirror in the vertical line through the centre (turning it over)
+const pC_crossZ = (p, q, r) => { const [ax, ay] = pC_cart(p), [bx, by] = pC_cart(q), [cx, cy] = pC_cart(r); return (bx - ax) * (cy - ay) - (by - ay) * (cx - ax); };
+const pC_stripPt = (j) => [Math.floor(j / 2), j % 2]; // Pj in the flat strip
+const pC_leafLabels = (i, N) => [i, i + 1, i + 2].map((j) => pC_mod(j, N));
+/* front side up? The strip's triangle i (Pi, Pi+1, Pi+2) runs clockwise seen from the front when i is even. */
+function pC_frontUp(leaf, i, N) {
+  const [x, y, z] = pC_leafLabels(i, N);
+  const s = pC_crossZ(leaf[x], leaf[y], leaf[z]) > 0 ? 1 : -1; // +1 anticlockwise seen from above
+  return (i % 2 === 0) ? s < 0 : s > 0;
+}
+function pC_sectorOf(leaf, labels) {
+  const pts = labels.map((l) => leaf[l]);
+  const ci = pts.findIndex((p) => p[0] === 0 && p[1] === 0);
+  if (ci < 0) return -1;
+  const ks = pts.filter((_, i) => i !== ci).map((p) => pC_C.findIndex((c) => pC_eq(c, p)));
+  if (ks.some((k) => k < 0)) return -1;
+  const [u, v] = ks;
+  if (pC_mod(v - u, 6) === 1) return u;
+  if (pC_mod(u - v, 6) === 1) return v;
+  return -1;
+}
+const pC_cloneLeaves = (L) => L.map((lf) => { const o = {}; for (const k in lf) o[k] = lf[k].slice(); return o; });
+
+/* ---- checking a flat state: every leaf once, in its own sector, hinges intact, nothing passing through anything ---- */
+/* edgeOf: which edge of a sector triangle (centre o, corners p, q) a hinge lies on: 'r0' (o–p), 'r1' (o–q) or 'out' (p–q) */
+function pC_edgeName(a, b, o, p, q) {
+  const has = (x) => pC_eq(a, x) || pC_eq(b, x);
+  if (has(o) && has(p)) return 'r0';
+  if (has(o) && has(q)) return 'r1';
+  if (has(p) && has(q)) return 'out';
+  return null;
+}
+/* Layers on one edge of one stack: folds (both leaves in the stack) are intervals of layer numbers; a hinge leaving the
+   stack is a single layer. Folds on the same edge must nest or be apart, never cross; no fold may wrap around a hinge
+   that leaves the stack there. */
+function pC_edgeOK(folds, exits) {
+  for (let i = 0; i < folds.length; i++) {
+    const [a, b] = folds[i];
+    for (let j = i + 1; j < folds.length; j++) { const [c, d] = folds[j]; if ((a < c && c < b && b < d) || (c < a && a < d && d < b)) return false; }
+    for (const x of exits) if (a < x && x < b) return false;
+  }
+  return true;
+}
+/* stackOK(region, ids, leaves, N): region = [centre, p, q] lattice points of the stack's triangle */
+function pC_stackOK(region, ids, leaves, N) {
+  const [o, p, q] = region, pos = new Map(ids.map((id, k) => [id, k]));
+  const E = { r0: { f: [], x: [] }, r1: { f: [], x: [] }, out: { f: [], x: [] } };
+  for (const i of ids) {
+    for (const nb of [pC_mod(i + 1, N), pC_mod(i - 1, N)]) {
+      const lab = nb === pC_mod(i + 1, N) ? [pC_mod(i + 1, N), pC_mod(i + 2, N)] : [i, pC_mod(i + 1, N)];
+      const en = pC_edgeName(leaves[i][lab[0]], leaves[i][lab[1]], o, p, q);
+      if (!en) return { ok: false, why: `hinge ${i}/${nb} is not on an edge of its sector` };
+      if (pos.has(nb)) { if (nb === pC_mod(i + 1, N)) E[en].f.push([Math.min(pos.get(i), pos.get(nb)), Math.max(pos.get(i), pos.get(nb))]); }
+      else E[en].x.push(pos.get(i));
+    }
+  }
+  for (const en in E) if (!pC_edgeOK(E[en].f, E[en].x)) return { ok: false, why: `layers cross on an edge (${en})` };
+  return { ok: true };
+}
+function pC_check(st) {
+  const { N, leaves, stacks } = st, seen = new Array(N).fill(0), where = new Array(N).fill(-1), probs = [];
+  stacks.forEach((s, k) => s.forEach((i) => { seen[i]++; where[i] = k; }));
+  seen.forEach((c, i) => { if (c !== 1) probs.push(`triangle ${i} appears ${c} times`); });
+  if (probs.length) return probs;
+  for (let i = 0; i < N; i++) {
+    const k = pC_sectorOf(leaves[i], pC_leafLabels(i, N));
+    if (k !== where[i]) probs.push(`triangle ${i} is not in sector ${where[i]}`);
+  }
+  const flatOn = new Array(6).fill(0);
+  for (let i = 0; i < N; i++) {
+    const j = pC_mod(i + 1, N), u = pC_mod(i + 1, N), w = pC_mod(i + 2, N);
+    if (!pC_eq(leaves[i][u], leaves[j][u]) || !pC_eq(leaves[i][w], leaves[j][w])) { probs.push(`hinge ${i}/${j} is torn`); continue; }
+    const a = where[i], b = where[j];
+    if (a === b) continue; // a fold inside one stack
+    const ti = leaves[i][i], tj = leaves[j][pC_mod(i + 3, N)];
+    if (pC_mod(b - a, 6) === 1) flatOn[b]++; else if (pC_mod(a - b, 6) === 1) flatOn[a]++; else probs.push(`hinge ${i}/${j} joins sectors ${a} and ${b}`);
+    if (pC_eq(ti, tj)) probs.push(`hinge ${i}/${j} flat but triangles overlap`);
+  }
+  flatOn.forEach((c, k) => { if (c !== 1) probs.push(`${c} flat hinges cross radius ${k}`); });
+  stacks.forEach((s, k) => { const r = pC_stackOK([[0, 0], pC_C[k], pC_C[(k + 1) % 6]], s, leaves, N); if (!r.ok) probs.push(`sector ${k}: ${r.why}`); });
+  return probs;
+}
+
+/* ---- the pinch flex, done the way hands do it ----
+   e chooses which three alternate corners (C[e], C[e+2], C[e+4]) meet in the middle afterwards. Pinching from the front
+   folds the hexagon back along the three other radii (C[e+1], C[e+3], C[e+5]) so each pair of sectors e+2j, e+2j+1
+   closes back to back into a "wing" (the three-pointed star). Each wing must then open out along its outer edge
+   (C[e+2j]–C[e+2j+1]): the wing's layers split into a lower part P and an upper part Q joined only by hinges on that
+   edge, and Q swings over to lie beside P. The three opened wings make the new hexagon round the old corners. */
+function pC_flex(st, e) {
+  const { N } = st, leaves = pC_cloneLeaves(st.leaves), wingOf = new Array(N).fill(-1), wings = [];
+  for (let j = 0; j < 3; j++) {
+    const a = (e + 2 * j) % 6, b = (a + 1) % 6;
+    st.stacks[b].forEach((i) => { for (const l in leaves[i]) leaves[i][l] = pC_refl(leaves[i][l], [0, 0], pC_C[b]); });
+    const L = st.stacks[b].slice().reverse().concat(st.stacks[a]);
+    L.forEach((i) => { wingOf[i] = j; });
+    wings.push({ a, b, L });
+  }
+  for (const w of wings) { // the star: each wing is a flat stack in sector a
+    const r = pC_stackOK([[0, 0], pC_C[w.a], pC_C[w.b]], w.L, leaves, N);
+    if (!r.ok) return { ok: false, why: 'pinch: ' + r.why };
+  }
+  const cands = [];
+  for (const w of wings) {
+    const out = [pC_C[w.a], pC_C[w.b]], n = w.L.length, good = [];
+    for (let m = 1; m < n; m++) {
+      const P = new Set(w.L.slice(0, m)); let ok = true, nOut = 0;
+      for (const x of w.L) {
+        const y = pC_mod(x + 1, N);
+        if (wingOf[y] !== wingOf[x] || P.has(x) === P.has(y)) continue;
+        const onOut = pC_edgeName(leaves[x][y], leaves[x][pC_mod(x + 2, N)], [0, 0], out[0], out[1]) === 'out';

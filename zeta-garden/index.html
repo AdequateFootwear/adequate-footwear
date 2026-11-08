@@ -1045,13 +1045,19 @@ function emZeta(sr, th, tl, tol, dd, sm1) { // sm1: Re(s) − 1 when known more 
 
 /* ---- zeta(s) for any complex s ----
    returns {re, im} or, when the value is beyond double range, {lnAbs, arg}; {pole: true} at s = 1;
-   fe: true marks a value worked out with the functional equation.
+   fe: true marks a value worked out with the functional equation, nearPole: true one taken from 1/(s − 1).
    sm1, if given, is Re(s) − 1 worked out more closely than sr − 1 can be (for s typed next to the pole). */
 function zeta(sr, si, tol, sm1) {
   tol = tol || 1e-15;
   if (sm1 !== undefined && !(Math.abs(sr - 1) < 1e-3)) sm1 = undefined;
   if (si === 0 && (sm1 === undefined ? sr === 1 : sm1 === 0)) return { pole: true };
   if (si === 0 && sr < 0 && sr === Math.round(sr) && sr % 2 === 0) return { re: 0, im: 0, trivial: true };
+  // so close to the pole that 1/(s − 1) is beyond double range (|s − 1| below 2⁻¹⁰²²): there ζ(s) = 1/(s − 1) + γ + O(s − 1),
+  // and γ is under 10⁻³⁰⁷ of the whole, so log|ζ| = −ln|s − 1| and arg ζ = −arg(s − 1), from the retained distance
+  const d1 = sm1 === undefined ? sr - 1 : sm1;
+  if (Math.hypot(d1, si) < 2.2250738585072014e-308) {
+    return { lnAbs: -Math.log(Math.hypot(d1, si)), arg: si === 0 ? (d1 < 0 ? Math.PI : 0) : Math.atan2(-si, d1), nearPole: true };
+  }
   const dd = Math.abs(si) > 200 && tol < 1e-10;
   // Euler-Maclaurin directly: also just left of 0, where 1 − s would sit next to the pole and lose digits,
   // and a little left of 0 when high up (there it beats the functional equation, down to Re(s) = −30;
@@ -1967,9 +1973,19 @@ function drawDcCursor() {
   el('circle', { cx: x, cy: y, r: 7, fill: 'none', stroke: '#000', 'stroke-width': 3 }, DC.curG);
   el('circle', { cx: x, cy: y, r: 7, fill: 'none', stroke: '#fff', 'stroke-width': 1.5 }, DC.curG);
 }
-function fmtZetaVal(v, sig, eabs) {
+function fmtZetaVal(v, sig, eabs, angErr) { // angErr: the angle's error in degrees, when it is more than rounding
   if (v.pole) return 'no value (the pole)';
-  if (v.lnAbs !== undefined) { const l10 = v.lnAbs / Math.LN10, e = Math.floor(l10); return `about ${fmtSig(Math.pow(10, l10 - e), sig)} × 10${sup(e)} in size, at angle ${fmtSig(v.arg * 180 / Math.PI, 6)}°`; }
+  if (v.lnAbs !== undefined) {
+    const l10 = v.lnAbs / Math.LN10; let e = Math.floor(l10), m = Math.pow(10, l10 - e);
+    if (+m.toPrecision(sig) >= 10) { m /= 10; e++; } // 9.99… that rounds up to 10 is 1 × the next power
+    const deg = v.arg * 180 / Math.PI;
+    let ang = `${fmtSig(deg, 6)}°`;
+    if (angErr) { // only the angle's digits above its error, or how far off it may be when not even one is good
+      const dp = Math.floor(-Math.log10(2 * angErr)), q = Math.pow(10, Math.min(dp, 15));
+      ang = dp >= 0 ? `${fmtSig(Math.round(deg * q) / q, 6)}°` : `within ${Math.ceil(angErr)}° of ${fmtSig(Math.round(deg), 3)}°`;
+    }
+    return `about ${fmtSig(m, sig)} × 10${sup(e)} in size, at angle ${ang}`;
+  }
   return eabs ? fmtCA(v.re, v.im, sig, eabs) : fmtC(v.re, v.im, sig);
 }
 let dcRaf = 0;
@@ -2041,8 +2057,24 @@ function calc() {
     // digits we stand behind: the functional equation loses a few far out in the left half-plane,
     // and summing directly left of 0 loses more the further left it goes (its terms outgrow ζ)
     const leftFar = !!v.fe, emGrow = a < 0 && !leftFar ? Math.pow(1.25, -a) : 1;
-    const rel = leftFar ? 2e-16 * (Math.hypot(1 - a, b) * Math.log(Math.hypot(1 - a, b) + 2) + 20) : 3e-15 * emGrow;
-    let sig = Math.max(8, Math.min(15, Math.floor(-Math.log10(2 * rel))));
+    // and right by the pole the value is 1/(s − 1) carried as its logarithm: that logarithm's rounding,
+    // plus |s − 1| itself, whose parts are doubles that far down only to within about 2.5 × 10⁻³²⁴ each
+    // (a part typed as exactly 0, or Re(s) as exactly 1, is exact): rR and rP are the errors of s − 1
+    // along it and across it, as fractions of |s − 1|, which move the size and the angle
+    let np = null;
+    if (v.nearPole) {
+      const sm1 = minusOne($('cz-re').value), dRe = sm1 === undefined ? a - 1 : sm1, d = Math.hypot(dRe, b), th = Math.atan2(b, dRe);
+      const exRe = dRe === 0 && /^\+?0*1([.,]0*)?$/.test($('cz-re').value.replace(/[\s  _']/g, ''));
+      const exIm = b === 0 && !/[1-9]/.test($('cz-im').value);
+      const part = (p, ex) => ex ? 0 : Number.MIN_VALUE / d / 2 + 4.4e-16 * Math.abs(p) / d;
+      const eRe = part(dRe, exRe), eIm = part(b, exIm), r = eRe + eIm;
+      const rR = eRe * Math.abs(Math.cos(th)) + eIm * Math.abs(Math.sin(th)), rP = eRe * Math.abs(Math.sin(th)) + eIm * Math.abs(Math.cos(th));
+      np = { d, r, rel: r < 1 ? rR / (1 - r) : Infinity, ang: r < 1 ? Math.asin(Math.min(1, rP / (1 - r))) * 180 / Math.PI : 180 };
+    }
+    const rel = np ? 4.4e-16 * v.lnAbs + np.rel
+      : leftFar ? 2e-16 * (Math.hypot(1 - a, b) * Math.log(Math.hypot(1 - a, b) + 2) + 20) : 3e-15 * emGrow;
+    // (right by the pole, as few as the distance leaves, down to none)
+    let sig = np ? Math.min(15, Math.floor(-Math.log10(2 * rel))) : Math.max(8, Math.min(15, Math.floor(-Math.log10(2 * rel))));
     // next to the pole, Re(s) − 1 typed as a fraction is only as good as the double it rounds to
     const near = Math.abs(a - 1) < 1e-3 && a !== 1 && minusOne($('cz-re').value) === undefined;
     if (near) sig = Math.max(1, Math.min(sig, Math.floor(-Math.log10(2.2e-16 / Math.abs(a - 1)))));
@@ -2050,9 +2082,13 @@ function calc() {
     // or a fraction of |ζ| to the left of 0 (the whole value's rel, which either part's error can reach there),
     // so a part much smaller than the whole isn't shown to full length
     const mz = big || v.pole ? 0 : Math.hypot(v.re, v.im), efloor = leftFar ? 0 : 4e-15;
-    const eabs = leftFar ? rel * mz : efloor + (a < 0 ? rel : 4e-16) * mz, txt = fmtZetaVal(v, sig, eabs);
+    const eabs = leftFar ? rel * mz : efloor + (a < 0 ? rel : 4e-16) * mz;
+    // not even one digit right by the pole: only a size it is sure to pass, from the farthest s − 1 could be
+    const tooNear = np && sig < 1, txt = tooNear ? `more than 10${sup(Math.floor(v.lnAbs / Math.LN10 - Math.log10(1 + np.r)))} in size`
+      : fmtZetaVal(v, sig, eabs, np ? np.ang : 0);
     html += `<div class="zg-val"><span class="lbl">ζ(${esc(sStr)})</span><output>${esc(v.trivial ? '0 exactly' : txt)}</output>${big || v.trivial ? '' : `<button type="button" class="btn small" data-copy="${esc(txt)}">Copy</button>`}</div>`;
     html += '<ul class="zg-facts">';
+    if (tooNear) html += `<li>Here |<var>s</var> − 1| is only about ${esc(fmtSig(np.d, 1))}, and this far down each part of <var>s</var> is held only to within about 2.5 × 10⁻³²⁴, so not even the first digit of ζ(<var>s</var>) ≈ 1/(<var>s</var> − 1), or its angle, can be stood behind.</li>`;
     if (v.trivial) html += `<li>${esc(neg(String(a)))} is a negative even number, so this is one of the trivial zeros.</li>`;
     else if (!big) {
       const m = Math.hypot(v.re, v.im);

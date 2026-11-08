@@ -1352,9 +1352,9 @@ function convOut() {
   const t = $('h-conv').value.trim();
   const hs = (t.toUpperCase().match(/[NSEW]/g) || []);
   // here an E is always east, so numbers are read without exponents; a point straight after a number (as when
-  // "48.85,2.35" becomes "48.85.2.35") ends that number rather than starting the next one as ".2", and a point
-  // straight after a letter (N.12, lat.12.5) is an abbreviation's, not the start of a number
-  const nums = (minusFix(t).replace(/(\p{L})\.(?=\d)/gu, '$1 ').replace(/(\d),(\d)/g, '$1.$2').match(/-?(?:\d+(?:\.\d+)?\.?|\.\d+)/g) || []).map((x) => parseFloat(x));
+  // "48.85,2.35" or ".5,2.35" becomes "48.85.2.35" or ".5.2.35") ends that number rather than starting the next
+  // one as ".2", and a point straight after a letter (N.12, lat.12.5) is an abbreviation's, not the start of a number
+  const nums = (minusFix(t).replace(/(\p{L})\.(?=\d)/gu, '$1 ').replace(/(\d),(\d)/g, '$1.$2').match(/-?(?:\d+(?:\.\d+)?|\.\d+)\.?/g) || []).map((x) => parseFloat(x));
   let lat = null, lon = null;
   if (nums.length === 2) [lat, lon] = nums;
   const sg = (x) => (x < 0 || Object.is(x, -0) ? -1 : 1);

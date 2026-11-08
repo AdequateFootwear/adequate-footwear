@@ -465,6 +465,7 @@ ul.plist button[aria-current]{background:var(--accent-soft);box-shadow:inset 4px
 @media (max-width:700px){.viewer{grid-template-columns:minmax(0,1fr)}}
 .stage{position:relative;aspect-ratio:1/1;width:100%;border:1px solid var(--line);border-radius:12px;background:radial-gradient(circle at 50% 40%,var(--surface) 0%,var(--surface-2) 78%);overflow:hidden}
 #cv{width:100%;height:100%;display:block;touch-action:none;cursor:grab}
+#cv[hidden]{display:none}
 #cv:active{cursor:grabbing}
 #cv:focus-visible{outline:3px solid var(--focus);outline-offset:-3px}
 .nogl{padding:16px;color:var(--muted)}
@@ -519,6 +520,8 @@ ul.notes li{display:grid;grid-template-columns:minmax(0,1fr) auto auto;gap:8px;a
 .nv{font-family:"IBM Plex Mono",monospace;font-size:14.5px;border:1px solid var(--line-strong);border-radius:6px;background:var(--surface-2);color:var(--ink);padding:3px 8px;cursor:pointer;max-width:12em;overflow-wrap:anywhere;text-align:left}
 .ndel{border:0;background:none;color:var(--muted);font-size:20px;line-height:1;cursor:pointer;padding:4px 8px}
 .ndel:hover{color:var(--error)}
+textarea.ncopy{display:block;width:100%;border:1px solid var(--line-strong);border-radius:6px;background:var(--surface);padding:7px 9px;font-family:"IBM Plex Mono",monospace;font-size:14.5px;color:var(--ink);resize:vertical}
+textarea.ncopy[hidden]{display:none}
 .nadd{display:flex;flex-wrap:wrap;gap:8px;margin:10px 0}
 .nadd .coordin{flex:1 1 10em;width:auto}
 .helper{border-top:1px solid var(--line);padding:10px 0}
@@ -585,7 +588,7 @@ input.hin.wide{width:min(100%,18em)}
   </section>
 
   <section class="panel" id="look" aria-labelledby="h-look">
-    <div class="panel-head"><span class="step">2</span><h2 id="h-look"><span id="sname">Pick a polychoron</span></h2></div>
+    <div class="panel-head"><span class="step">2</span><h2 id="h-look" tabindex="-1"><span id="sname">Pick a polychoron</span></h2></div>
     <div class="viewer">
       <div class="stage-wrap">
         <div class="stage" id="stage">
@@ -646,6 +649,7 @@ input.hin.wide{width:min(100%,18em)}
       <button type="button" class="btn quiet" id="n-add">Add</button>
     </div>
     <div class="btnrow"><button type="button" class="btn quiet" id="n-copy">Copy all</button><button type="button" class="btn quiet" id="n-clear">Clear the notepad</button><span class="muted" id="n-msg" aria-live="polite"></span></div>
+    <textarea id="n-copybox" class="ncopy" rows="4" readonly hidden aria-label="Text to copy, selected for copying by hand"></textarea>
 
     <h3>Quick coordinate helpers</h3>
     <div class="helper">
@@ -776,7 +780,16 @@ function renderList() {
   $('count').textContent = hits.length ? (filtered ? `${hits.length} ${hits.length === 1 ? 'polychoron fits' : 'polychora fit'}.` : `${hits.length} polychora.`) : 'Nothing fits. Try fewer filters, or check the numbers.';
   $('plist').innerHTML = hits.map((s) => `<li><button type="button" data-id="${esc(s.id)}"${current && current.id === s.id ? ' aria-current="true"' : ''}><span class="pn">${esc(s.name)}</span><span class="pm">${esc(listMeta(s))}</span></button></li>`).join('');
 }
-$('plist').addEventListener('click', (e) => { const b = e.target.closest('button[data-id]'); if (b) select(byId.get(b.dataset.id), true); });
+// select() rebuilds the list and the facts, so the button that had focus is gone: keep keyboard users with the page by
+// following the scroll to the viewer, or (with no viewer) to the heading that names the shape
+function openFrom(b, id) {
+  const had = document.activeElement === b;
+  select(byId.get(id), true);
+  if (!had) return;
+  const again = cv.hidden ? $('h-look') : cv;
+  if (again) again.focus({ preventScroll: true });
+}
+$('plist').addEventListener('click', (e) => { const b = e.target.closest('button[data-id]'); if (b) openFrom(b, b.dataset.id); });
 $('q').addEventListener('input', renderList);
 document.querySelectorAll('#filters input, #filters select').forEach((el) => el.addEventListener(el.tagName === 'SELECT' ? 'change' : 'input', renderList));
 function setFam(f) {
@@ -902,7 +915,7 @@ function renderFacts() {
   html += '</dl>';
   $('factbox').innerHTML = html.replace(/<dl class="flist"><\/dl>/g, '');
   $('factbox').onclick = (e) => {
-    const o = e.target.closest('[data-open]'); if (o) { select(byId.get(o.dataset.open), true); return; }
+    const o = e.target.closest('[data-open]'); if (o) { openFrom(o, o.dataset.open); return; }
     const b = e.target.closest('.nplus'); if (!b) return;
     const r = rows[+b.dataset.i];
     addNote(`${s.name} · ${r.k}`, r.note);
@@ -988,8 +1001,9 @@ function initGL() {
   try { gl = cv.getContext('webgl', { antialias: true, alpha: true, premultipliedAlpha: true }) || cv.getContext('experimental-webgl'); } catch (e) { gl = null; }
   if (!gl || !setupGL()) { gl = null; $('nogl').hidden = false; cv.hidden = true; document.querySelectorAll('#look .vctl, #look .wkey').forEach((x) => { x.hidden = true; }); return; }
   // Phones can drop the graphics context (a backgrounded tab, a GPU reset). Ask for it back, and rebuild when it returns.
-  cv.addEventListener('webglcontextlost', (e) => { e.preventDefault(); setSpin(false); });
-  cv.addEventListener('webglcontextrestored', () => { if (setupGL()) { buildMesh(); if (!reduceMotion()) setSpin(true); } });
+  // Spinning stops while the context is gone; whether it should spin (the solver's choice) is kept and honoured on return.
+  cv.addEventListener('webglcontextlost', (e) => { e.preventDefault(); ctxLost = true; cancelAnimationFrame(raf); });
+  cv.addEventListener('webglcontextrestored', () => { ctxLost = false; if (setupGL()) { buildMesh(); setSpin(spin); } });
 }
 /* each edge is 4 vertices (pa = this end, pb = the other end, sd = which side), drawn as two triangles */
 const bigIdx = (nQuads) => nQuads * 4 > 65535 && !!idxExt;
@@ -1165,14 +1179,14 @@ cv.addEventListener('keydown', (e) => {
   } else quat = qmul(qaxis([m[0], m[1], 0], Math.PI / 18), quat);
   if (!spin) draw();
 });
-let raf = 0, frames = 0;
+let raf = 0, frames = 0, ctxLost = false;
 function tick() {
-  if (!spin) return;
+  if (!spin || ctxLost) return;
   base4 = mul4(plane4(0, 3, 0.006), mul4(plane4(1, 2, 0.006), base4));
   if (++frames % 120 === 0) base4 = orthonormalize(base4);
   draw(); raf = requestAnimationFrame(tick);
 }
-function setSpin(on) { spin = on && !!gl; $('v-spin').setAttribute('aria-pressed', String(spin)); cancelAnimationFrame(raf); if (spin) raf = requestAnimationFrame(tick); }
+function setSpin(on) { spin = on && !!gl; $('v-spin').setAttribute('aria-pressed', String(spin)); cancelAnimationFrame(raf); if (spin && !ctxLost) raf = requestAnimationFrame(tick); }
 $('v-spin').addEventListener('click', () => setSpin(!spin));
 function resetView() {
   quat = qmul(qaxis([1, 0, 0], 0.35), qaxis([0, 1, 0], 0.45)); base4 = ident4();
@@ -1201,31 +1215,59 @@ function select(s, scroll) {
 
 /* ---------- notepad (shared by the Polytopes tools) ---------- */
 const NKEY = 'aft.polytopes.notes';
-let notes = [];
-try { notes = JSON.parse(localStorage.getItem(NKEY) || '[]'); if (!Array.isArray(notes)) notes = []; } catch (e) { notes = []; }
-const saveNotes = () => { try { localStorage.setItem(NKEY, JSON.stringify(notes)); } catch (e) { /* storage unavailable */ } };
-function flash(msg) { $('n-msg').textContent = msg; clearTimeout(flash.t); flash.t = setTimeout(() => { $('n-msg').textContent = ''; }, 2500); }
-function addNote(label, value) { notes.push({ label: String(label).slice(0, 200), value: String(value).slice(0, 10000) }); saveNotes(); renderNotes(); flash('Added to the notepad.'); }
-function renderNotes() {
+// Every open Polytopes tool shares these notes, so each change starts from what is stored now (another tab may have
+// changed it), and a change made elsewhere redraws this page's list. If saving ever fails, this page's copy is the
+// only one, so it stops re-reading until a save works again.
+let notes = [], shown = [], notesSaved = true; // shown: the list as drawn, which taps and deletes act on
+function readNotes() {
+  let raw; try { raw = localStorage.getItem(NKEY); } catch (e) { return null; }
+  try { const a = JSON.parse(raw || '[]'); return Array.isArray(a) ? a : []; } catch (e) { return []; }
+}
+const freshNotes = () => { if (notesSaved) { const a = readNotes(); if (a) notes = a; } return notes; };
+freshNotes();
+const saveNotes = () => { try { localStorage.setItem(NKEY, JSON.stringify(notes)); notesSaved = true; } catch (e) { notesSaved = false; } };
+const noteKey = (n) => JSON.stringify([n && n.label, n && n.value]);
+function flash(msg, ms) { $('n-msg').textContent = msg; clearTimeout(flash.t); flash.t = setTimeout(() => { $('n-msg').textContent = ''; }, ms || 2500); }
+function addNote(label, value) { freshNotes(); notes.push({ label: String(label).slice(0, 200), value: String(value).slice(0, 10000) }); saveNotes(); renderNotes(); flash('Added to the notepad.'); }
+function renderNotes(keepBox) { // a change made here hides the copy-by-hand box; one from another tab leaves it be
+  if (!keepBox) $('n-copybox').hidden = true;
+  shown = notes.slice();
   $('nempty').hidden = notes.length > 0;
   $('nlist').innerHTML = notes.map((n, i) => `<li><span class="nl">${esc(n.label)}</span><button type="button" class="nv" data-i="${i}" title="Put this in the last box you used">${esc(n.value)}</button><button type="button" class="ndel" data-i="${i}" aria-label="Delete note: ${esc(n.label)}">×</button></li>`).join('');
 }
+window.addEventListener('storage', (e) => {
+  if ((e.key !== NKEY && e.key !== null) || !notesSaved) return;
+  const a = document.activeElement, inList = !!a && $('nlist').contains(a), cls = inList && a.classList.contains('ndel') ? 'ndel' : 'nv', at = inList ? +a.dataset.i : 0, key = noteKey(shown[at]);
+  freshNotes(); renderNotes(true);
+  if (!inList) return;
+  // stay on the same note if it is still there (the nearest copy of it), else on whatever now sits in its place
+  let to = -1; notes.forEach((n, i) => { if (noteKey(n) === key && (to < 0 || Math.abs(i - at) < Math.abs(to - at))) to = i; });
+  const k = $('nlist').querySelectorAll('.' + cls); (k[to >= 0 ? to : Math.min(at, k.length - 1)] || $('n-label')).focus();
+});
+// numbers as written: a sign (any minus sign), digits with or without a leading digit (.5), and an exponent (1e3)
+const minusFix = (t) => String(t).replace(/[\u2212\uFE63\uFF0D]/g, '-');
+const NUMS = /[-+]?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][-+]?\d+)?/g;
 let lastBox = null;
 document.querySelectorAll('.hin').forEach((el) => el.addEventListener('focus', () => { lastBox = el; }));
 $('nlist').addEventListener('click', (e) => {
   const v = e.target.closest('.nv'), d = e.target.closest('.ndel');
   if (d) {
-    const i = +d.dataset.i; notes.splice(i, 1); saveNotes(); renderNotes(); flash('Note deleted.');
-    const next = $('nlist').querySelector(`.ndel[data-i="${Math.min(i, notes.length - 1)}"]`); (next || $('n-label')).focus();
+    // delete the note that was shown, wherever it now sits in the stored list (another tab may have moved it)
+    const i = +d.dataset.i, k = noteKey(shown[i]); freshNotes();
+    const j = noteKey(notes[i]) === k ? i : notes.findIndex((n) => noteKey(n) === k);
+    if (j >= 0) { notes.splice(j, 1); saveNotes(); }
+    renderNotes(); flash(j >= 0 ? 'Note deleted.' : 'That note was already deleted in another tab.');
+    const next = $('nlist').querySelector(`.ndel[data-i="${Math.min(j >= 0 ? j : i, notes.length - 1)}"]`); (next || $('n-label')).focus();
     return;
   }
   if (v) {
-    const val = notes[+v.dataset.i].value;
+    const val = String(shown[+v.dataset.i].value);
     if (!lastBox) { copy(val, 'Copied.'); return; }
     if (lastBox.id === 'h-dig') lastBox.value += val.replace(/\D/g, '');
     else if (lastBox.id === 'h-conv') lastBox.value = val;
     else {
-      const nums = val.replace(/−/g, '-').match(/-?\d+(?:\.\d+)?/g) || [];
+      // No.5 is 5, not .5; and in a number straight after a letter (N48E2) the E is a letter too, not an exponent
+      const nums = minusFix(val).replace(/(\p{L})\.(?=\d)/gu, '$1 ').replace(/(\p{L}[-+]?\d+(?:\.\d*)?)(?=[eE])/gu, '$1 ').match(NUMS) || [];
       if (nums.length !== 1) { flash(nums.length ? 'That note holds more than one number. Type the one you want.' : 'That note has no number in it.'); return; }
       lastBox.value = nums[0];
     }
@@ -1237,24 +1279,48 @@ $('n-add').addEventListener('click', () => {
   if (!l && !v) return;
   addNote(l || 'Note', v); $('n-label').value = ''; $('n-val').value = '';
 });
-$('n-clear').addEventListener('click', () => { if (!notes.length || !confirm('Clear every note?')) return; notes = []; saveNotes(); renderNotes(); });
+$('n-clear').addEventListener('click', () => {
+  freshNotes(); renderNotes(true); if (!notes.length) return; if (!confirm('Clear every note?')) return; // nothing has changed yet, so the copy box stays
+  // clear the notes that were shown; one added in another tab while the question was open is kept. The browser
+  // passes on that tab's change only once this handler ends, so the clearing waits a moment for it.
+  const gone = shown.map(noteKey);
+  setTimeout(() => {
+    freshNotes(); notes = notes.filter((n) => { const j = gone.indexOf(noteKey(n)); if (j < 0) return true; gone.splice(j, 1); return false; });
+    saveNotes(); renderNotes(); if (notes.length) flash(notes.length === 1 ? 'Cleared. A note added in another tab meanwhile was kept.' : 'Cleared. Notes added in another tab meanwhile were kept.');
+  }, 0);
+});
 function copy(text, msg) {
-  const done = () => { $('n-msg').textContent = msg; setTimeout(() => { $('n-msg').textContent = ''; }, 1600); };
-  if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(text).then(done, () => { $('n-msg').textContent = 'Copying is blocked here; select the text instead.'; });
+  const box = $('n-copybox');
+  box.hidden = true;
+  const manual = () => { // last resort: show the text, selected, for copying by hand
+    box.value = text; box.hidden = false; box.focus(); box.select();
+    flash('Copying isn’t available here, so the text is selected in the box below: copy it from there.', 10000);
+  };
+  const fallback = () => {
+    const ta = document.createElement('textarea'), back = document.activeElement; let ok = false;
+    ta.value = text; ta.setAttribute('readonly', ''); ta.style.position = 'fixed'; ta.style.top = '0'; ta.style.opacity = '0';
+    document.body.appendChild(ta); ta.select(); try { ok = document.execCommand('copy'); } catch (e) { ok = false; } ta.remove(); if (back && back.focus) back.focus();
+    if (ok) flash(msg, 1600); else manual();
+  };
+  if (navigator.clipboard && navigator.clipboard.writeText) { try { navigator.clipboard.writeText(text).then(() => flash(msg, 1600), fallback); } catch (e) { fallback(); } } else fallback();
 }
-$('n-copy').addEventListener('click', () => copy(notes.map((n) => `${n.label}: ${n.value}`).join('\n'), 'Copied all notes.'));
+$('n-copy').addEventListener('click', () => { const all = freshNotes(); renderNotes(); if (!all.length) { flash('Nothing to copy yet.'); return; } copy(all.map((n) => `${n.label}: ${n.value}`).join('\n'), 'Copied all notes.'); });
 
 /* ---------- coordinate helpers ---------- */
-const num = (t) => { const v = String(t).trim().replace('−', '-').replace(',', '.'); return v === '' || isNaN(+v) ? null : +v; };
+const num = (t) => { const v = minusFix(t).trim().replace(',', '.'), m = v.match(NUMS); return m && m.length === 1 && m[0] === v ? +v : null; };
 function arith() {
   const a = num($('h-a').value), b = num($('h-b').value), op = $('h-op').value;
   let r = null;
   if (a !== null && b !== null) r = op === '+' ? a + b : op === '−' ? a - b : op === '×' ? a * b : (b === 0 ? null : a / b);
-  $('h-r').textContent = r === null ? '' : String(+r.toFixed(10));
+  $('h-r').textContent = r === null ? '' : isFinite(r) ? String(+r.toFixed(10)) : 'too big to work out here'; // as with 1e400
 }
 ['h-a', 'h-b'].forEach((id) => $(id).addEventListener('input', arith));
 $('h-op').addEventListener('change', arith);
-$('h-keep').addEventListener('click', () => { if ($('h-r').textContent) addNote(`${$('h-a').value} ${$('h-op').value} ${$('h-b').value}`, $('h-r').textContent); });
+$('h-keep').addEventListener('click', () => {
+  const r = $('h-r').textContent; if (!r) return;
+  if (!isFinite(r)) { flash('Nothing to note: that’s too big to work out here.'); return; } // keep the message out of the notepad
+  addNote(`${$('h-a').value} ${$('h-op').value} ${$('h-b').value}`, r);
+});
 const pad = (x, w) => String(x).padStart(w, '0');
 function dmm(deg, pos, neg, w) {
   const h = deg < 0 ? neg : pos; let a = Math.abs(deg); let d = Math.floor(a); let m = (a - d) * 60;
@@ -1283,7 +1349,10 @@ function digitsOut() {
 function convOut() {
   const t = $('h-conv').value.trim();
   const hs = (t.toUpperCase().match(/[NSEW]/g) || []);
-  const nums = (t.replace(/(\d),(\d)/g, '$1.$2').match(/-?\d+(?:\.\d+)?/g) || []).map(Number);
+  // here an E is always east, so numbers are read without exponents; a point straight after a number (as when
+  // "48.85,2.35" or ".5,2.35" becomes "48.85.2.35" or ".5.2.35") ends that number rather than starting the next
+  // one as ".2", and a point straight after a letter (N.12, lat.12.5) is an abbreviation's, not the start of a number
+  const nums = (minusFix(t).replace(/(\p{L})\.(?=\d)/gu, '$1 ').replace(/(\d),(\d)/g, '$1.$2').match(/-?(?:\d+(?:\.\d+)?|\.\d+)\.?/g) || []).map((x) => parseFloat(x));
   let lat = null, lon = null;
   if (nums.length === 2) [lat, lon] = nums;
   const sg = (x) => (x < 0 || Object.is(x, -0) ? -1 : 1);
@@ -1292,6 +1361,7 @@ function convOut() {
   let out = '', bad = '';
   if (!t) out = '';
   else if (lat === null) bad = 'Give two numbers (decimal degrees), four (degrees and minutes) or six (degrees, minutes, seconds).';
+  else if (nums.length > 2 && nums.some((x, i) => i % (nums.length / 2) > 0 && (x < 0 || Object.is(x, -0) || x >= 60))) bad = 'Minutes and seconds go from 0 to just under 60, with no minus sign. Put a minus on the degrees, or use N, S, E or W.';
   else {
     if (hs[0] === 'S') lat = -Math.abs(lat); if (hs[1] === 'W' || hs[0] === 'W') lon = -Math.abs(lon);
     if (Math.abs(lat) > 90 || Math.abs(lon) > 180) bad = 'That is off the globe: latitude goes up to 90 and longitude up to 180.';

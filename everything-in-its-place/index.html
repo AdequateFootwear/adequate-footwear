@@ -1265,7 +1265,7 @@ const group = (k) => ([1, 3, 4, 9].includes(k) ? 'East' : 'West');
 
 /* ---------- state ---------- */
 const KEY = 'aft.everything-in-its-place';
-const DEF = { W: 8, D: 8.4, unit: 'm', dwall: 'bottom', dpos: 5.6, dw: 0.9, method: 'door', north: 0, layout: 'sectors', grid: null, plan: 'one-b', mirror: false, names: 'both', showSketch: true, showRoom: true, imgop: 0.7, lock: false, area: null, hl: [], probe: null, birth: '', lcside: 'after', gen: true, ctl: true, el: null, intent: '', item: '' };
+const DEF = { W: 8, D: 8.4, unit: 'm', dwall: 'bottom', dpos: 5.6, dw: 0.9, method: 'door', north: 0, layout: 'sectors', grid: null, plan: 'one-b', mirror: false, names: 'both', showSketch: true, showRoom: true, imgop: 0.7, lock: false, area: null, hl: [], probe: null, birth: '', lcside: 'after', gen: true, ctl: true, el: null, intent: '', item: '', markerArea: null };
 let S = JSON.parse(JSON.stringify(DEF));
 let img = null; // { url, w, h, name } for a picture the solver added; never stored
 function load() {
@@ -1294,6 +1294,8 @@ function load() {
     if (has(EL, o.el)) S.el = o.el;
     if (typeof o.intent === 'string' && (o.intent === '' || has(AREAS, o.intent))) S.intent = o.intent;
     if (typeof o.item === 'string' && (o.item === '' || (/^\d+$/.test(o.item) && ITEMS[+o.item]))) S.item = o.item;
+    if (has(AREAS, o.markerArea) && o.markerArea === S.area) S.markerArea = o.markerArea;
+    else if (!('markerArea' in o) && S.probe && S.area && !S.intent && !S.item && areaAt(S.probe.x, S.probe.y) === S.area) S.markerArea = S.area; // saved before this was kept: an area that matches the marker is taken as the marker's
     return true;
   } catch (e) { /* storage unavailable or unreadable */ }
   return false;
@@ -1377,7 +1379,7 @@ const px = (p) => p * upp; // a size in screen pixels, in plan units
 function drawRoom() {
   const g = $('ip-room'); g.textContent = '';
   if (S.showRoom) {
-    mk('rect', { x: 0, y: 0, width: S.W, height: S.D, class: 'ip-roomrect' }, g);
+    if (!img) mk('rect', { x: 0, y: 0, width: S.W, height: S.D, class: 'ip-roomrect' }, g); // a picture shows through: only the walls and door go over it
     const w = WALL[S.dwall](), p0 = Math.max(0, Math.min(S.dpos, w.len)), p1 = Math.max(0, Math.min(S.dpos + S.dw, w.len));
     const P = (t) => [w.A[0] + w.u[0] * t, w.A[1] + w.u[1] * t];
     const corners = { bottom: [[S.W, S.D], [S.W, 0], [0, 0], [0, S.D]], top: [[0, S.D], [S.W, S.D], [S.W, 0]], left: [[0, S.D], [S.W, S.D], [S.W, 0], [0, 0]], right: [[S.W, S.D], [0, S.D], [0, 0], [S.W, 0]] };
@@ -1702,24 +1704,23 @@ function showCard(key) {
   document.querySelectorAll('.ip-areas .btn').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.area === key)));
 }
 function selectArea(key, opts) {
-  S.area = key; S.hl = key ? [key] : [];
+  S.area = key; S.hl = key ? [key] : []; S.markerArea = null;
   if (!opts || !opts.keepAdvice) { S.intent = ''; S.item = ''; $('ip-intent').value = ''; $('ip-item').value = ''; $('ip-advice').textContent = ''; }
   showCard(key); drawGrid(); save();
 }
 
 /* ---------- probing the plan ---------- */
-function probe(x, y, announce) {
+// S.markerArea: the area the marker last chose; null once something else has chosen one, which then stays chosen
+function probe(x, y, keep) { // keep: only the marker's text changes, and the chosen area and highlights stay
   S.probe = { x, y };
   const k = areaAt(x, y), room = roomAt(x, y);
   const where = room ? `${room} (${fmt(x)}${unitWord()} across, ${fmt(y)}${unitWord()} down)` : `${fmt(x)}${unitWord()} across, ${fmt(y)}${unitWord()} down`;
   if (k) {
     $('ip-where').textContent = `${where}: ${AREAS[k].name}` + (S.method === 'compass' ? ` (${k === 'C' ? 'centre' : DIRNAME[k].toLowerCase()})` : '') + '.';
-    S.area = k; S.hl = [k]; S.intent = ''; S.item = ''; $('ip-intent').value = ''; $('ip-item').value = ''; $('ip-advice').textContent = '';
-    showCard(k);
+    if (!keep) { S.markerArea = k; S.area = k; S.hl = [k]; S.intent = ''; S.item = ''; $('ip-intent').value = ''; $('ip-item').value = ''; $('ip-advice').textContent = ''; showCard(k); }
   } else {
     $('ip-where').textContent = `${where}: outside the grid. A part of a home that sticks out past the grid is usually treated as an extension of the nearest area.`;
   }
-  void announce;
   drawGrid(); drawProbe(); save();
 }
 function toPlan(ev) {
@@ -1760,7 +1761,7 @@ function endDrag(ev, cancelled) {
   const d = drag; drag = null;
   if (cancelled) { drawPlan(); return; }
   if (d.mode === 'tap' || d.mode === 'maybe' || (d.mode === 'resize' && !d.moved)) { const p = toPlan(ev); probe(p.x, p.y); }
-  else { if (S.probe) probe(S.probe.x, S.probe.y); drawPlan(); save(); }
+  else { refreshProbeText(); drawPlan(); save(); }
 }
 svg.addEventListener('pointerup', (ev) => endDrag(ev, false));
 svg.addEventListener('pointercancel', (ev) => endDrag(ev, true));
@@ -1777,7 +1778,7 @@ svg.addEventListener('keydown', (ev) => {
   if (fresh && ev.key !== 'Home' && ev.key !== 'Enter' && ev.key !== ' ') p = { x: g.x + g.w / 2, y: g.y + g.h / 2 };
   const b = bounds();
   p.x = Math.max(b.x0, Math.min(b.x1, p.x)); p.y = Math.max(b.y0, Math.min(b.y1, p.y));
-  probe(p.x, p.y, true);
+  probe(p.x, p.y);
 });
 function clampGrid() {
   const g = S.grid; if (!g) return;
@@ -1787,7 +1788,8 @@ function clampGrid() {
 }
 function syncGridInputs() {
   const g = G();
-  [['ip-gx', g.x], ['ip-gy', g.y], ['ip-gw', g.w], ['ip-gh', g.h]].forEach(([id, v]) => { if (document.activeElement !== $(id)) $(id).value = fmt(v); });
+  [['ip-gx', g.x], ['ip-gy', g.y], ['ip-gw', g.w], ['ip-gh', g.h]].forEach(([id, v]) => { if (document.activeElement !== $(id)) { $(id).value = fmt(v); $(id).removeAttribute('aria-invalid'); } });
+  if (!GRID_IDS.some((id) => $(id).hasAttribute('aria-invalid'))) $('ip-grid-why').textContent = ''; // a refused value has been replaced by the grid in use
 }
 
 /* ---------- the room, door and north inputs ---------- */
@@ -1800,18 +1802,24 @@ function fieldsWhy(whyId, ids, errs, explain) {
   if (explain || !errs.length) $(whyId).textContent = errs.map(([, m]) => m).join(' ');
 }
 const ROOM_IDS = ['ip-w', 'ip-d', 'ip-dpos', 'ip-dw'], GRID_IDS = ['ip-gx', 'ip-gy', 'ip-gw', 'ip-gh'];
-function readRoom(explain = true) {
+function checkRoom(wall) { // what's wrong with the room fields, for the door on this wall
   const W = num($('ip-w').value), D = num($('ip-d').value), dp = num($('ip-dpos').value), dw = num($('ip-dw').value);
   const errs = [];
   if (W === null || W <= 0 || W > 10000) errs.push([['ip-w'], 'The width needs to be a number above 0.']);
   if (D === null || D <= 0 || D > 10000) errs.push([['ip-d'], 'The depth needs to be a number above 0.']);
   if (!errs.length) {
-    const len = (S.dwall === 'top' || S.dwall === 'bottom') ? W : D;
+    const len = (wall === 'top' || wall === 'bottom') ? W : D;
     if (dw === null || dw <= 0) errs.push([['ip-dw'], 'The door width needs to be a number above 0.']);
     else if (dw > len) errs.push([['ip-dw'], `The door is wider than its wall (${fmt(len)}${unitWord()}).`]);
     if (dp === null || dp < 0) errs.push([['ip-dpos'], 'The door’s distance from the corner needs to be 0 or more.']);
     else if (dw !== null && dw > 0 && dp + dw > len + 1e-9) errs.push([['ip-dpos', 'ip-dw'], `The door runs past the end of its wall: its start plus its width is more than ${fmt(len)}${unitWord()}.`]);
   }
+  return { W, D, dp, dw, errs };
+}
+let wallNote = false; // the picker's line holds why a door wall was refused, until the room or the picker changes
+function readRoom(explain = true) {
+  if (wallNote) syncPicker(); // a refused wall's note goes once the room is changed
+  const { W, D, dp, dw, errs } = checkRoom(S.dwall);
   fieldsWhy('ip-room-why', ROOM_IDS, errs, explain);
   if (errs.length) return;
   const resized = W !== S.W || D !== S.D;
@@ -1823,7 +1831,7 @@ function readRoom(explain = true) {
   S.W = W; S.D = D; S.dpos = dp; S.dw = dw;
   syncGridInputs(); drawPlan(); refreshProbeText(); showFacing(); renderKua(); save();
 }
-function refreshProbeText() { if (S.probe) { const k0 = S.area; probe(S.probe.x, S.probe.y); if (!areaAt(S.probe.x, S.probe.y) && k0) { S.area = k0; showCard(k0); } } }
+function refreshProbeText() { if (S.probe) { const k0 = S.area; probe(S.probe.x, S.probe.y, S.intent !== '' || S.item !== '' || (S.area !== null && S.area !== S.markerArea)); if (!areaAt(S.probe.x, S.probe.y) && k0) { S.area = k0; showCard(k0); } } }
 ROOM_IDS.forEach((id) => { $(id).addEventListener('input', () => readRoom(false)); $(id).addEventListener('change', () => readRoom(true)); });
 $('ip-unit').addEventListener('change', () => { S.unit = $('ip-unit').value; drawPlan(); if (S.probe) refreshProbeText(); save(); });
 $('ip-dwall').addEventListener('change', () => setWall($('ip-dwall').value));
@@ -1875,8 +1883,17 @@ function showFacing() {
 function readGrid(explain) {
   const v = GRID_IDS.map((i) => num($(i).value));
   const bad = GRID_IDS.filter((id, k) => v[k] === null || (k >= 2 && v[k] <= 0));
-  fieldsWhy('ip-grid-why', GRID_IDS, bad.length ? [[bad, 'Each grid value needs to be a number, and the width and depth must be above 0.']] : [], explain);
-  if (bad.length) return;
+  let errs = bad.length ? [[bad, 'Each grid value needs to be a number, and the width and depth must be above 0.']] : [];
+  if (!errs.length) { // the same limits as dragging; a little over is allowed, since the fields show rounded values
+    const M = Math.max(S.W, S.D) * 2, e = 0.01, far = new Set();
+    if (v[2] > M + e) far.add('ip-gw'); if (v[3] > M + e) far.add('ip-gh');
+    if (v[0] < -M / 2 - e) far.add('ip-gx'); if (v[1] < -M / 2 - e) far.add('ip-gy');
+    if (v[0] + v[2] > S.W + M / 2 + e) { far.add('ip-gx'); far.add('ip-gw'); }
+    if (v[1] + v[3] > S.D + M / 2 + e) { far.add('ip-gy'); far.add('ip-gh'); }
+    if (far.size) errs = [[[...far], `The grid can be at most ${fmt(M)}${unitWord()} wide or deep, and reach at most ${fmt(M / 2)}${unitWord()} past the room on any side.`]];
+  }
+  fieldsWhy('ip-grid-why', GRID_IDS, errs, explain);
+  if (errs.length) return;
   S.grid = { x: v[0], y: v[1], w: v[2], h: v[3] }; clampGrid(); drawPlan(); refreshProbeText(); save();
 }
 GRID_IDS.forEach((id) => { $(id).addEventListener('input', () => readGrid(false)); $(id).addEventListener('change', () => readGrid(true)); });
@@ -1911,11 +1928,21 @@ function geometryChanged() { // after the plan, its turn or its mirroring change
   $('ip-where').textContent = 'Tap the plan to see an area.';
   setNorth(S.north); drawPlan(); syncPicker(); save();
 }
-function setWall(w) {
+function setWall(w, fromPicker) {
   if (!WALL[w] || w === S.dwall) { syncPicker(); return; }
   if (curPlan()) { // the drawing turns, and north turns with it, so the front still faces the same way
     const f = doorFacing(); S.dwall = w; S.north = mod(WALL[w]().out - f, 360); setPlanDims(); geometryChanged();
   } else { // a plain rectangle stays put; only the door moves, so north stays where it was
+    const { errs } = checkRoom(w);
+    if (errs.length) { // the door has to fit its new wall first, so nothing moves yet
+      $('ip-dwall').value = S.dwall; syncPicker(); $('ip-setup-room').open = true; fieldsWhy('ip-room-why', ROOM_IDS, errs, true);
+      $('ip-room-why').textContent = `The door can’t go on the ${w} wall as it is, so it stays on the ${S.dwall} wall. ` + errs.map(([, m]) => m).join(' ');
+      if (fromPicker) { // the reason is far below the picker on a phone, so say so where the tap was
+        $('ip-planname').textContent = `The door can’t go on the ${w} wall as it is, so it stays on the ${S.dwall} wall: “The room, the door and north” below says why.`;
+        wallNote = true; $('ip-planname').scrollIntoView({ block: 'nearest' });
+      }
+      return;
+    }
     S.dwall = w; $('ip-dwall').value = w; doorLabel(); readRoom(); refreshAdvice(); syncPicker();
   }
 }
@@ -1927,6 +1954,7 @@ function usePlan(id) {
 }
 function syncPicker() {
   const P = curPlan(), kind = P ? P.kind : 'rect';
+  wallNote = false;
   document.querySelectorAll('input[name=ip-kind]').forEach((r) => { r.checked = r.value === kind; });
   document.querySelectorAll('input[name=ip-wall]').forEach((r) => { r.checked = r.value === S.dwall; });
   const face = DIRS[mod(Math.round(doorFacing() / 45), 8)];
@@ -1948,7 +1976,7 @@ $('ip-another').addEventListener('click', () => {
   const list = plansOf(P.kind); usePlan(list[(list.indexOf(P) + 1) % list.length].id);
 });
 $('ip-mirror').addEventListener('change', () => { if (!curPlan()) return; S.mirror = $('ip-mirror').checked; setPlanDims(); geometryChanged(); });
-document.querySelectorAll('input[name=ip-wall]').forEach((r) => r.addEventListener('change', () => { if (r.checked) setWall(r.value); }));
+document.querySelectorAll('input[name=ip-wall]').forEach((r) => r.addEventListener('change', () => { if (r.checked) setWall(r.value, true); }));
 document.querySelectorAll('input[name=ip-face]').forEach((r) => r.addEventListener('change', () => { if (r.checked) setNorth(mod(WALL[S.dwall]().out - DIRS.indexOf(r.value) * 45, 360)); }));
 document.querySelectorAll('input[name=ip-names]').forEach((r) => r.addEventListener('change', () => { if (r.checked) { S.names = r.value; drawGrid(); save(); } }));
 document.querySelectorAll('.ip-areas .btn').forEach((b) => b.addEventListener('click', () => selectArea(b.dataset.area)));
@@ -1972,13 +2000,13 @@ function refreshAdvice() {
 }
 $('ip-intent').addEventListener('change', () => {
   S.intent = $('ip-intent').value; S.item = ''; $('ip-item').value = '';
-  if (S.intent) { S.area = S.intent; S.hl = [S.intent]; showCard(S.intent); }
+  if (S.intent) { S.area = S.intent; S.hl = [S.intent]; S.markerArea = null; showCard(S.intent); }
   drawGrid(); refreshAdvice(); save();
 });
 $('ip-item').addEventListener('change', () => {
   S.item = $('ip-item').value; S.intent = ''; $('ip-intent').value = '';
   const it = ITEMS[+S.item];
-  if (S.item !== '' && it) { S.hl = it.a.slice(); S.area = it.a[0]; showCard(it.a[0]); }
+  if (S.item !== '' && it) { S.hl = it.a.slice(); S.area = it.a[0]; S.markerArea = null; showCard(it.a[0]); }
   drawGrid(); refreshAdvice(); save();
 });
 

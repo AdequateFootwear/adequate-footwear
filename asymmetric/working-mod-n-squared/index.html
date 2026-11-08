@@ -525,6 +525,7 @@ example, n = 7:  8^3 = 512 = 10 × 49 + 22,  and 1 + 3 × 7 = 22 ✓</div>
 28 = 42 × 30 mod 77                           that's m × λ (mod n)
 multiply by λ⁻¹ mod 77 (= 18):  28 × 18 mod 77 = 42 = m  ✓</div>
       <p>That last multiplier is the <var>μ</var> in the Paillier worksheet. With <var>g = n + 1</var> it's just <var>λ<sup>−1</sup> mod n</var>; with another <var>g</var> it also undoes <var>g</var>'s own exponent.</p>
+      <p>That inverse only exists when <var>λ</var> and <var>n</var> share no factor, and two different primes don't guarantee it. With <var>p = 3</var> and <var>q = 7</var>, <var>n = 21</var> and <var>λ = 6</var> share the factor 3. The random part still disappears, but messages 7 apart (such as 1, 8 and 15) then give the same <var>L(c<sup>λ</sup>)</var>, so this way of decrypting can't tell them apart. It happens exactly when one prime divides the other minus 1 (here 3 divides 7&nbsp;−&nbsp;1), so keys are made from primes that avoid it.</p>
     </div>
     <div class="calc">
       <label><var>p</var> <input type="number" id="lm-p" value="7" min="2" max="9999" inputmode="numeric"></label>
@@ -563,15 +564,28 @@ m = a × b⁻¹ mod 7 = 1 × 4 mod 7 = 4  (2 × 4 = 8 ≡ 1, so b⁻¹ = 4)</div
   const $ = (s) => document.querySelector(s);
   const pw = (b, e, m) => { let r = 1n; b %= m; while (e > 0n) { if (e & 1n) r = r * b % m; e >>= 1n; b = b * b % m; } return r; };
   const gcd = (a, b) => { while (b) [a, b] = [b, a % b]; return a; };
-  const int = (el, lo, hi, d) => { let v = parseInt(el.value, 10); if (!Number.isFinite(v)) v = d; return Math.max(lo, Math.min(hi, v)); };
+  /* Number boxes: read the box's whole value (so 1e2 is 100), and accept it only if it's a whole number within the box's own min and max. */
+  const fmtInt = (v) => v.toLocaleString('en-US').replace('-', '−');
+  function wholes(out, boxes){  // boxes: [[id, name], …]; returns their values, or null after saying in out what's wrong
+    const vals = [], errs = [];
+    for (const [id, name] of boxes) {
+      const el = $(id), v = el.valueAsNumber + 0, lo = +el.min, hi = +el.max, ok = Number.isInteger(v) && v >= lo && v <= hi;
+      el.setAttribute('aria-invalid', String(!ok)); vals.push(v);
+      if (!ok) errs.push(`${name} has to be a whole number from ${fmtInt(lo)} to ${fmtInt(hi)}.`);
+    }
+    if (!errs.length) return vals;
+    const box = $(out); box.innerHTML = box.tagName === 'P' ? errs.join(' ') : errs.map((e) => `<p>${e}</p>`).join(''); return null;
+  }
   const isPrime = (n) => { if (n < 2) return false; for (let d = 2; d * d <= n; d++) if (n % d === 0) return false; return true; };
   function binom(){
-    const n = BigInt(int($('#bn-n'), 2, 999, 7)), m = BigInt(int($('#bn-m'), 0, 99999, 3)), n2 = n * n;
+    const got = wholes('#bn-out', [['#bn-n', 'The number <var>n</var>'], ['#bn-m', 'The power <var>m</var>']]); if (!got) return;
+    const [n, m] = got.map(BigInt), n2 = n * n;
     const lhs = pw(1n + n, m, n2), rhs = (1n + (m % n) * n) % n2;
     $('#bn-out').innerHTML = `<div class="math">(1 + ${n})^${m} mod ${n2} = ${lhs}\n1 + (${m} mod ${n}) × ${n} = ${rhs}</div><p>${lhs === rhs ? 'They match, as the shortcut promises.' : 'They differ, which shouldn’t happen; check the inputs.'}</p>`;
   }
   function Lfun(){
-    const n = BigInt(int($('#lf-n'), 2, 999999, 7)), t = $('#lf-u').value.replace(/[\s,]/g, '');
+    const got = wholes('#lf-out', [['#lf-n', 'The number <var>n</var>']]); if (!got) return;
+    const n = BigInt(got[0]), t = $('#lf-u').value.replace(/[\s,]/g, '');
     if (!/^\d+$/.test(t)) { $('#lf-out').innerHTML = '<p>Type a whole number for <var>u</var>.</p>'; return; }
     const u = BigInt(t);
     $('#lf-out').innerHTML = (u - 1n) % n === 0n
@@ -579,12 +593,14 @@ m = a × b⁻¹ mod 7 = 1 × 4 mod 7 = 4  (2 × 4 = 8 ≡ 1, so b⁻¹ = 4)</div
       : `<p>${u} − 1 = ${String(u - 1n).replace('-', '−')} isn’t a multiple of ${n}, so <var>L</var> doesn’t apply. (It leaves remainder ${((u - 1n) % n + n) % n}.) In a real decryption that means a wrong digit somewhere.</p>`;
   }
   function lam(){
-    const p = int($('#lm-p'), 2, 9999, 7), q = int($('#lm-q'), 2, 9999, 11), r = BigInt(int($('#lm-r'), 1, 99999999, 23));
+    const got = wholes('#lm-out', [['#lm-p', 'The prime <var>p</var>'], ['#lm-q', 'The prime <var>q</var>'], ['#lm-r', 'The random number <var>r</var>']]); if (!got) return;
+    const [p, q] = got, r = BigInt(got[2]);
     if (!isPrime(p) || !isPrime(q) || p === q) { $('#lm-out').innerHTML = '<p>Pick two different primes for <var>p</var> and <var>q</var>.</p>'; return; }
     const n = BigInt(p * q), n2 = n * n, l = BigInt((p - 1) * (q - 1) / Number(gcd(BigInt(p - 1), BigInt(q - 1))));
     if (gcd(r, n) !== 1n) { $('#lm-out').innerHTML = `<p>${r} shares a factor with ${n}; a real random number never does. Pick another.</p>`; return; }
     const v = pw(r, n * l, n2);
-    $('#lm-out').innerHTML = `<div class="math">n = ${n},  n² = ${n2},  λ = lcm(${p - 1}, ${q - 1}) = ${l}\nr^(n·λ) = ${r}^(${n} × ${l}) mod ${n2} = ${v}</div><p>${v === 1n ? 'It’s 1: the random part disappears.' : 'Not 1, which shouldn’t happen.'}</p>`;
+    const gl = gcd(l, n), [a, b] = (q - 1) % p === 0 ? [p, q] : [q, p];
+    $('#lm-out').innerHTML = `<div class="math">n = ${n},  n² = ${n2},  λ = lcm(${p - 1}, ${q - 1}) = ${l}\nr^(n·λ) = ${r}^(${n} × ${l}) mod ${n2} = ${v}</div><p>${v === 1n ? 'It’s 1: the random part disappears.' : 'Not 1, which shouldn’t happen.'}</p>${gl === 1n ? '' : `<p>But λ = ${l} and <var>n</var> = ${n} share the factor ${gl} (because ${a} divides ${b}&nbsp;−&nbsp;1), so λ has no inverse mod ${n} and the last step of decryption can’t be done. These two primes don’t make a working key.</p>`}`;
   }
   for (const id of ['#bn-n', '#bn-m']) $(id).addEventListener('input', binom);
   for (const id of ['#lf-n', '#lf-u']) $(id).addEventListener('input', Lfun);

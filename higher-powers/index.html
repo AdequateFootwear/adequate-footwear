@@ -628,6 +628,8 @@ table.hp-grid input{width:6.5em;min-width:4em;border:1px solid var(--line-strong
 table.hp-grid td.res{font-family:"IBM Plex Mono",monospace;font-size:14px;color:var(--ink);min-width:6em;max-width:22em;overflow-wrap:anywhere;word-break:break-all;background:var(--surface-2)}
 table.hp-grid td.res .hp-err{font-family:"Barlow",sans-serif;font-size:13px;margin:0}
 table.hp-grid td.res .muted{font-family:"Barlow",sans-serif}
+.hp-var .vout .hp-notes,table.hp-grid td.res .hp-notes{font-family:"Barlow",sans-serif;word-break:normal}
+table.hp-grid td.res .hp-notes li{font-size:13px}
 
 /* helpers */
 .hp-two{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;margin:8px 0}
@@ -1120,7 +1122,13 @@ function rmag(x) { // an upper bound on log2|x| (whole bits), for estimates; exa
   return isNZ(x) ? x.e : fmag(x);
 }
 function toNum(x) { // a double, for estimates only
-  if (x.k === 'q') { let n = x.n, d = x.d; const s = Math.max(blen(n), blen(d)) - 60; if (s > 0) { n >>= BigInt(s); d >>= BigInt(s); if (d === 0n) return n < 0n ? -Infinity : Infinity; } return Number(n) / Number(d); }
+  if (x.k === 'q') { // numerator and denominator each cut to 60 bits on their own, so 1/10^100 isn't taken as 0
+    const sn = Math.max(0, blen(x.n) - 60), sd = Math.max(0, blen(x.d) - 60);
+    let v = Number(x.n >> BigInt(sn)) / Number(x.d >> BigInt(sd)), s = sn - sd;
+    while (s > 1000 && isFinite(v)) { v *= 2 ** 1000; s -= 1000; }
+    while (s < -1000 && v !== 0) { v *= 2 ** -1000; s += 1000; }
+    return v * 2 ** s;
+  }
   if (x.m === 0n) return 0;
   const L = blen(x.m), s = Math.max(0, L - 60);
   return Number(x.m >> BigInt(s)) * Math.pow(2, x.e + s);
@@ -1425,6 +1433,17 @@ function cdiv(a, b) {
   if (isZeroExact(b.re) && isZeroExact(b.im)) fail('Division by zero.');
   if (isZeroExact(b.im)) return C(rdivR(a.re, b.re), rdivR(a.im, b.re));
   if (isZeroExact(b.re)) return C(rdivR(a.im, b.im), rneg(rdivR(a.re, b.im)));
+  const kr = rmag(b.re), ki = rmag(b.im), kb = Math.max(kr, ki), kl = Math.min(kr, ki);
+  const ks = [rmag(a.re), rmag(a.im)].filter((k) => k > -Infinity), ka = Math.max(...ks), kal = Math.min(...ks);
+  if (sqOut(kb) || sqOut(kl) || (ks.length && (Math.abs(ka + kb) > MAX_BITS - 64 || Math.abs(kal + kl) > MAX_BITS - 64))) { // Smith's method: no squares of the divisor, nor products of its parts with a's, on the way (any of them might leave the range, above or below)
+    const big = rmag(b.re) >= rmag(b.im) ? 're' : 'im';
+    if (!isNZ(b[big])) return withPrec(10, () => {
+      const p = big === 're' ? b.re : b.im, o = big === 're' ? b.im : b.re, xr = (x) => mulDivR(x, o, p), den = radd(p, xr(o)); // x·r for the ratio r = o/p, which may itself be below the range
+      const u = big === 're' ? radd(a.re, xr(a.im)) : radd(xr(a.re), a.im);
+      const v = big === 're' ? rsub(a.im, xr(a.re)) : rsub(xr(a.im), a.re);
+      return C(round2W(rdivR(u, den)), round2W(rdivR(v, den)));
+    });
+  }
   return withPrec(10, () => {
     const den = radd(rmul(b.re, b.re), rmul(b.im, b.im));
     const re = rdivR(radd(rmul(a.re, b.re), rmul(a.im, b.im)), den);
@@ -1432,9 +1451,36 @@ function cdiv(a, b) {
     return C(round2W(re), round2W(im));
   });
 }
+function mulDivR(x, y, z) { // x·y/z with only the result range-checked, as x·y or y/z alone may leave the range; a result below the range is carried as zero to within its bound
+  if (isZeroExact(x) || isZeroExact(y)) return Q0;
+  const hi = rmag(x) + rmag(y) - rmag(z) + 3; // |x·y/z| < 2^hi, errors of the inputs included
+  if (isNZ(x) || isNZ(y) || hi < -MAX_BITS) return nz(hi);
+  if (x.k === 'q' && y.k === 'q' && z.k === 'q' && hi > 8 - MAX_BITS) return qCap(x.n * y.n * z.d, x.d * y.d * z.n); // exact, and surely in range: |x·y/z| > 2^(hi - 7)
+  const X = toF(x), Y = toF(y), Z = toF(z);
+  if (isNZ(Z)) fail('Division by a value that is zero to within the working precision.');
+  let num = X.m * Y.m, den = Z.m; const sh = W + 2 + blen(den) - blen(num);
+  if (sh >= 0) num <<= BigInt(sh); else den <<= BigInt(-sh);
+  const m = rdiv(num, den), e = X.e + Y.e - Z.e - sh;
+  if (blen(m) + e < -MAX_BITS) return nz(blen(m) + e + 1); // just below the range
+  return fmk(m, e, accSum(X.a, Y.a, Z.a, X.a + Y.a, W) - 0.1);
+}
+const sqOut = (k) => Math.abs(2 * k) > MAX_BITS - 64; // whether squaring a part of size 2^k would leave the range
+function bigPart(z) { // [larger part, the other] by size, when squaring either part would leave the range; else null
+  const kr = rmag(z.re), ki = rmag(z.im);
+  if (!sqOut(kr) && !sqOut(ki)) return null;
+  const [m, o] = kr >= ki ? [z.re, z.im] : [z.im, z.re];
+  return isNZ(m) ? null : [rabs(m), o];
+}
+const ratioBits = (m, o) => rmag(o) - rmag(m) + 2; // an upper bound on log2|o/m|
+function sq1(m, o) { // 1 + (o/m)², or null when (o/m)² is below the working precision (it might not even be in range); then only its bound 2^(2·ratioBits) counts
+  if (2 * ratioBits(m, o) < -(W + 20)) return null;
+  const r = rdivR(o, m); return radd(Q1, rmul(r, r));
+}
 function cabs(z) {
   if (isZeroExact(z.im)) return rabs(z.re);
   if (isZeroExact(z.re)) return rabs(z.im);
+  const mo = bigPart(z);
+  if (mo) return withPrec(10, () => { const s = sq1(...mo); return round2W(s ? rmul(mo[0], rsqrt(s)) : radd(mo[0], nz(rmag(mo[0]) + 2 * ratioBits(...mo)))); }); // scaled by the larger part
   return withPrec(10, () => round2W(rsqrt(radd(rmul(z.re, z.re), rmul(z.im, z.im)))));
 }
 function carg(z) { // principal argument in radians, in (-π, π]
@@ -1447,8 +1493,10 @@ function ratan2(y, x) {
   if (sx === 0 && sy === 0) fail('atan2(0, 0) has no angle.');
   if (sx === 0) { const h = withPrec(4, () => rdivR(rpi(), Q2)); return round2W(sy > 0 ? h : rneg(h)); }
   if (sy === 0 && isZeroExact(y)) return sx > 0 ? Q0 : rpi();
+  if (sx < 0 && rmag(y) - rmag(x) < -(W + 30)) return withPrec(4, () => round2W(sy >= 0 ? rpi() : rneg(rpi()))); // y/x is below the precision (and might not even be in range): ±π
+  if (sy !== 0 && rmag(y) - rmag(x) > W + 30) { const h = withPrec(4, () => rdivR(rpi(), Q2)); return round2W(sy > 0 ? h : rneg(h)); } // x/y is below the precision (and y/x might not even be in range): ±π/2
   return withPrec(12, () => {
-    const t = ratan(rdivR(y, x));
+    const t = ratan(sx > 0 && rmag(y) - rmag(x) < 8 - MAX_BITS ? mulDivR(Q1, y, x) : rdivR(y, x)); // a y/x below the range is carried as zero to within its bound
     if (sx > 0) return round2W(t);
     return round2W(sy >= 0 ? radd(t, rpi()) : rsub(t, rpi()));
   });
@@ -1485,7 +1533,11 @@ function cln(z) {
   return withPrec(12, () => {
     let lr;
     if (isZeroExact(z.re) || isNZ(z.re)) lr = rln(rabs(z.im));
-    else lr = rdivR(rln(radd(rmul(z.re, z.re), rmul(z.im, z.im))), Q2);
+    else {
+      const mo = bigPart(z);
+      if (mo) { const s = sq1(...mo); lr = radd(rln(mo[0]), s ? rdivR(rln(s), Q2) : nz(2 * ratioBits(...mo))); } // scaled by the larger part
+      else lr = rdivR(rln(radd(rmul(z.re, z.re), rmul(z.im, z.im))), Q2);
+    }
     return C(round2W(lr), round2W(carg(z)));
   });
 }
@@ -1568,7 +1620,10 @@ function cnroot(z, n) { // the principal n-th root, but the real root for a nega
     }
     if (rsign(x) >= 0) return cpow(z, C(Q(1n, BigInt(n))), false);
   }
-  if (isRealC(z) && isNZ(z.re)) return C(nz(z.re.e / Math.abs(n)));
+  if (isRealC(z) && isNZ(z.re)) {
+    if (n < 0) fail(`root(x, −${-n}) is 1 over a root of x, and x here is zero to within the precision, so it is undefined.`);
+    return C(nz(z.re.e / n));
+  }
   return cpow(z, C(Q(1n, BigInt(n))), false);
 }
 function csinCos(z) { // [sin z, cos z]
@@ -1600,7 +1655,7 @@ function ctanh(z) { // tanh(a + bi) = (sinh 2a + i sin 2b) / (cosh 2a + cos 2b)
   if (rmag(a2) > 18 && Math.abs(toNum(a2)) > (W + 20) * Math.LN2) { // cosh 2a swamps cos 2b
     return withPrec(14, () => { const [s] = sinCosR(b2), e = rexp(rneg(rabs(a2))); return C({ k: 'f', m: rsign(a2) > 0 ? 1n : -1n, e: 0, a: W + 20 }, rmul(rmul(Q2, s), e)); });
   }
-  return withPrec(20 + Math.max(0, -rmag(z.re)), () => {
+  return withPrec(20 + (isZeroExact(z.re) ? 0 : Math.max(0, -rmag(z.re))), () => {
     const [s, c] = sinCosR(b2), den = radd(rcosh(a2), c);
     if (isZero(den)) fail('tanh is undefined here: it has a pole.');
     return C(rdivR(rsinh(a2), den), rdivR(s, den));
@@ -1903,7 +1958,7 @@ return {
   setBudget(ms) { BUDGET_END = Date.now() + ms; }, clearBudget() { BUDGET_END = Infinity; },
   HPError, fail,
   // bigint
-  babs, blen, bgcd, isqrt, iroot, pow10, fdivB, rdivB: rdiv,
+  babs, blen, bgcd, isqrt, iroot, pow10, fdivB, rdivB: rdiv, log2B,
   // reals
   Q, qi, Q0, Q1, Q2, QH, isQ, isNZ, isZero, isZeroExact, isInt, radd, rsub, rmul, rdiv: rdivR, rneg, rinv, rabs, rsign, rcmp, rmag, toNum, toF, q2f, withPrec, round2W,
   rexp, rln, sinCosR, ratan, ratan2, rsqrt, rpi, rgamma, sinPi, factorialR, rsinh, rcosh, rtanh, reliableDigits, errExp, fmag, nz, ln2F,
@@ -2379,7 +2434,7 @@ function parse(src, isVar) {
 
 /* ---------- names ---------- */
 const BUILTIN = new Set(['pi', 'π', 'e', 'i']);
-let CONSTS = new Map(); // token -> {name, value (string), exact}
+let CONSTS = new Map(); // token -> {name, value (string), exact, sig (optional: the digits known, when fewer than value shows)}
 const isBuiltinName = (s) => BUILTIN.has(s) || CONSTS.has(s);
 function setConstants(list) { CONSTS = new Map(list.map((c) => [c.id, c])); memo.clear(); }
 const memo = new Map();
@@ -2393,7 +2448,7 @@ function constValue(name) {
   else {
     const c = CONSTS.get(name), [ip, fp = ''] = c.value.replace('-', '').split('.');
     let q = Q(BigInt(ip + fp), N.pow10(fp.length)); if (c.value.startsWith('-')) q = N.rneg(q);
-    v = c.exact ? C(q) : approxValue(q, (ip.replace(/^0+/, '') + fp).replace(/^0+/, '').length);
+    v = c.exact ? C(q) : approxValue(q, c.sig || (ip.replace(/^0+/, '') + fp).replace(/^0+/, '').length); // sig: digits known, when the value is padded with zeros
   }
   memo.set(key, v); return v;
 }
@@ -2579,12 +2634,17 @@ function digitInfo(z, fname, node) { // the digits of a value, following the cho
     if (!N.terminates(q.d)) fail(`${N.fmtReal(q, 'exact')} has decimal digits that never end, so ${fname} can’t use them.`, node);
     if (!CTX.ds.dec) throw new HPAsk('dec', fname, node);
     if (CTX.ds.dec === 'whole') digits = (N.babs(q.n) / q.d).toString();
-    else digits = N.fmtReal(N.rabs(q), 'exact').replace('.', '').replace(/^0+(?=\d)/, '');
+    else digits = N.exactDecimal(N.rabs(q), Infinity).replace('.', '').replace(/^0+(?=\d)/, ''); // every digit, however long (the display stops at 2,000)
   }
   return { digits, neg: neg && CTX.ds.neg === 'keep' };
 }
 function sizeCheck(digits, what) { if (digits > 100000) fail(`${what} would have more than 100,000 digits, beyond what this calculator handles.`); }
 function lnFact(n) { n = Number(n); return n < 2 ? 0 : n * Math.log(n) - n + Math.log(2 * Math.PI * n) / 2; }
+function lnFalling(n, k) { // ln(n × (n − 1) × … × (n − k + 1)) for whole 0 <= k <= n, k at most a few million; n may be any size
+  if (k === 0n) return 0;
+  if (n < 1000000000000000n) return lnFact(n) - lnFact(n - k);
+  return Number(k) * N.log2B(n) * Math.LN2; // each factor is n to within a part in 10^9
+}
 
 /* ---------- the function table ---------- */
 def('sqrt', 1, 1, ([z]) => N.csqrt(z));
@@ -2830,7 +2890,7 @@ def('nCr choose binomial', 2, 2, ([a, b], node) => {
   if (k > n) return N.C0;
   if (n - k < k) k = n - k;
   if (k > 3000000n) fail('That is too large to work out here.', node);
-  sizeCheck((lnFact(n) - lnFact(k) - lnFact(n - k)) / Math.LN10, 'The result');
+  sizeCheck((lnFalling(n, k) - lnFact(k)) / Math.LN10, 'The result');
   let r = 1n; for (let j = 1n; j <= k; j++) r = r * (n - k + j) / j;
   return C(qi(sign * r));
 });
@@ -2839,7 +2899,7 @@ def('nPr', 2, 2, ([a, b], node) => {
   if (n < 0n || k < 0n) fail('nPr needs whole numbers that are 0 or more.', node);
   if (k > n) return N.C0;
   if (k > 3000000n) fail('That is too large to work out here.', node);
-  sizeCheck((lnFact(n) - lnFact(n - k)) / Math.LN10, 'The result');
+  sizeCheck(lnFalling(n, k) / Math.LN10, 'The result');
   const prod = (lo, hi) => { if (hi - lo < 16n) { let p = 1n; for (let i = lo; i <= hi; i++) p *= i; return p; } const m = (lo + hi) >> 1n; return prod(lo, m) * prod(m + 1n, hi); };
   return C(qi(k === 0n ? 1n : prod(n - k + 1n, n)));
 });
@@ -2906,7 +2966,7 @@ def('factor', 1, 1, ([z], node) => {
   const list = [...f.fs.entries()].sort((a, b) => (a[0] < b[0] ? -1 : 1));
   if (f.probable) N.note('Some factors are probable primes: they pass the Baillie–PSW test, which no known composite number passes, but that isn’t a proof.');
   if (f.rest.length) N.note('Part of the number couldn’t be split in the time allowed. That part is composite (it has smaller factors), but they are too large to find quickly.');
-  res.fac = { sign: n < 0n, list, rest: f.rest.sort((a, b) => (a < b ? -1 : 1)) };
+  res.fac = { sign: n < 0n, list, rest: f.rest.sort((a, b) => (a < b ? -1 : 1)), probable: f.probable };
   return res;
 });
 def('digitsum', 1, 1, (a, node) => { const d = digitInfo(a[0], 'digitsum', node); let s = 0n; for (const ch of d.digits) s += BigInt(ch); return C(qi(d.neg ? -s : s)); });
@@ -2992,8 +3052,9 @@ const KEY = 'higher-powers';
 HPC.setConstants(HP_CONSTANTS);
 
 /* ---------- state, kept in this browser only ---------- */
+const dict = () => Object.create(null); // table rows and column choices: keyed by names such as constructor, so nothing inherited
 const fresh = () => ({ digits: 30, angle: 'rad', mode: 'exact', ds: { neg: '', dec: '' }, lines: [''], vars: [{ name: '', src: '' }],
-  table: { formula: '', cols: {}, rows: [{}, {}, {}] }, rg: { lo: '', hi: '', list: '' }, lt: '', co: { text: '', part: 'lat', op: '+', amt: '', unit: 'min' } });
+  table: { formula: '', cols: dict(), rows: [dict(), dict(), dict()] }, rg: { lo: '', hi: '', list: '' }, lt: '', co: { text: '', part: 'lat', op: '+', amt: '', unit: 'min' } });
 let st = fresh();
 try {
   const raw = localStorage.getItem(KEY);
@@ -3009,9 +3070,10 @@ const sane = () => {
   st.vars = st.vars.map((v) => ({ name: String((v && v.name) || ''), src: String((v && v.src) || '') }));
   if (!st.table || typeof st.table !== 'object') st.table = fresh().table;
   st.table.formula = String(st.table.formula || '');
-  if (!st.table.cols || typeof st.table.cols !== 'object') st.table.cols = {};
-  if (!Array.isArray(st.table.rows)) st.table.rows = [{}];
-  st.table.rows = st.table.rows.map((r) => { const o = {}; if (r && typeof r === 'object') for (const k of Object.keys(r)) o[k] = String(r[k]); return o; });
+  if (!st.table.cols || typeof st.table.cols !== 'object') st.table.cols = dict();
+  { const o = dict(); for (const k of Object.keys(st.table.cols)) o[k] = !!st.table.cols[k]; st.table.cols = o; }
+  if (!Array.isArray(st.table.rows)) st.table.rows = [dict()];
+  st.table.rows = st.table.rows.map((r) => { const o = dict(); if (r && typeof r === 'object') for (const k of Object.keys(r)) o[k] = String(r[k]); return o; });
   st.ds = Object.assign({ neg: '', dec: '' }, st.ds || {});
   if (!['', 'ignore', 'keep'].includes(st.ds.neg)) st.ds.neg = '';
   if (!['', 'all', 'whole'].includes(st.ds.dec)) st.ds.dec = '';
@@ -3076,7 +3138,7 @@ function describe(z, approx) { // {main, alt, notes, plainMain}; approx: it uses
     else {
       const items = f.list.map(([p, k]) => (k > 1 ? `${p}^${k}` : `${p}`)).concat(f.rest.map((c) => `${c} (not split)`));
       main = (f.sign ? '−1 × ' : '') + items.join(' × ');
-      if (f.list.length === 1 && f.list[0][1] === 1 && !f.rest.length && !f.sign) notes.push('It is prime.');
+      if (f.list.length === 1 && f.list[0][1] === 1 && !f.rest.length && !f.sign) notes.push(f.probable ? 'It is a probable prime.' : 'It is prime.');
     }
     alt = (main !== N.fmtReal(z.re, 'exact')) ? '= ' + N.fmtReal(z.re, 'exact') : '';
     return { main, alt, notes, copy: main.replace(/ \(not split\)/g, '').replace(/−/g, '-') };
@@ -3205,12 +3267,14 @@ function updateVarOutputs(info) {
     if (!nm) { el.innerHTML = v.src.trim() ? '<span class="hp-wait">Give it a name.</span>' : ''; return; }
     const r = VARS.get(nm);
     if (!r || r.empty) { el.innerHTML = '<span class="hp-wait">No value yet.</span>'; return; }
-    if (r.value) { const d = describe(r.value); el.innerHTML = `${esc(nm)} = ${numHTML(d.main)}${d.alt ? ` <span class="muted">(${numHTML(d.alt)})</span>` : ''}`; return; }
+    if (r.value) { const d = describe(r.value, r.approx); el.innerHTML = `${esc(nm)} = ${numHTML(d.main)}${d.alt ? ` <span class="muted">(${numHTML(d.alt)})</span>` : ''}${notesHTML([...(r.notes || []), ...d.notes])}`; return; }
     if (r.unset) { el.innerHTML = `<span class="hp-wait">Waiting for ${r.unset.map(esc).join(', ')}.</span>`; return; }
     if (r.ask) { el.innerHTML = `<span class="hp-wait">${esc(r.fn)} needs a choice: see the calculator’s digit-sum settings.</span>`; return; }
     if (r.err) el.innerHTML = errHTML(v.src, r);
   });
 }
+
+const notesHTML = (notes) => { const u = [...new Set(notes)]; return u.length ? `<ul class="hp-notes">${u.map((n) => `<li>${numHTML(n)}</li>`).join('')}</ul>` : ''; };
 
 /* ---------- lines ---------- */
 let lastField = null; // the box the symbol keys and the directory insert into
@@ -3349,12 +3413,22 @@ function tableInfo(info) {
   TB.names = [...HPC.freeNames(TB.ast)];
   TB.cols = TB.names.filter((nm) => (nm in t.cols ? t.cols[nm] : !varLookup(nm)));
 }
-function renderTable(info) {
-  tableInfo(info);
+const TB_SHOWN = { read: null, cols: null }; // the markup last written, so an unchanged box (and the checkbox focused in it) is left alone
+function tableFeedback() { // the formula's read-back or error, and its column choices
   const t = st.table;
-  $('tb-read').innerHTML = TB.err ? errHTML(t.formula, TB.err) : TB.ast ? `<span class="hp-work"><span class="wl">Read as</span><code>${esc(HPC.show(TB.ast))}</code></span>${convHTML(TB.ast)}` : '';
-  $('tb-cols').innerHTML = TB.names.length ? '<span>Columns:</span>' + TB.names.map((nm) => `<label><input type="checkbox" data-col="${esc(nm)}" ${TB.cols.includes(nm) ? 'checked' : ''}> ${esc(nm)}</label>`).join('') +
+  const read = TB.err ? errHTML(t.formula, TB.err) : TB.ast ? `<span class="hp-work"><span class="wl">Read as</span><code>${esc(HPC.show(TB.ast))}</code></span>${convHTML(TB.ast)}` : '';
+  const cols = TB.names.length ? '<span>Columns:</span>' + TB.names.map((nm) => `<label><input type="checkbox" data-col="${esc(nm)}" ${TB.cols.includes(nm) ? 'checked' : ''}> ${esc(nm)}</label>`).join('') +
     (TB.names.some((nm) => !TB.cols.includes(nm)) ? '<span class="help">Unticked names take their value from Variables.</span>' : '') : '';
+  if (read !== TB_SHOWN.read) { $('tb-read').innerHTML = read; TB_SHOWN.read = read; }
+  if (cols !== TB_SHOWN.cols) {
+    const box = $('tb-cols'), a = document.activeElement, had = box.contains(a) && a.dataset ? a.dataset.col : undefined;
+    box.innerHTML = cols; TB_SHOWN.cols = cols;
+    if (had !== undefined) { const el = box.querySelector(`[data-col="${CSS.escape(had)}"]`); if (el) el.focus(); }
+  }
+}
+function renderTable(info) {
+  tableInfo(info); tableFeedback();
+  const t = st.table;
   const cols = TB.cols;
   let h = '<thead><tr><th class="rn" scope="col"><span class="sr">Row</span></th>' + cols.map((c) => `<th scope="col">${esc(c)}</th>`).join('') + '<th scope="col">Result</th><th scope="col"><span class="sr">Remove</span></th></tr></thead><tbody>';
   t.rows.forEach((r, i) => {
@@ -3371,31 +3445,45 @@ function updateTable(info) {
   t.rows.forEach((r, i) => {
     const el = $('tbres-' + i); if (!el) return;
     if (!TB.ast) { el.innerHTML = '<span class="muted">—</span>'; TB_RESULTS.push(''); return; }
-    const cellVals = new Map(); let bad = null, empty = false;
+    const cellVals = new Map(), cellApprox = new Set(), cellNotes = []; let bad = null, empty = false;
     for (const c of TB.cols) {
       const src = (r[c] || '').trim();
       if (!src) { empty = true; continue; }
       const cr = work(src, varLookup, info.isVar);
-      if (cr.value) cellVals.set(c, cr.value); else bad = bad || { c, cr };
+      if (cr.value) { cellVals.set(c, cr.value); cellNotes.push(...(cr.notes || [])); if (cr.approx) cellApprox.add(c); } else bad = bad || { c, cr };
     }
     if (bad) { el.innerHTML = `<p class="hp-err">${esc(bad.c)}: ${esc(bad.cr.err || (bad.cr.unset ? 'needs ' + bad.cr.unset.join(', ') : 'can’t be worked out'))}</p>`; TB_RESULTS.push(''); return; }
     if (empty) { el.innerHTML = '<span class="muted">—</span>'; TB_RESULTS.push(''); return; }
     const lookup = (nm) => cellVals.get(nm) || (TB.cols.includes(nm) ? null : varLookup(nm));
-    const res = work(t.formula, lookup, (nm) => info.isVar(nm) || TB.cols.includes(nm));
-    if (res.value) { const d = describe(res.value); el.innerHTML = numHTML(d.main); TB_RESULTS.push(d.copy); }
+    const res = work(t.formula, lookup, (nm) => info.isVar(nm) || TB.cols.includes(nm), (nm) => cellApprox.has(nm) || (!TB.cols.includes(nm) && varApprox(nm)));
+    if (res.value) {
+      const d = describe(res.value, res.approx), conv = (res.ast && res.ast.notes) || []; // the formula's own conventions are shown above the table
+      el.innerHTML = numHTML(d.main) + notesHTML([...cellNotes, ...(res.notes || []).filter((n) => !conv.includes(n)), ...d.notes]); TB_RESULTS.push(d.copy);
+    }
     else if (res.unset) { el.innerHTML = `<span class="muted">needs ${res.unset.map(esc).join(', ')}</span>`; TB_RESULTS.push(''); }
     else if (res.ask) { el.innerHTML = `<span class="muted">${esc(res.fn)}: make its choice in the calculator settings</span>`; TB_RESULTS.push(''); }
     else { el.innerHTML = `<p class="hp-err">${esc(res.err)}</p>`; TB_RESULTS.push(''); }
   });
 }
+function splitTop(s, re) { // s cut at each character matching re that sits outside every bracket, so max(3, 4) stays whole
+  const out = []; let depth = 0, from = 0;
+  for (let i = 0; i < s.length; i++) {
+    const ch = s[i];
+    if ('([{⌊⌈'.includes(ch)) depth++;
+    else if (')]}⌋⌉'.includes(ch)) depth = Math.max(0, depth - 1);
+    else if (depth === 0 && re.test(ch)) { out.push(s.slice(from, i)); from = i + 1; }
+  }
+  out.push(s.slice(from));
+  return out;
+}
 function fillRows(text, startRow = 0, startCol = 0) {
   const lines = text.replace(/\r/g, '').split('\n'); while (lines.length && !lines[lines.length - 1].trim()) lines.pop();
   if (!lines.length) return 0;
   const tab = lines.some((l) => l.includes('\t'));
-  const rows = lines.map((l) => (tab ? l.split('\t') : l.split(/[,;]/)).map((s) => s.trim()));
+  const rows = lines.map((l) => (tab ? l.split('\t') : splitTop(l, /[,;]/)).map((s) => s.trim()));
   rows.forEach((cells, k) => {
     const ri = startRow + k;
-    while (st.table.rows.length <= ri) st.table.rows.push({});
+    while (st.table.rows.length <= ri) st.table.rows.push(dict());
     cells.forEach((v, j) => { const c = TB.cols[startCol + j]; if (c) st.table.rows[ri][c] = v; });
   });
   return rows.length;
@@ -3404,7 +3492,7 @@ function fillRows(text, startRow = 0, startCol = 0) {
 /* ---------- ranges and lists ---------- */
 function splitList(s) {
   const t = s.trim(); if (!t) return [];
-  const parts = /[,;\n]/.test(t) ? t.split(/[,;\n]/) : t.split(/\s+/);
+  const seps = splitTop(t, /[,;\n]/), parts = seps.length > 1 ? seps : splitTop(t, /\s/);
   return parts.map((p) => p.trim()).filter(Boolean);
 }
 function statsHTML(rows) { return `<dl class="hp-stats">${rows.map(([k, v]) => `<dt>${esc(k)}</dt><dd>${v}</dd>`).join('')}</dl>`; }
@@ -3537,10 +3625,10 @@ function updateOffset(info) {
   if (!N.isRealC(a.value)) { out.innerHTML = '<p class="hp-err">The amount must be a real number.</p>'; return; }
   let amt = a.value.re;
   if (amt.k === 'f') { const s = N.fmtReal(amt, 'dec', 15).replace('−', '-'); amt = /×/.test(s) ? null : decQ(s); if (!amt) { out.innerHTML = '<p class="hp-err">That amount is too large or too small to use here.</p>'; return; } }
-  const deltaMin = c.unit === 'deg' ? N.rmul(amt, MIN(60)) : amt;
+  const deltaMin = c.unit === 'deg' ? N.Q(amt.n * 60n, amt.d) : amt; // exact fractions throughout, never cut to a decimal for their size, so a huge offset still wraps exactly
   const signed = c.op === '-' ? N.rneg(deltaMin) : deltaMin;
   const start = isLat ? p.lat : p.lon;
-  let end = N.radd(start, signed);
+  let end = N.Q(start.n * signed.d + signed.n * start.d, start.d * signed.d);
   const steps = [];
   const sth = isLat ? startTh[0] : startTh[1];
   const hemi = (q) => (isLat ? (N.rsign(q) < 0 ? 'S' : 'N') : (N.rsign(q) < 0 ? 'W' : 'E'));
@@ -3551,10 +3639,11 @@ function updateOffset(info) {
   steps.push(`${c.op === '-' ? 'Subtract' : 'Add'} ${esc(amtTxt)}, measured ${isLat ? 'northwards' : 'eastwards'}: ${esc(minText(start).replace('−', '−'))} ${N.rsign(signed) < 0 ? '−' : '+'} ${esc(minText(N.rabs(signed)))} = ${esc(minText(end))} minutes${N.rsign(end) < 0 ? ` (negative means ${isLat ? 'south' : 'west'})` : ''}.`);
   if (isLat && N.rcmp(N.rabs(end), MIN(5400)) > 0) { out.innerHTML = `<ol class="hp-steps">${steps.map((s) => `<li>${s}</li>`).join('')}</ol><p class="hp-err">That goes past the pole: a latitude can’t be more than 90° (5400 minutes).</p>`; return; }
   if (!isLat) {
-    let wrapped = false;
-    while (N.rcmp(end, MIN(10800)) > 0) { end = N.rsub(end, MIN(21600)); wrapped = true; }
-    while (N.rcmp(end, MIN(-10800)) <= 0) { end = N.radd(end, MIN(21600)); wrapped = true; }
-    if (wrapped) steps.push(`That crosses the 180° meridian, so take 360° (21600 minutes) ${N.rsign(end) < 0 ? 'off' : 'on'}: ${esc(minText(end))} minutes.`);
+    const turns = -N.fdivB(10800n * end.d - end.n, 21600n * end.d); // whole turns of 360° to take off (on, when negative), leaving −180° < longitude ≤ 180°
+    if (turns !== 0n) {
+      end = N.Q(end.n - 21600n * turns * end.d, end.d); const k = N.babs(turns);
+      steps.push(`That crosses the 180° meridian, so take 360° (21600 minutes) ${turns > 0n ? 'off' : 'on'}${k > 1n ? `, ${k} times` : ''}: ${esc(minText(end))} minutes.`);
+    }
   }
   const th = roundThousandth(end);
   const [d1, m1] = dmsOf(end);
@@ -3575,7 +3664,7 @@ function recalc(full) {
   if (full) { renderVars(); renderLines(); }
   updateVarOutputs(INFO);
   updateLines(INFO);
-  if (full) renderTable(INFO); else { const before = TB.cols.join('\u0001'); tableInfo(INFO); if (before !== TB.cols.join('\u0001')) renderTable(INFO); else updateTable(INFO); }
+  if (full) renderTable(INFO); else { const before = TB.cols.join('\u0001'); tableInfo(INFO); if (before !== TB.cols.join('\u0001')) renderTable(INFO); else { tableFeedback(); updateTable(INFO); } }
   updateRanges(INFO); updateLetters(); updateOffset(INFO);
   save();
 }
@@ -3840,7 +3929,7 @@ document.addEventListener('click', (e) => {
     const inp = document.querySelector(`input.vval[data-i="${i}"]`); if (inp) { inp.focus(); inp.scrollIntoView({ block: 'center', behavior: reduced() ? 'auto' : 'smooth' }); }
   }
   else if (t.dataset.del !== undefined) { const i = +t.dataset.del; st.vars.splice(i, 1); if (!st.vars.length) st.vars.push({ name: '', src: '' }); recalc(true); const ins = document.querySelectorAll('input.vname'); ins[Math.min(i, ins.length - 1)].focus(); }
-  else if (t.dataset.rdel !== undefined) { const i = +t.dataset.rdel; st.table.rows.splice(i, 1); if (!st.table.rows.length) st.table.rows.push({}); renderTable(INFO); save(); const bs = document.querySelectorAll('[data-rdel]'); if (bs.length) bs[Math.min(i, bs.length - 1)].focus(); }
+  else if (t.dataset.rdel !== undefined) { const i = +t.dataset.rdel; st.table.rows.splice(i, 1); if (!st.table.rows.length) st.table.rows.push(dict()); renderTable(INFO); save(); const bs = document.querySelectorAll('[data-rdel]'); if (bs.length) bs[Math.min(i, bs.length - 1)].focus(); }
 });
 
 /* variables */
@@ -3862,11 +3951,12 @@ $('add-var').addEventListener('click', () => { st.vars.push({ name: '', src: '' 
 /* table */
 $('tb-formula').addEventListener('input', () => { st.table.formula = $('tb-formula').value; soon(); });
 $('tb-cols').addEventListener('change', (e) => { const c = e.target.dataset.col; if (c === undefined) return; st.table.cols[c] = e.target.checked; renderTable(INFO); save(); const el = document.querySelector(`#tb-cols [data-col="${CSS.escape(c)}"]`); if (el) el.focus(); });
-$('tb-grid').addEventListener('input', (e) => { const t = e.target; if (t.dataset.r === undefined) return; st.table.rows[+t.dataset.r][t.dataset.c] = t.value; clearTimeout(recT); recT = setTimeout(() => { updateTable(INFO); save(); }, 140); });
+let tbT = 0; // the table's own timer: a cell only needs the table worked out again, and leaving recT alone keeps a pending page recalculation
+$('tb-grid').addEventListener('input', (e) => { const t = e.target; if (t.dataset.r === undefined) return; st.table.rows[+t.dataset.r][t.dataset.c] = t.value; clearTimeout(tbT); tbT = setTimeout(() => { updateTable(INFO); save(); }, 140); });
 $('tb-grid').addEventListener('paste', (e) => {
   const t = e.target; if (t.dataset.r === undefined) return;
   const text = (e.clipboardData || window.clipboardData).getData('text');
-  if (!/[\t\n,;]/.test(text.trim())) return; // a single value: let it paste normally
+  if (!/[\t\n]/.test(text.trim()) && splitTop(text.trim(), /[,;]/).length < 2) return; // a single value: let it paste normally
   e.preventDefault();
   const n = fillRows(text, +t.dataset.r, TB.cols.indexOf(t.dataset.c));
   renderTable(INFO); save(); toast(`Filled ${n} row${n === 1 ? '' : 's'}`);
@@ -3874,11 +3964,11 @@ $('tb-grid').addEventListener('paste', (e) => {
 $('tb-grid').addEventListener('keydown', (e) => {
   const t = e.target; if (e.key !== 'Enter' || t.dataset.r === undefined) return;
   e.preventDefault(); const r = +t.dataset.r + 1;
-  if (r >= st.table.rows.length) { st.table.rows.push({}); renderTable(INFO); save(); }
+  if (r >= st.table.rows.length) { st.table.rows.push(dict()); renderTable(INFO); save(); }
   const nx = document.querySelector(`#tb-grid input[data-r="${r}"][data-c="${CSS.escape(t.dataset.c)}"]`); if (nx) nx.focus();
 });
-$('tb-add').addEventListener('click', () => { st.table.rows.push({}); renderTable(INFO); save(); const ins = document.querySelectorAll(`#tb-grid input[data-r="${st.table.rows.length - 1}"]`); if (ins[0]) ins[0].focus(); });
-$('tb-clear').addEventListener('click', () => { st.table.rows = [{}, {}, {}]; renderTable(INFO); save(); });
+$('tb-add').addEventListener('click', () => { st.table.rows.push(dict()); renderTable(INFO); save(); const ins = document.querySelectorAll(`#tb-grid input[data-r="${st.table.rows.length - 1}"]`); if (ins[0]) ins[0].focus(); });
+$('tb-clear').addEventListener('click', () => { st.table.rows = [dict(), dict(), dict()]; renderTable(INFO); save(); });
 $('tb-copy').addEventListener('click', () => { if (!TB_RESULTS.some(Boolean)) { toast('No results to copy yet'); return; } copyText(TB_RESULTS.join('\n')); });
 $('tb-copyall').addEventListener('click', () => {
   if (!TB.ast) { toast('Write a formula first'); return; }
@@ -3889,7 +3979,7 @@ $('tb-fill').addEventListener('click', () => {
   const msg = $('tb-paste-msg');
   if (!TB.cols.length) { msg.textContent = 'Write a formula with at least one column first.'; return; }
   const text = $('tb-paste').value; if (!text.trim()) { msg.textContent = 'Paste some rows into the box first.'; return; }
-  st.table.rows = []; const n = fillRows(text, 0, 0); if (!st.table.rows.length) st.table.rows.push({});
+  st.table.rows = []; const n = fillRows(text, 0, 0); if (!st.table.rows.length) st.table.rows.push(dict());
   renderTable(INFO); save(); msg.textContent = `Filled ${n} row${n === 1 ? '' : 's'}, into the columns ${TB.cols.join(', ')}.`;
 });
 
@@ -4026,7 +4116,7 @@ const btnEx = $('btn-example');
 if (btnEx) btnEx.addEventListener('click', () => {
   st.vars = [{ name: 'lamps', src: '9' }, { name: 'steps', src: '140' }, { name: 'ω', src: 'steps / 4' }];
   st.lines = ['steps × lamps + 16', 'sqrt(steps^2 + 51^2)', 'ω² − lamps!', 'digitsum(2^lamps)', 'e^(iπ) + 1', '1/7 + 1/3'];
-  st.table = { formula: 'sqrt(a^2 + b^2)', cols: {}, rows: [{ a: '3', b: '4' }, { a: '5', b: '12' }, { a: '8', b: '15' }, { a: '1', b: '1' }] };
+  st.table = { formula: 'sqrt(a^2 + b^2)', cols: dict(), rows: [{ a: '3', b: '4' }, { a: '5', b: '12' }, { a: '8', b: '15' }, { a: '1', b: '1' }].map((r) => Object.assign(dict(), r)) };
   st.rg = { lo: '120', hi: '135', list: '12, 7, 30, 18, 9' };
   st.lt = 'Higher Powers';
   st.co = { text: 'N 45° 59.880 W 093° 00.250', part: 'lat', op: '+', amt: '0.25', unit: 'min' };

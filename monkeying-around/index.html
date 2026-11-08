@@ -596,6 +596,7 @@ table.mb-grid td.ws{color:var(--muted)}
 .mb-add{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin:14px 0 0}
 .mb-add label{font-weight:600;font-size:15px}
 .mb-add select{flex:1 1 220px;min-width:0;max-width:100%}
+.mb-all{display:block;width:100%;box-sizing:border-box;margin-top:8px;resize:vertical}
 </style>
 </head>
 <body>
@@ -1096,6 +1097,10 @@ const isL = (g) => RE_L.test(g), isD = (g) => RE_D.test(g), isWS = (g) => RE_WS.
 const isAZ = (g) => /^[A-Za-z]$/.test(g);
 /* A letter's capital, for counting and sorting capitals and small letters together; a letter whose capital is
    something else (ß → SS, dotless ı → I, long ſ → S) stays as it is, so it isn't taken for another letter. */
+// a letter built from several codes (e + ◌́) is compared as its composed form (é); a single code (the Kelvin sign) stays itself
+const composed = (g) => ([...g].length > 1 ? g.normalize('NFC') : g);
+// a key that starts with A to Z but holds more (q + ◌́, with no composed form) goes after the rest
+const pastZ = (k) => (/^[A-Za-z]./su.test(k) ? 1 : 0);
 const caseKey = (g) => { const u = g.toUpperCase(); return u !== g && u.toLowerCase() === g.toLowerCase() && isAZ(u) === isAZ(g) ? u : g; };
 /* A word's first character in title case: ǆ → ǅ, ﬁ → Fi, ŉ → ʼN (capital up to its first letter, then small). */
 const TITLE = { 0x01C4: 'ǅ', 0x01C5: 'ǅ', 0x01C6: 'ǅ', 0x01C7: 'ǈ', 0x01C8: 'ǈ', 0x01C9: 'ǈ', 0x01CA: 'ǋ', 0x01CB: 'ǋ', 0x01CC: 'ǋ', 0x01F1: 'ǲ', 0x01F2: 'ǲ', 0x01F3: 'ǲ' };
@@ -1133,7 +1138,7 @@ const MORSE = {
   '.': '.-.-.-', ',': '--..--', '?': '..--..', "'": '.----.', '!': '-.-.--', '/': '-..-.', '(': '-.--.', ')': '-.--.-', '&': '.-...',
   ':': '---...', ';': '-.-.-.', '=': '-...-', '+': '.-.-.', '-': '-....-', '_': '..--.-', '"': '.-..-.', '$': '...-..-', '@': '.--.-.'
 };
-const UNMORSE = Object.fromEntries(Object.entries(MORSE).map(([k, v]) => [v, k]));
+const UNMORSE = Object.assign(Object.create(null), Object.fromEntries(Object.entries(MORSE).map(([k, v]) => [v, k]))); // no prototype, so constructor isn't a code
 
 /* ---- the steps ---- */
 const caesar = (t, k) => t.replace(/[A-Za-z]/g, (c) => { const b = c <= 'Z' ? 65 : 97; return String.fromCharCode(b + (c.charCodeAt(0) - b + k) % 26); });
@@ -1366,9 +1371,9 @@ const STEPS = {
       let total = 0;
       for (const g of gs) {
         if (o.what === 'az' ? !isAZ(g) : isWS(g)) continue;
-        const k = o.what === 'az' ? g.toUpperCase() : isL(g) ? caseKey(g) : g; m.set(k, (m.get(k) || 0) + 1); total++;
+        const k = o.what === 'az' ? g.toUpperCase() : isL(g) ? caseKey(composed(g)) : g; /* e + ◌́ counts as é */ m.set(k, (m.get(k) || 0) + 1); total++;
       }
-      const rows = [...m].map(([ch, n]) => ({ ch, n })).sort((a, b) => (o.order === 'most' ? b.n - a.n : 0) || cpCmp(a.ch, b.ch));
+      const rows = [...m].map(([ch, n]) => ({ ch, n })).sort((a, b) => (o.order === 'most' ? b.n - a.n : 0) || pastZ(a.ch) - pastZ(b.ch) || cpCmp(a.ch, b.ch));
       const others = o.what === 'az' ? otherLetters(t).length : 0;
       return { text: t, view: { kind: 'counts', rows, total }, notes: others ? [['info', `${n_(others, 'letter')} outside A to Z (such as é or Greek letters) ${others === 1 ? 'isn’t' : 'aren’t'} counted.`]] : [] };
     }
@@ -1380,7 +1385,10 @@ const STEPS = {
       { k: 'order', type: 'select', label: 'Order', def: 'az', choices: [['az', 'A to Z'], ['za', 'Z to A']] }],
     run(t, o) {
       const gs = G(t).filter(o.what === 'letters' ? isL : (g) => !isWS(g));
-      gs.sort((a, b) => cpCmp(caseKey(a), caseKey(b)) || cpCmp(a, b)); // ß, ı and ſ come after Z, by their own codes
+      // a letter is compared in its composed form, so e + ◌́ sorts with é, after Z; one with no composed form
+      // (q + ◌́) is still outside A to Z, so it goes after the rest rather than among the Q's
+      const key = (g) => caseKey(composed(g)), outside = (g) => (isL(g) && pastZ(key(g)) ? 1 : 0);
+      gs.sort((a, b) => outside(a) - outside(b) || cpCmp(key(a), key(b)) || cpCmp(composed(a), composed(b)) || cpCmp(a, b));
       if (o.order === 'za') gs.reverse();
       return { text: gs.join('') };
     }
@@ -1774,6 +1782,7 @@ $('mk-swap').addEventListener('click', () => {
 /* ---------- monkey business: a chain of steps on the result, or on the solver's own text ---------- */
 const MB_ORDER = [['Pick out', ['nth', 'first', 'last', 'lengths']], ['Rearrange', ['reverse', 'columns', 'blocks', 'sort']],
   ['Tidy', ['remove', 'case', 'dedupe']], ['Convert', ['caesar', 'atbash', 'a1z26', 'num2let', 'tocodes', 'fromcodes', 'tomorse', 'frommorse']], ['Look', ['counts']]];
+const MB_MOST = 50; // the most steps a chain can have, when adding one and when a saved chain is loaded
 const MB_SHOW = 20000; // characters shown in one step's box; Copy and the Use buttons always take all of it
 let chain = [], mbNext = 1, mbFrom = '', mbRes = [];
 $('mb-pick').innerHTML = MB_ORDER.map(([g, ids]) => `<optgroup label="${esc(g)}">${ids.map((id) => `<option value="${id}">${esc(MKC.STEPS[id].name)}</option>`).join('')}</optgroup>`).join('');
@@ -1882,8 +1891,25 @@ function mbMove(i, by, sel) {
 }
 function mbCopy(btn, text, i) {
   const done = (m) => { btn.textContent = m; clearTimeout(btn._t); btn._t = setTimeout(() => { btn.textContent = 'Copy'; }, 1400); };
-  const fallback = () => { const box = $('mb-r' + chain[i].id).querySelector('.mb-out, .mb-shifts'); if (!box) return done('Can’t copy here'); const r = document.createRange(); r.selectNodeContents(box); const s = getSelection(); s.removeAllRanges(); s.addRange(r); done('Selected: copy it'); };
-  if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(text).then(() => done('Copied'), fallback); else fallback();
+  const fallback = () => { // copy all of it through a hidden box, since the step's own box may show only part
+    if (!text) return done('Nothing to copy'); // copying an empty selection would leave the old clipboard
+    const ta = document.createElement('textarea'), back = document.activeElement; ta.value = text; ta.setAttribute('readonly', ''); ta.style.position = 'fixed'; ta.style.opacity = '0';
+    document.body.appendChild(ta); ta.select(); let ok = false; try { ok = document.execCommand('copy'); } catch (e) { ok = false; } ta.remove(); if (back && back.focus) back.focus();
+    if (ok) return done('Copied');
+    // last resort: select all of it for copying by hand. The step's own box may show only part, so when it doesn't
+    // hold exactly the text, a box with the whole text is shown under it, or at the end of the step when it has no
+    // box (Letter counts), until the step redraws, and selected
+    const card = $('mb-r' + chain[i].id), box = card && card.querySelector('.mb-out, .mb-shifts'); if (!card) return done('Can’t copy here');
+    if (box && box.classList.contains('mb-out') && box.textContent === text) {
+      const r = document.createRange(); r.selectNodeContents(box); const sel = getSelection(); sel.removeAllRanges(); sel.addRange(r);
+    } else {
+      let all = card.querySelector('textarea.mb-all');
+      if (!all) { all = document.createElement('textarea'); all.className = 'mb-out mb-all'; all.readOnly = true; all.rows = 6; all.setAttribute('aria-label', 'The whole result, selected for copying'); if (box) box.after(all); else card.append(all); }
+      all.value = text; all.focus(); all.select();
+    }
+    done('Selected: copy it');
+  };
+  if (navigator.clipboard && navigator.clipboard.writeText) { try { navigator.clipboard.writeText(text).then(() => done('Copied'), fallback); } catch (e) { fallback(); } } else fallback();
 }
 $('mb-steps').addEventListener('click', (e) => {
   const b = e.target.closest('button[data-act]'); if (!b) return;
@@ -1927,6 +1953,7 @@ const mbSetting = (e) => {
 $('mb-steps').addEventListener('input', (e) => { if (e.target.tagName === 'INPUT' && e.target.type === 'text') mbSetting(e); });
 $('mb-steps').addEventListener('change', (e) => { if (e.target.tagName === 'SELECT' || e.target.type === 'checkbox') mbSetting(e); });
 $('mb-add').addEventListener('click', () => {
+  if (chain.length >= MB_MOST) { mbSay(`A chain can have at most ${MB_MOST} steps. Remove one to add another.`); return; }
   const s = mbStep($('mb-pick').value); chain.push(s);
   mbRender({ id: s.id, sel: '[data-act="on"]' }); save();
   mbSay(`Added step ${chain.length}, ${mbName(s)}.`);
@@ -1941,7 +1968,7 @@ document.querySelectorAll('input[name="mb-src"]').forEach((el) => el.addEventLis
 $('mb-own').addEventListener('input', () => { clearTimeout(mbCompute.t); mbCompute.t = setTimeout(() => { mbCompute(); save(); }, 40); });
 function mbLoad(list) { // saved steps are checked against what the page knows; anything else is dropped
   if (!Array.isArray(list)) return;
-  chain = list.filter((x) => x && typeof x.type === 'string' && Object.prototype.hasOwnProperty.call(MKC.STEPS, x.type)).slice(0, 50).map((x) => {
+  chain = list.filter((x) => x && typeof x.type === 'string' && Object.prototype.hasOwnProperty.call(MKC.STEPS, x.type)).slice(0, MB_MOST).map((x) => {
     const o = {};
     for (const op of MKC.STEPS[x.type].opts) { const v = x.o && x.o[op.k]; o[op.k] = op.type === 'check' ? (typeof v === 'boolean' ? v : op.def) : typeof v === 'string' ? v.slice(0, 40) : op.def; }
     return mbStep(x.type, o, x.on !== false);

@@ -1343,12 +1343,37 @@ function typedCells() {
   });
   return { cells, all };
 }
-[1, 2, 3].forEach((n) => $(`code-${n}`).addEventListener('input', () => {
+// The three codes in a box's text, or null: exactly three separate 6-digit runs with nothing else that
+// could be a code (labels like "Code 1:" are fine), or 18 digits in groups that each sit inside one code
+// (123 456 234 567 …, or one run of 18); a group never spans two codes.
+function threeCodes(t) {
+  const runs = t.match(/(?<!\d)\d{6}(?!\d)/g);
+  if (runs && runs.length === 3 && !/\d{3}/.test(t.replace(/(?<!\d)\d{6}(?!\d)/g, ''))) return runs;
+  const all = t.replace(/\D/g, '');
+  if (all.length !== 18) return null;
+  let at = 0;
+  for (const g of t.match(/\d+/g)) { if (Math.floor(at / 6) !== Math.floor((at + g.length - 1) / 6) && g.length !== 18) return null; at += g.length; }
+  return all.match(/\d{6}/g);
+}
+function fillCodes(codes) { codes.forEach((c, i) => { state.typed[i] = c; $(`code-${i + 1}`).value = c; }); }
+let pasted = false;   // set by the paste handler below when it lets a paste through, so the shortcut leaves that paste alone
+[1, 2, 3].forEach((n) => $(`code-${n}`).addEventListener('input', (e) => {
   const v = $(`code-${n}`).value;
-  const digits = v.replace(/[^0-9]/g, '');
-  if (n === 1 && digits.length === 18 && !$('code-2').value && !$('code-3').value) { // all three pasted into the first box
-    [0, 1, 2].forEach((i) => { state.typed[i] = digits.slice(i * 6, i * 6 + 6); $(`code-${i + 1}`).value = state.typed[i]; });
-  } else state.typed[n - 1] = v.slice(0, 60);
+  const fromPaste = pasted || e.inputType === 'insertFromPaste'; pasted = false;
+  const codes = n === 1 && !fromPaste && !$('code-2').value && !$('code-3').value ? threeCodes(v) : null;
+  if (codes) fillCodes(codes);   // all three typed into the first box
+  else state.typed[n - 1] = v.slice(0, 60);
+  update();
+}));
+// a paste of three codes fills all three, replacing what they held, and so does a paste that leaves three codes
+// in the box: the text it would hold, read with or without breaks at the paste's edges ("234567 345678" after "123456")
+[1, 2, 3].forEach((n) => $(`code-${n}`).addEventListener('paste', (e) => {
+  const t = (e.clipboardData && e.clipboardData.getData('text')) || '', el = $(`code-${n}`);
+  const before = el.value.slice(0, el.selectionStart), after = el.value.slice(el.selectionEnd);
+  const codes = threeCodes(t) || threeCodes(before + t + after) || threeCodes(`${before} ${t} ${after}`);
+  if (!codes) { pasted = true; setTimeout(() => { pasted = false; }); return; }   // anything else pastes as usual, and stays in this box
+  e.preventDefault();
+  fillCodes(codes);
   update();
 }));
 
@@ -1415,6 +1440,7 @@ function fromText(cells, p) { // "(from L, its 3rd digit)" or "(fixed in the pat
   return '';
 }
 function renderDecode(cells) {
+  clearTimeout(renderDecode.t); // a result that has gone stale is never announced
   const known = cells && cells.every((c) => c.d !== null);
   $('dec-wait').hidden = !!known; $('dec-body').hidden = !known;
   if (!known) { $('dec-status').textContent = ''; renderHow(null); return; }
@@ -1517,6 +1543,7 @@ function metresMoved(r) { // the rounding, as a distance on the ground (a sphere
 }
 let lastEnc = null;
 function renderEncode() {
+  clearTimeout(renderEncode.t);
   const r = RW.readCoords(state.enc), msg = $('enc-msg');
   $('enc-in').setAttribute('aria-invalid', r.err ? 'true' : 'false');
   lastEnc = null;

@@ -536,11 +536,13 @@ table.nums td:last-child{overflow-wrap:anywhere;white-space:normal}
   const CARD = alt(Object.keys(SMALL));
   const SCALE = 'hundred|thousand|million|billion|trillion|dozen|score';
   const SUB = alt(Object.keys(SMALL).concat(Object.keys(ORDS)).filter((w) => (SMALL[w] ?? ORDS[w]) < 100));
-  // words join with a hyphen or a space, or with "and" after a hundred, thousand, score and so on (two hundred and thirteen)
-  const SEP = `(?:[- ]|(?<=(?:${SCALE})) and (?=(?:${SUB})\\b))`;
+  // words join with a hyphen or any run of spaces, or with "and" after a hundred, thousand, score and so on (two hundred and thirteen)
+  // a line break joins words only after a hyphen or before hundred, thousand and so on, so a heading ending "Twenty" stays apart from "One night" below it
+  const SEP = `(?:-\\s*|(?<=(?:${SCALE}))\\s+and\\s+(?=(?:${SUB})\\b)|[^\\S\\n]+|\\s+(?=(?:${SCALE})\\b))`;
   // "second" on its own is usually time, so it only counts as "the second" or at the end of a compound (twenty-second)
   const ORD1 = alt(Object.keys(ORDS).filter((w) => w !== 'second'));
-  const NUMWORD = new RegExp(`\\b(?:(?:an?) (?=(?:${CARD})\\b))?(?:(?:${CARD})(?:${SEP}(?:${CARD}))*(?:${SEP}(?:${ORD1})|-second)?|(?:${ORD1})|(?<=\\bthe )second)\\b`, 'gi');
+  // "a" or "an" counts as one only before a hundred, a thousand, a dozen and so on, not before a twenty-four
+  const NUMWORD = new RegExp(`\\b(?:(?:an?)\\s+(?=(?:${SCALE})\\b))?(?:(?:${CARD})(?:${SEP}(?:${CARD}))*(?:${SEP}(?:${ORD1})|-\\s*second)?|(?:${ORD1})|(?<=\\bthe\\s+)second)\\b`, 'gi');
   const kind = (v, w) => w === 'dozen' || w === 'score' || v === 100 ? 'hund' : v >= 1000 ? 'scale' : v === 0 || (v >= 10 && v < 20) ? 'teen' : v < 10 ? 'unit' : 'tens';
   // reads a run of number words; a run that is really two numbers ("nineteen twenty-three") comes back as two
   function wordNumbers(raw, at){
@@ -563,10 +565,12 @@ table.nums td:last-child{overflow-wrap:anywhere;white-space:normal}
     finish();
     return out;
   }
-  const DIGITS = /\d{1,3}(?:,\d{3})+(?!\d)(?:\.\d+)?|\d+(?:\.\d+)?/g; // commas only as thousands separators
+  // commas only as thousands separators; a minus sign counts only at the start or after a space, bracket, = or :
+  // (-12.5, x=-1), never when it joins two things (10-12, 5%-10%), and .25 is 0.25 but not the 5 in ...5
+  const DIGITS = /(?:(?<=^|[\s(\[=:])[-−])?(?:\d{1,3}(?:,\d{3})+(?!\d)(?:\.\d+)?|\d+(?:\.\d+)?|(?<![\p{L}\p{N}.])\.\d+)/gu;
   function numbersIn(text){
     const out = [];
-    for (const m of text.matchAll(DIGITS)) out.push({ i: m.index, len: m[0].length, raw: m[0], v: m[0].replace(/,/g, '') });
+    for (const m of text.matchAll(DIGITS)) out.push({ i: m.index, len: m[0].length, raw: m[0], v: m[0].replace(/,/g, '').replace('−', '-').replace(/^(-?)\./, '$10.') });
     for (const m of text.matchAll(NUMWORD)) { if (/^(a|an)$/i.test(m[0].trim())) continue; if (/^score$/i.test(m[0])) continue; out.push(...wordNumbers(m[0], m.index)); }
     return out.sort((a, b) => a.i - b.i);
   }
@@ -597,7 +601,7 @@ table.nums td:last-child{overflow-wrap:anywhere;white-space:normal}
     const out = [];
     st.pages.forEach((p, pi) => {
       const chunks = p.text.split(/\n\s*\n/).flatMap((c) => c.length > 1200 ? c.split(/\n/) : [c]);
-      chunks.map((c) => c.trim()).filter((c) => c.length > 1).forEach((c) => out.push({ page: pi, text: c }));
+      chunks.map((c) => c.trim()).filter((c) => c.length > 1 || /[\p{L}\p{N}]/u.test(c)).forEach((c) => out.push({ page: pi, text: c }));
     });
     return out;
   }

@@ -510,7 +510,7 @@ table.nums td:last-child{overflow-wrap:anywhere;white-space:normal}
 .cc-num mark{background:var(--accent-soft);color:var(--ink);border-radius:3px;box-shadow:0 0 0 1px var(--accent);padding:0 1px}
 .cc-num sup{font-size:.72em}
 .cc-num .unit{font-family:"Barlow",system-ui,sans-serif;color:var(--ink-2);margin-left:.4em;white-space:normal}
-.cc-unc{margin:4px 0 0;font-size:14px;color:var(--ink-2)}
+.cc-unc{margin:4px 0 0;font-size:14px;color:var(--ink-2);overflow-wrap:anywhere}
 .cc-unc .mono{font-size:13.5px}
 .cc-dfn{margin:8px 0 0;color:var(--ink);font-size:15px;max-width:72ch}
 .cc-cf{margin:6px 0 0;font-size:14px;color:var(--ink-2);overflow-wrap:anywhere}
@@ -1215,8 +1215,9 @@ function ratan2(y, x) {
   if (sx === 0) { const h = withPrec(4, () => rdivR(rpi(), Q2)); return round2W(sy > 0 ? h : rneg(h)); }
   if (sy === 0 && isZeroExact(y)) return sx > 0 ? Q0 : rpi();
   if (sx < 0 && rmag(y) - rmag(x) < -(W + 30)) return withPrec(4, () => round2W(sy >= 0 ? rpi() : rneg(rpi()))); // y/x is below the precision (and might not even be in range): ±π
+  if (sy !== 0 && rmag(y) - rmag(x) > W + 30) { const h = withPrec(4, () => rdivR(rpi(), Q2)); return round2W(sy > 0 ? h : rneg(h)); } // x/y is below the precision (and y/x might not even be in range): ±π/2
   return withPrec(12, () => {
-    const t = ratan(rdivR(y, x));
+    const t = ratan(sx > 0 && rmag(y) - rmag(x) < 8 - MAX_BITS ? mulDivR(Q1, y, x) : rdivR(y, x)); // a y/x below the range is carried as zero to within its bound
     if (sx > 0) return round2W(t);
     return round2W(sy >= 0 ? radd(t, rpi()) : rsub(t, rpi()));
   });
@@ -3499,9 +3500,13 @@ function runCalc() {
     else if (exact && et === text) lines.push('Exact.');
     else if (exact) lines.push(et.length <= 60 ? `Exactly ${esc(et)}; shown to ${n} significant digit${n === 1 ? '' : 's'}.` : `Exact; shown to ${n} significant digit${n === 1 ? '' : 's'}.`);
     else {
-      const rd = Math.min(HPN.reliableDigits(z.re), HPN.isZero(z.im) ? Infinity : HPN.reliableDigits(z.im)); const k = Math.min(n, rd);
+      const rdOf = (x) => (HPN.isZero(x) ? Infinity : HPN.reliableDigits(x));
+      const rd = Math.min(rdOf(z.re), rdOf(z.im)); const k = Math.min(n, rd);
       const zeros = sig < k ? ' (zeros at the end are not shown)' : '';
-      if (rd < n) lines.push(`Correct to ${k} significant digit${k === 1 ? '' : 's'}${zeros}: the inputs vouch for no more${used.some((c) => c.u) ? ', since a measured constant goes in with only the digits CODATA gives' : ''}.`);
+      if (rd === Infinity) { // zero to within a bound (say, a result below the number range): give the bound, as Higher Powers does
+        const e2 = Math.max(...[z.re, z.im].filter(HPN.isNZ).map((x) => x.e));
+        lines.push(`Zero to within ${used.some((c) => c.u) ? 'the digits CODATA gives for a measured constant' : 'the working precision'}: what’s left is smaller than about 10^${String(Math.ceil(e2 * 0.30103)).replace('-', '−')}.`);
+      } else if (rd < n) lines.push(`Correct to ${k} significant digit${k === 1 ? '' : 's'}${zeros}: the inputs vouch for no more${used.some((c) => c.u) ? ', since a measured constant goes in with only the digits CODATA gives' : ''}.`);
       else lines.push(`Rounded to ${k} significant digit${k === 1 ? '' : 's'}${zeros}.`);
     }
     if (f.dropped) lines.push(`A${f.dropped === 'im' ? 'n imaginary' : ' real'} part too small to show at this many digits was left out.`);

@@ -1816,7 +1816,9 @@ function checkRoom(wall) { // what's wrong with the room fields, for the door on
   }
   return { W, D, dp, dw, errs };
 }
+let wallNote = false; // the picker's line holds why a door wall was refused, until the room or the picker changes
 function readRoom(explain = true) {
+  if (wallNote) syncPicker(); // a refused wall's note goes once the room is changed
   const { W, D, dp, dw, errs } = checkRoom(S.dwall);
   fieldsWhy('ip-room-why', ROOM_IDS, errs, explain);
   if (errs.length) return;
@@ -1926,7 +1928,7 @@ function geometryChanged() { // after the plan, its turn or its mirroring change
   $('ip-where').textContent = 'Tap the plan to see an area.';
   setNorth(S.north); drawPlan(); syncPicker(); save();
 }
-function setWall(w) {
+function setWall(w, fromPicker) {
   if (!WALL[w] || w === S.dwall) { syncPicker(); return; }
   if (curPlan()) { // the drawing turns, and north turns with it, so the front still faces the same way
     const f = doorFacing(); S.dwall = w; S.north = mod(WALL[w]().out - f, 360); setPlanDims(); geometryChanged();
@@ -1935,6 +1937,10 @@ function setWall(w) {
     if (errs.length) { // the door has to fit its new wall first, so nothing moves yet
       $('ip-dwall').value = S.dwall; syncPicker(); $('ip-setup-room').open = true; fieldsWhy('ip-room-why', ROOM_IDS, errs, true);
       $('ip-room-why').textContent = `The door can’t go on the ${w} wall as it is, so it stays on the ${S.dwall} wall. ` + errs.map(([, m]) => m).join(' ');
+      if (fromPicker) { // the reason is far below the picker on a phone, so say so where the tap was
+        $('ip-planname').textContent = `The door can’t go on the ${w} wall as it is, so it stays on the ${S.dwall} wall: “The room, the door and north” below says why.`;
+        wallNote = true; $('ip-planname').scrollIntoView({ block: 'nearest' });
+      }
       return;
     }
     S.dwall = w; $('ip-dwall').value = w; doorLabel(); readRoom(); refreshAdvice(); syncPicker();
@@ -1948,6 +1954,7 @@ function usePlan(id) {
 }
 function syncPicker() {
   const P = curPlan(), kind = P ? P.kind : 'rect';
+  wallNote = false;
   document.querySelectorAll('input[name=ip-kind]').forEach((r) => { r.checked = r.value === kind; });
   document.querySelectorAll('input[name=ip-wall]').forEach((r) => { r.checked = r.value === S.dwall; });
   const face = DIRS[mod(Math.round(doorFacing() / 45), 8)];
@@ -1969,7 +1976,7 @@ $('ip-another').addEventListener('click', () => {
   const list = plansOf(P.kind); usePlan(list[(list.indexOf(P) + 1) % list.length].id);
 });
 $('ip-mirror').addEventListener('change', () => { if (!curPlan()) return; S.mirror = $('ip-mirror').checked; setPlanDims(); geometryChanged(); });
-document.querySelectorAll('input[name=ip-wall]').forEach((r) => r.addEventListener('change', () => { if (r.checked) setWall(r.value); }));
+document.querySelectorAll('input[name=ip-wall]').forEach((r) => r.addEventListener('change', () => { if (r.checked) setWall(r.value, true); }));
 document.querySelectorAll('input[name=ip-face]').forEach((r) => r.addEventListener('change', () => { if (r.checked) setNorth(mod(WALL[S.dwall]().out - DIRS.indexOf(r.value) * 45, 360)); }));
 document.querySelectorAll('input[name=ip-names]').forEach((r) => r.addEventListener('change', () => { if (r.checked) { S.names = r.value; drawGrid(); save(); } }));
 document.querySelectorAll('.ip-areas .btn').forEach((b) => b.addEventListener('click', () => selectArea(b.dataset.area)));

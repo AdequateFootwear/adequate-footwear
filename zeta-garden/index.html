@@ -1366,6 +1366,12 @@ function parseNum(text) {
 // Re(s) − 1 worked out from the typed decimal itself, before it is rounded to a double (next to the pole,
 // 1.0000000001 as a double is 1 + 1.00000008e-10); undefined for a fraction or when it isn't needed
 function minusOne(text) {
+  const t = minusOneExact(text); if (!t) return undefined;
+  const x = Number(`${t[0]}e${t[1]}`); // (value − 1), rounded once
+  return Math.abs(x) < 1e-3 ? x : undefined;
+}
+// Re(s) − 1 exactly, as [digits, exponent]: (value − 1) = digits × 10^exponent; undefined for a fraction
+function minusOneExact(text) {
   let v = String(text).trim().replace(/[−‒–—]/g, '-').replace(/[\s  _']/g, '');
   if (/^[+-]?\d{1,3}(,\d{3})+(\.\d+)?(e[+-]?\d+)?$/i.test(v)) v = v.replace(/,/g, '');
   else if (/^[+-]?\d*,\d+(e[+-]?\d+)?$/i.test(v)) v = v.replace(',', '.');
@@ -1375,8 +1381,50 @@ function minusOne(text) {
   if (Math.abs(ex) > 400) return undefined;
   let n = BigInt((ip || '0') + fp) * (m[1] === '-' ? -1n : 1n), one = 1n;
   if (ex >= 0) n *= 10n ** BigInt(ex); else one = 10n ** BigInt(-ex);
-  const d = n - one, x = Number(`${d}e${Math.min(ex, 0)}`); // (value − 1), rounded once
-  return Math.abs(x) < 1e-3 ? x : undefined;
+  return [n - one, Math.min(ex, 0)];
+}
+// Re(s) − 1 for the label, to 15 significant digits from the typed decimal, since a double that small (subnormal)
+// holds too few digits of it; undefined when it can't be told that way
+function minusOneLabel(text) {
+  const t = minusOneExact(text); if (!t || t[0] === 0n) return undefined;
+  let ds = (t[0] < 0n ? -t[0] : t[0]).toString(), E = ds.length - 1 + t[1];
+  if (ds.length > 15) { let r = BigInt(ds.slice(0, 15)) + (ds[15] >= '5' ? 1n : 0n); ds = r.toString(); if (ds.length > 15) { ds = ds.slice(0, 15); E++; } }
+  ds = ds.replace(/0+$/, '') || '0';
+  if (E >= -300) return fmtSig(Number(`${ds}e${E - (ds.length - 1)}`), 15);
+  return (ds.length > 1 ? ds[0] + '.' + ds.slice(1) : ds) + ' × 10' + sup(String(E));
+}
+// the typed number as an exact fraction [n, d] of BigInts (d > 0), as parseNum reads it; undefined if it can't be
+function exactOf(text) {
+  let v = String(text).trim().replace(/[−‒–—]/g, '-').replace(/[\s  _']/g, '');
+  const fr = v.match(/^([+-]?[\d.,]+(?:e[+-]?\d+)?)\/([+-]?[\d.,]+(?:e[+-]?\d+)?)$/i);
+  if (fr) {
+    const p = exactOf(fr[1]), q = exactOf(fr[2]);
+    if (!p || !q || q[0] === 0n) return undefined;
+    const n = p[0] * q[1], d = p[1] * q[0];
+    return d < 0n ? [-n, -d] : [n, d];
+  }
+  if (/^[+-]?\d{1,3}(,\d{3})+(\.\d+)?(e[+-]?\d+)?$/i.test(v)) v = v.replace(/,/g, '');
+  else if (/^[+-]?\d*,\d+(e[+-]?\d+)?$/i.test(v)) v = v.replace(',', '.');
+  const m = /^([+-]?)(\d+\.?\d*|\.\d+)(?:e([+-]?\d+))?$/i.exec(v);
+  if (!m) return undefined;
+  const [ip, fp = ''] = m[2].split('.'), ex = (m[3] ? Number(m[3]) : 0) - fp.length;
+  if (Math.abs(ex) > 400) return undefined;
+  const n = BigInt((ip || '0') + fp) * (m[1] === '-' ? -1n : 1n);
+  return ex >= 0 ? [n * 10n ** BigInt(ex), 1n] : [n, 10n ** BigInt(-ex)];
+}
+// how far the typed number is from x, the double it was read as (0 when it is x exactly, or can't be told)
+function roundOff(text, x) {
+  const t = exactOf(text);
+  if (!t || !Number.isFinite(x)) return 0;
+  let xd = 1n, y = x;
+  while (!Number.isInteger(y)) { y *= 2; xd *= 2n; } // a double is a whole number over a power of 2, exactly
+  let n = t[0] * xd - BigInt(y) * t[1];
+  const d = t[1] * xd;
+  if (n === 0n) return 0;
+  const sg = n < 0n ? -1 : 1; if (n < 0n) n = -n;
+  const k = n.toString(2).length - d.toString(2).length - 64; // keep about 64 bits of n / d
+  const q = Number(k >= 0 ? n / (d << BigInt(k)) : (n << BigInt(-k)) / d), k1 = Math.trunc(k / 2);
+  return sg * q * Math.pow(2, k1) * Math.pow(2, k - k1);
 }
 function parseIndex(text) {
   const v = String(text).trim().replace(/[\s  _',]/g, '');
@@ -2045,10 +2093,29 @@ function calc() {
   if (Math.abs(a) > 1000) { whyOut('cz-why', 'Keep Re(s) between −1000 and 1000.'); $('cz-out').innerHTML = ''; return; }
   if (Math.abs(b) > (onLine ? TMAX : 100000)) { whyOut('cz-why', onLine ? `On the critical line, keep Im(s) within ±${group(TMAX)}.` : 'Keep Im(s) within ±100,000 (on the critical line, Re(s) = 1/2, you can go up to ±5,000,000).'); $('cz-out').innerHTML = ''; return; }
   save();
-  let v;
-  if (onLine && Math.abs(b) > 100000) { const z = ZG.zetaHalf(b, true); v = { re: z[0], im: z[1] }; }
-  else v = ZG.zeta(a, b, 1e-16, minusOne($('cz-re').value));
-  const sStr = fmtC(a, b, 15);
+  const sm1 = minusOne($('cz-re').value), useSm1 = sm1 !== undefined && Math.abs(a - 1) < 1e-3;
+  const high = onLine && Math.abs(b) > 100000;
+  const zAt = (bb) => { if (high) { const z = ZG.zetaHalf(bb, true); return { re: z[0], im: z[1] }; } return ZG.zeta(a, bb, 1e-16, sm1); };
+  let v = zAt(b);
+  // the value is for s as typed, not for the doubles nearest its parts: they can be up to half a unit in the
+  // last place away, which far up the line moves ζ in its 9th digit. So step by ζ′(s) times that difference,
+  // with ζ′ from two values just above and below (Re(s) − 1 next to the pole is already carried exactly)
+  // only a rounding of a few units in the last place is stepped over: a part typed as a fraction of subnormal numbers can
+  // be read far from what was typed, and then the value stays at the double its label shows
+  const small = (dx, x) => (Math.abs(dx) <= 8 * Math.max(Math.abs(x) * Number.EPSILON, Number.MIN_VALUE) ? dx : 0);
+  const dA = useSm1 ? 0 : small(roundOff($('cz-re').value, a), a), dB = small(roundOff($('cz-im').value === '' ? '0' : $('cz-im').value, b), b);
+  if ((dA || dB) && !v.pole && !v.trivial && !v.nearPole && v.lnAbs === undefined) {
+    const h = Math.min(1 / 16384, Math.hypot(useSm1 ? sm1 : a - 1, b) / 16), p = zAt(b + h), q = zAt(b - h);
+    if (h > 0 && p.lnAbs === undefined && q.lnAbs === undefined && !p.pole && !q.pole) {
+      const dr = (p.im - q.im) / (2 * h), di = -(p.re - q.re) / (2 * h); // ζ′(s), as the steps were along i
+      const re = v.re + dr * dA - di * dB, im = v.im + dr * dB + di * dA;
+      if (Number.isFinite(re) && Number.isFinite(im)) v = { ...v, re, im };
+    }
+  }
+  // Re(s) next to 1 is labelled from Re(s) − 1, as typed, when the double alone would read as exactly 1
+  const m1L = useSm1 && sm1 !== 0 && +a.toPrecision(15) === 1 ? minusOneLabel($('cz-re').value) : undefined;
+  const reLbl = m1L !== undefined ? `1 ${sm1 < 0 ? MINUS : '+'} ${m1L}` : fmtSig(a, 15);
+  const sStr = b === 0 ? reLbl : `${reLbl} ${b < 0 ? MINUS : '+'} ${fmtSig(Math.abs(b), 15)}i`;
   let html = '';
   if (v.pole) {
     html = `<p><var>s</var> = 1 is the pole of ζ: it has no value there. Close by, ζ(<var>s</var>) ≈ 1/(<var>s</var> − 1) + γ, where γ ≈ 0.5772156649 is Euler’s constant.</p>`;
@@ -2063,7 +2130,7 @@ function calc() {
     // along it and across it, as fractions of |s − 1|, which move the size and the angle
     let np = null;
     if (v.nearPole) {
-      const sm1 = minusOne($('cz-re').value), dRe = sm1 === undefined ? a - 1 : sm1, d = Math.hypot(dRe, b), th = Math.atan2(b, dRe);
+      const dRe = sm1 === undefined ? a - 1 : sm1, d = Math.hypot(dRe, b), th = Math.atan2(b, dRe);
       const exRe = dRe === 0 && /^\+?0*1([.,]0*)?$/.test($('cz-re').value.replace(/[\s  _']/g, ''));
       const exIm = b === 0 && !/[1-9]/.test($('cz-im').value);
       const part = (p, ex) => ex ? 0 : Number.MIN_VALUE / d / 2 + 4.4e-16 * Math.abs(p) / d;
@@ -2076,7 +2143,7 @@ function calc() {
     // (right by the pole, as few as the distance leaves, down to none)
     let sig = np ? Math.min(15, Math.floor(-Math.log10(2 * rel))) : Math.max(8, Math.min(15, Math.floor(-Math.log10(2 * rel))));
     // next to the pole, Re(s) − 1 typed as a fraction is only as good as the double it rounds to
-    const near = Math.abs(a - 1) < 1e-3 && a !== 1 && minusOne($('cz-re').value) === undefined;
+    const near = Math.abs(a - 1) < 1e-3 && a !== 1 && sm1 === undefined;
     if (near) sig = Math.max(1, Math.min(sig, Math.floor(-Math.log10(2.2e-16 / Math.abs(a - 1)))));
     // each part is known to an absolute error: a floor of about 10⁻¹⁵ (it grows with |ζ| next to the pole),
     // or a fraction of |ζ| to the left of 0 (the whole value's rel, which either part's error can reach there),
@@ -2101,7 +2168,7 @@ function calc() {
       }
     }
     if (onLine) {
-      const at = Math.abs(b), { z, err } = ZG.Zacc(at, 0, 1e-14), th = ZG.theta(at);
+      const at = Math.abs(b), { z, err } = ZG.Zacc(at, b < 0 ? -dB : dB, 1e-14), th = ZG.theta(at); // Z at t as typed, carried as a double-double
       html += `<li>On the critical line: Z(${esc(fmtSig(b, 12))}) = <span class="mono">${esc(fmtA(z, 12, err))}</span> and θ(${esc(fmtSig(b, 12))}) = <span class="mono">${esc(fmtSig(b < 0 ? -th : th, 12))}</span>, and ζ(<var>s</var>) = Z(<var>t</var>) e<sup>−<var>i</var>θ(<var>t</var>)</sup>.</li>`;
     }
     html += '</ul>';

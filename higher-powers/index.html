@@ -1494,8 +1494,9 @@ function ratan2(y, x) {
   if (sx === 0) { const h = withPrec(4, () => rdivR(rpi(), Q2)); return round2W(sy > 0 ? h : rneg(h)); }
   if (sy === 0 && isZeroExact(y)) return sx > 0 ? Q0 : rpi();
   if (sx < 0 && rmag(y) - rmag(x) < -(W + 30)) return withPrec(4, () => round2W(sy >= 0 ? rpi() : rneg(rpi()))); // y/x is below the precision (and might not even be in range): ±π
+  if (sy !== 0 && rmag(y) - rmag(x) > W + 30) { const h = withPrec(4, () => rdivR(rpi(), Q2)); return round2W(sy > 0 ? h : rneg(h)); } // x/y is below the precision (and y/x might not even be in range): ±π/2
   return withPrec(12, () => {
-    const t = ratan(rdivR(y, x));
+    const t = ratan(sx > 0 && rmag(y) - rmag(x) < 8 - MAX_BITS ? mulDivR(Q1, y, x) : rdivR(y, x)); // a y/x below the range is carried as zero to within its bound
     if (sx > 0) return round2W(t);
     return round2W(sy >= 0 ? radd(t, rpi()) : rsub(t, rpi()));
   });
@@ -3950,7 +3951,8 @@ $('add-var').addEventListener('click', () => { st.vars.push({ name: '', src: '' 
 /* table */
 $('tb-formula').addEventListener('input', () => { st.table.formula = $('tb-formula').value; soon(); });
 $('tb-cols').addEventListener('change', (e) => { const c = e.target.dataset.col; if (c === undefined) return; st.table.cols[c] = e.target.checked; renderTable(INFO); save(); const el = document.querySelector(`#tb-cols [data-col="${CSS.escape(c)}"]`); if (el) el.focus(); });
-$('tb-grid').addEventListener('input', (e) => { const t = e.target; if (t.dataset.r === undefined) return; st.table.rows[+t.dataset.r][t.dataset.c] = t.value; soon(); }); // the whole page's timer, so a pending recalculation isn't dropped
+let tbT = 0; // the table's own timer: a cell only needs the table worked out again, and leaving recT alone keeps a pending page recalculation
+$('tb-grid').addEventListener('input', (e) => { const t = e.target; if (t.dataset.r === undefined) return; st.table.rows[+t.dataset.r][t.dataset.c] = t.value; clearTimeout(tbT); tbT = setTimeout(() => { updateTable(INFO); save(); }, 140); });
 $('tb-grid').addEventListener('paste', (e) => {
   const t = e.target; if (t.dataset.r === undefined) return;
   const text = (e.clipboardData || window.clipboardData).getData('text');

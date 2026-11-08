@@ -2756,7 +2756,11 @@ function arith() {
 }
 ['h-a', 'h-b'].forEach((id) => $(id).addEventListener('input', arith));
 $('h-op').addEventListener('change', arith);
-$('h-keep').addEventListener('click', () => { if ($('h-r').textContent) addNote(`${$('h-a').value} ${$('h-op').value} ${$('h-b').value}`, $('h-r').textContent); });
+$('h-keep').addEventListener('click', () => {
+  const r = $('h-r').textContent; if (!r) return;
+  if (!isFinite(r)) { flash('Nothing to note: that’s too big to work out here.'); return; } // keep the message out of the notepad
+  addNote(`${$('h-a').value} ${$('h-op').value} ${$('h-b').value}`, r);
+});
 const pad = (x, w) => String(x).padStart(w, '0');
 function dmm(deg, pos, neg, w) {
   const h = deg < 0 ? neg : pos; let a = Math.abs(deg); let d = Math.floor(a); let m = (a - d) * 60;

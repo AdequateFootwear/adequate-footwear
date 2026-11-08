@@ -9442,7 +9442,7 @@ function mapSource(e, fmt) {
         else if (Number(L.srsId) === 0) crs = { mode: 'geo', code: null, label: 'an undefined geographic coordinate system' };
         else if (Number(L.srsId) === -1) crs = { mode: 'native', code: -1, label: 'an undefined Cartesian coordinate system', unit: null, unitM: null };
         else crs = crsOf(null, L.srsDefinition, undefined, L.srsName || (L.srsId !== undefined ? `coordinate system ${L.srsId}` : ''));
-        return { label: L.table, crs, wkb: true, features: L.features.map((f) => ({ props: f.props, geom: f.geom, error: f.error })) };
+        return { label: L.table, crs, srsId: L.srsId, wkb: true, features: L.features.map((f) => ({ props: f.props, geom: f.geom, error: f.error })) };
       });
     }
     if (fmt === 'geojson') { const g = geojsonOf(e); return [{ label: '', crs: g.crs, features: g.features.map((f) => ({ props: f.props, id: f.id, geom: f.geom })) }]; }
@@ -9467,8 +9467,12 @@ async function renderMap(e, panel, tok, fmt) {
   for (const o of curOpts.otherEntries || []) if (o && o !== e && viewsFor(o.name).includes('map')) others.push(o); // the other files that have a Map view by name
   const first = main[0].crs;
   const disp = first.mode === 'native' ? { mode: 'native', code: first.code, label: first.label, unit: first.unit, unitM: first.unitM } : { mode: 'll', label: first.label };
-  // latitude and longitude only on the same known datum; a layer whose datum isn't known is never overlaid on another
-  const fits = (crs, L) => (disp.mode === 'll' ? crs.mode !== 'native' && (L === main[0] || (datumOf(crs) !== null && datumOf(crs) === datumOf(first)))
+  // latitude and longitude only on the same known datum; a layer whose datum isn't known is drawn only with the
+  // tables of its own file that use the very same coordinate system (the same GeoPackage srs_id)
+  // (an srs_id that mapSource reads as 0, NULL included, is the one undefined geographic system, as its label says)
+  const srsKey = (x) => (x === undefined ? undefined : x !== null && Number(x) !== 0 ? String(x) : '0');
+  const sameSrs = (L) => L === main[0] || (main.includes(L) && srsKey(L.srsId) !== undefined && srsKey(L.srsId) === srsKey(main[0].srsId));
+  const fits = (crs, L) => (disp.mode === 'll' ? crs.mode !== 'native' && (sameSrs(L) || (datumOf(crs) !== null && datumOf(crs) === datumOf(first)))
     : crs.mode === 'native' && crs.code === disp.code && crs.label === disp.label);
   const hasTab = (id) => curTabs.some((t) => t.key === id);
   const seeAlso = fmt === 'tiff' ? (hasTab('picture:tiff') ? 'The picture’s pixel values are in the Picture view.' : '')

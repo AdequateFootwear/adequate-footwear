@@ -160,7 +160,7 @@ textarea.numin:hover{border-color:var(--accent)}
 .help{color:var(--muted);font-size:14px;margin:6px 0 0;max-width:72ch}
 ul.checks{list-style:none;margin:8px 0 6px;padding:0;display:flex;flex-direction:column;gap:6px}
 ul.checks:empty{display:none}
-ul.checks li{display:grid;grid-template-columns:22px minmax(0,1fr);gap:8px;align-items:start;font-size:15px;padding:7px 10px;border-radius:7px;background:var(--surface-2)}
+ul.checks li{display:grid;grid-template-columns:22px minmax(0,1fr);gap:8px;align-items:start;font-size:15px;padding:7px 10px;border-radius:7px;background:var(--surface-2);overflow-wrap:anywhere} /* long numbers in a note wrap instead of widening the page */
 ul.checks li .ic{
   width:20px;height:20px;border-radius:50%;display:inline-flex;align-items:center;justify-content:center;
   font-size:12px;font-weight:700;line-height:1;margin-top:1px;font-family:"Barlow",sans-serif;
@@ -1863,11 +1863,21 @@ onmessage=function(ev){const m=ev.data;try{
       const dec = decrypt(c, d, n, e); m = dec.m;
       $('#m-out').innerHTML = valBox('m', '= c<sup>d</sup> mod n', m, { big:true });
       // a prime that n has more than once, and that divides c: decryption can't undo messages that are multiples of it
-      const shared = factors ? [...new Set(factors.map(String))].map(BigInt).filter((x) => factors.filter((y) => y === x).length > 1 && c % x === 0n) : [];
+      // without the primes (factoring waiting, running, stopped or failed), gcd(c, n) still tells: a prime, or a prime's square
+      // (what encrypting a multiple of a repeated prime gives), whose square divides n is repeated for sure, and anything else
+      // that sharedMayRepeat can't rule out stays unsure until n is factored
+      let shared = [], unsure = false;
+      if (factors) shared = [...new Set(factors.map(String))].map(BigInt).filter((x) => factors.filter((y) => y === x).length > 1 && c % x === 0n);
+      else if (c > 1n) { // c of 0 or 1 is left out, as in Step 2's test: gcd(0, n) is n itself, which says nothing about repeated primes
+        const g = NT.gcd(c, n), r = NT.isqrt(g);
+        if (sharedMayRepeat(g, n)) { if (NT.isProbablePrime(g)) shared = [g]; else if (r * r === g && NT.isProbablePrime(r)) shared = [r]; else unsure = true; }
+      }
       const back = dec.back;
       const sp = shared.length > 1 ? `primes that <var>n</var> has more than once (${shared.join(' and ')})` : `${shared[0]}, a prime that <var>n</var> has more than once`;
       if (shared.length && back) mChecks.push(['warn', `<b>This m may not be the message.</b> <var>c</var> is a multiple of ${sp}, so the message was a multiple of ${shared.length > 1 ? 'them' : 'it'} too, and at least ${shared.join(' × ')} different messages lock to this same <var>c</var>. Decryption gives just one of them, and re-encrypting can’t tell which was sent. Check <var>n</var> and <var>c</var> for a wrong digit.`]);
       else if (shared.length && e !== undefined) mChecks.push(['bad', `Re-encrypting this <var>m</var> doesn’t give back <var>c</var>. <var>c</var> is a multiple of ${sp}, and decryption doesn’t always undo a message that is a multiple of a repeated prime, so this doesn’t show that <var>d</var> is wrong. Check <var>n</var> and <var>c</var> for a wrong digit.`]);
+      else if (unsure && back) mChecks.push(['warn', `<b>This m can’t be confirmed yet.</b> <var>c</var> shares a factor with <var>n</var>, and without the primes of <var>n</var> the worksheet can’t tell whether that factor includes a prime <var>n</var> has more than once. If it does, several messages lock to this same <var>c</var>, decryption gives just one of them, and re-encrypting can’t tell which was sent. ${fs.state.key === n.toString() && fs.state.status === 'error' ? 'Entering one of the secret primes, <var>p</var> or <var>q</var>, under “Already know p and q, or d?” in Step 1 would settle it.' : 'Factoring <var>n</var> in Step 2 would settle it.'} Check <var>n</var> and <var>c</var> for a wrong digit.`]);
+      else if (unsure && e !== undefined) mChecks.push(['bad', `Re-encrypting this <var>m</var> doesn’t give back <var>c</var>. <var>c</var> shares a factor with <var>n</var>, and without the primes of <var>n</var> the worksheet can’t tell whether <var>d</var> is wrong or <var>c</var> is a multiple of a prime <var>n</var> has more than once, which decryption doesn’t always undo. Check <var>n</var> and <var>c</var> for a wrong digit.`]);
       else if (back) mChecks.push(['ok', 'Re-encrypting <var>m</var> with <var>e</var> gives back your <var>c</var>, so the decryption is consistent. Whether it <i>means</i> anything depends on <var>c</var> being copied right.']);
       else if (e !== undefined) mChecks.push(['bad', 'Re-encrypting this <var>m</var> doesn’t give back <var>c</var>, so <var>d</var> doesn’t match this key. Check <var>d</var>, or clear it and let the worksheet work <var>d</var> out.']);
     } else {

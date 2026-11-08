@@ -486,6 +486,14 @@ table.nums td:last-child{overflow-wrap:anywhere;white-space:normal}
 .ip-seg:has(input:checked){border-color:var(--accent);background:var(--accent-soft);color:var(--ink)}
 .ip-seg input{width:16px;height:16px;margin:0}
 .ip-seg:focus-within{outline:2px solid var(--focus);outline-offset:2px}
+/* the school, first on the page */
+.ip-school{margin:14px 0 0}
+.ip-school .ip-method{margin:0}
+.ip-school .ip-seg{border-radius:12px;padding:8px 14px 8px 10px}
+.ip-school .ip-seg b{font-weight:600}
+.ip-segnote{display:block;color:var(--ink-2);font-size:13px;font-weight:400;line-height:1.3}
+.ip-northtop .ip-north{margin:12px 0 14px}
+#ip-north-away[hidden]{display:none}
 
 /* the floor plan picker */
 .ip-picker{margin:12px 0 4px}
@@ -719,6 +727,23 @@ input[aria-invalid="true"]{border-color:var(--error)}
 
   <section class="panel" id="plan" aria-labelledby="h-plan">
     <div class="panel-head"><span class="step">1</span><h2 id="h-plan">The floor plan</h2></div>
+    <fieldset class="ip-fs ip-school" id="ip-school">
+      <legend class="ip-lbl">School</legend>
+      <div class="ip-method">
+        <label class="ip-seg"><input type="radio" name="ip-method" value="door" checked> <span><b>Black Hat</b> <span class="ip-segnote">lines up with the front door</span></span></label>
+        <label class="ip-seg"><input type="radio" name="ip-method" value="compass"> <span><b>Compass</b> <span class="ip-segnote">lines up with north</span></span></label>
+      </div>
+    </fieldset>
+    <p class="help" id="ip-method-help"></p>
+    <div class="ip-compassopt" id="ip-compassopt">
+      <div class="ip-northtop" id="ip-north-top"></div>
+      <span class="ip-lbl" id="ip-layout-lbl">Divide the space into</span>
+      <div class="ip-method" role="radiogroup" aria-labelledby="ip-layout-lbl">
+        <label class="ip-seg"><input type="radio" name="ip-layout" value="sectors" checked> <span>Eight 45° slices</span></label>
+        <label class="ip-seg"><input type="radio" name="ip-layout" value="squares"> <span>Nine squares</span></label>
+      </div>
+      <p class="help">Eight 45° slices around the centre is how the compass school usually draws it. Nine squares keeps the grid, giving each outer square the direction it lies closest to.</p>
+    </div>
     <p class="help">Choose the kind of space and a sample plan appears, turned so the front door is on the wall you pick, with the bagua’s nine areas laid over it. Tap any spot on the plan to see which area it falls in, or click the plan and use the arrow keys. You can also use a plain rectangle, or put a picture of your own plan underneath.</p>
 
     <div class="ip-picker">
@@ -760,7 +785,7 @@ input[aria-invalid="true"]{border-color:var(--error)}
           </div>
         </fieldset>
       </div>
-      <p class="help">The way the front faces is the way you look as you step out through the front door. Only the compass method uses it; set it to the degree under “The room, the door and north” below.</p>
+      <p class="help" id="ip-face-help"></p>
       <div class="btnrow ip-pickbtns">
         <button type="button" class="btn quiet" id="ip-another">Show another</button>
         <label class="ip-check"><input type="checkbox" id="ip-mirror"> Mirror the plan</label>
@@ -774,21 +799,6 @@ input[aria-invalid="true"]{border-color:var(--error)}
           <label class="ip-seg"><input type="radio" name="ip-names" value="areas"> <span>Areas</span></label>
         </div>
       </fieldset>
-    </div>
-
-    <div class="ip-method" role="radiogroup" aria-labelledby="ip-method-lbl">
-      <span class="ip-lbl" id="ip-method-lbl">Line up the bagua by</span>
-      <label class="ip-seg"><input type="radio" name="ip-method" value="door" checked> <span>The front door</span></label>
-      <label class="ip-seg"><input type="radio" name="ip-method" value="compass"> <span>The compass</span></label>
-    </div>
-    <p class="help" id="ip-method-help"></p>
-    <div class="ip-compassopt" id="ip-compassopt">
-      <span class="ip-lbl" id="ip-layout-lbl">Divide the space into</span>
-      <div class="ip-method" role="radiogroup" aria-labelledby="ip-layout-lbl">
-        <label class="ip-seg"><input type="radio" name="ip-layout" value="sectors" checked> <span>Eight 45° slices</span></label>
-        <label class="ip-seg"><input type="radio" name="ip-layout" value="squares"> <span>Nine squares</span></label>
-      </div>
-      <p class="help">Eight 45° slices around the centre is how the compass school usually draws it. Nine squares keeps the grid, giving each outer square the direction it lies closest to.</p>
     </div>
 
     <div class="ip-planwrap">
@@ -837,7 +847,7 @@ input[aria-invalid="true"]{border-color:var(--error)}
     </article>
 
     <details class="more ip-setup" id="ip-setup-room">
-      <summary>The room, the door and north</summary>
+      <summary id="ip-setup-room-sum">The room, the door and north</summary>
       <div class="fgrid">
         <label>Width (left to right) <input type="text" id="ip-w" inputmode="decimal" autocomplete="off" value="8"></label>
         <label>Depth (top to bottom) <input type="text" id="ip-d" inputmode="decimal" autocomplete="off" value="6"></label>
@@ -847,7 +857,8 @@ input[aria-invalid="true"]{border-color:var(--error)}
         <label>Door width <input type="text" id="ip-dw" inputmode="decimal" autocomplete="off" value="0.9"></label>
       </div>
       <p class="why" id="ip-room-why" role="status"></p>
-      <div class="ip-north">
+      <p class="help" id="ip-north-away" hidden>North is set under “School”, at the top of this step.</p>
+      <div class="ip-northhome" id="ip-north-home"><div class="ip-north" id="ip-north-box">
         <div class="ip-dial-wrap">
           <svg id="ip-dial" class="ip-dial" viewBox="-60 -60 120 120" tabindex="0" role="slider" aria-label="North on the plan" aria-valuemin="0" aria-valuemax="359" aria-valuenow="0" aria-valuetext="North points to the top of the plan (0°)">
             <circle r="54" class="ip-dial-face"/>
@@ -860,7 +871,7 @@ input[aria-invalid="true"]{border-color:var(--error)}
           <p class="help">0° means north is toward the top of the drawing, 90° toward its right-hand side. Drag the needle, click it and use the arrow keys (Shift for 15° steps), or type a number. To find it, stand in the space holding a compass or phone, and line it up with the walls. Phone compasses show magnetic north, which can be a few degrees from true north.</p>
           <p class="ip-facing" id="ip-facing"></p>
         </div>
-      </div>
+      </div></div>
     </details>
 
     <details class="more ip-setup">
@@ -981,7 +992,7 @@ input[aria-invalid="true"]{border-color:var(--error)}
   <section class="panel" id="about" aria-labelledby="h-about">
     <div class="panel-head"><span class="step">5</span><h2 id="h-about">About</h2></div>
     <div class="explain">
-      <p><b>Two schools.</b> The <b>Black Hat</b> school (also called BTB, or Western feng shui), developed by Thomas Lin Yun and popularised in the United States from the 1970s and 1980s, lines the bagua up with the front door: whatever the compass says, the wall with the door always holds Knowledge, Career and Helpful People, from left to right as you walk in. It can be laid over a whole home or over a single room, using that room’s door. The <b>classical compass</b> schools, such as Eight Mansions and Flying Stars, use the real compass directions instead, so each area sits where its direction is. The two methods only agree when the front door is on the north side of the home. Neither is “right”; pick one and use it consistently.</p>
+      <p><b>Two schools.</b> The <b>Black Hat</b> school (also called BTB, or Western feng shui), developed by Thomas Lin Yun and popularised in the United States from the 1970s and 1980s, lines the bagua up with the front door: whatever the compass says, the wall with the door always holds Knowledge, Career and Helpful People, from left to right as you walk in. It can be laid over a whole home or over a single room, using that room’s door. The <b>classical compass</b> schools, such as Eight Mansions and Flying Stars, use the real compass directions instead, so each area sits where its direction is. The two methods only agree when the front door is on the north side of the home. Neither is “right”; pick one under “School” at the top of step 1 and use it consistently. In the compass school the areas follow north, not the door: wherever the door is, the north part of the home holds Career, so the page needs to know which way north is on the plan.</p>
       <p><b>The areas.</b> Each of the eight outer areas belongs to a trigram of the I Ching in the Later Heaven arrangement (attributed to King Wen), which fixes its compass direction, element, family member, season and body part. The family members, body parts and seasons follow the traditional commentary on the trigrams; the centre has no trigram, so it has none of these. The names of the areas, and the colours and things suggested for them, vary from book to book. This page uses one common set and keeps it the same everywhere.</p>
       <p><b>Lo Shu.</b> The Lo Shu is the 3 × 3 magic square whose rows, columns and diagonals each add up to 15. Each area takes the number in its place. Chinese diagrams put south at the top, so it reads:</p>
       <div class="scroll"><table class="ip-loshu" aria-label="The Lo Shu square, south at the top">
@@ -1685,8 +1696,8 @@ function showCard(key) {
   const e = EL[a.el];
   const rows = [
     ['Aspiration', esc(a.asp)],
-    ['Compass method', key === 'C' ? 'The centre of the space' : esc(DIRNAME[key]) + ' (' + esc(key) + ')'],
-    ['Front-door method', esc(DOORPOS[key][0].toUpperCase() + DOORPOS[key].slice(1)) + (key === 'C' ? '' : ', standing in the doorway looking in')],
+    ['Compass school', key === 'C' ? 'The centre of the space' : esc(DIRNAME[key]) + ' (' + esc(key) + ')'],
+    ['Black Hat school', esc(DOORPOS[key][0].toUpperCase() + DOORPOS[key].slice(1)) + (key === 'C' ? '' : ', standing in the doorway looking in')],
     ['Trigram', a.tri ? `${esc(TRI[a.tri].name)}, ${esc(TRI[a.tri].en)} <span class="muted">(${esc(lineWords(TRI[a.tri].lines))})</span>` : 'None: the centre has no trigram'],
     ['Element', `<span class="sw" style="background:var(--el-${a.el})" aria-hidden="true"></span><span class="ip-elname">${esc(e.name)}</span>`],
     ['Colours', esc(a.colours)],
@@ -1816,7 +1827,8 @@ function checkRoom(wall) { // what's wrong with the room fields, for the door on
   }
   return { W, D, dp, dw, errs };
 }
-let wallNote = false; // the picker's line holds why a door wall was refused, until the room or the picker changes
+let wallNote = null; // the refused door wall whose note the picker's line holds ({ w, kept }), until the room or the picker changes
+const wallNoteText = (n) => `The door can’t go on the ${n.w} wall as it is, so it stays on the ${n.kept} wall: “${roomSetupName()}” below says why.`;
 function readRoom(explain = true) {
   if (wallNote) syncPicker(); // a refused wall's note goes once the room is changed
   const { W, D, dp, dw, errs } = checkRoom(S.dwall);
@@ -1836,13 +1848,26 @@ ROOM_IDS.forEach((id) => { $(id).addEventListener('input', () => readRoom(false)
 $('ip-unit').addEventListener('change', () => { S.unit = $('ip-unit').value; drawPlan(); if (S.probe) refreshProbeText(); save(); });
 $('ip-dwall').addEventListener('change', () => setWall($('ip-dwall').value));
 function doorLabel() { $('ip-dpos-lbl').textContent = (S.dwall === 'top' || S.dwall === 'bottom') ? 'Door starts this far from the left corner' : 'Door starts this far from the top corner'; }
+// the room settings' heading: north is set there for the Black Hat school, and next to the school for the compass school
+const roomSetupName = () => (S.method === 'compass' ? 'The room and the door' : 'The room, the door and north');
 function setMethod(m) {
   S.method = m;
-  $('ip-compassopt').hidden = m !== 'compass';
+  const compass = m === 'compass';
+  $('ip-compassopt').hidden = !compass;
   document.querySelectorAll('input[name=ip-method]').forEach((r) => { r.checked = r.value === m; });
-  $('ip-method-help').textContent = m === 'door'
-    ? 'Front-door method (Black Hat school): the wall with the front door holds Knowledge, Career and Helpful People, left to right as you walk in, whichever way the home faces.'
-    : 'Compass method (classical school): each area sits in its own compass direction from the centre, so set which way north is below.';
+  $('ip-method-help').textContent = compass
+    ? 'Compass school: each area sits at its own compass direction from the centre, whichever way the room or its door faces, so Career is always the north part. Set which way north is on the plan here.'
+    : 'Black Hat school: the bagua lines up with the front door. The wall with the door holds Knowledge, Career and Helpful People, left to right as you walk in, whichever way the home faces.';
+  // one north control, kept where the chosen school needs it
+  const box = $('ip-north-box'), to = $(compass ? 'ip-north-top' : 'ip-north-home');
+  if (box.parentNode !== to) to.appendChild(box);
+  $('ip-north-away').hidden = !compass;
+  $('ip-setup-room-sum').textContent = roomSetupName();
+  $('ip-face-help').textContent = 'The way the front faces is the way you look as you step out through the front door. ' + (compass
+    ? 'Choosing it here turns north on the plan to match; set it to the degree with the needle at the top of this step.'
+    : 'The Black Hat school doesn’t use it, but the Kua directions in step 4 do; set it to the degree under “The room, the door and north” below.');
+  if (wallNote) $('ip-planname').textContent = wallNoteText(wallNote); // both lines name the room settings, whose heading just changed
+  else if (!curPlan()) syncPicker();
   drawGrid(); refreshProbeText(); refreshAdvice(); save();
 }
 document.querySelectorAll('input[name=ip-method]').forEach((r) => r.addEventListener('change', () => { if (r.checked) setMethod(r.value); }));
@@ -1938,8 +1963,8 @@ function setWall(w, fromPicker) {
       $('ip-dwall').value = S.dwall; syncPicker(); $('ip-setup-room').open = true; fieldsWhy('ip-room-why', ROOM_IDS, errs, true);
       $('ip-room-why').textContent = `The door can’t go on the ${w} wall as it is, so it stays on the ${S.dwall} wall. ` + errs.map(([, m]) => m).join(' ');
       if (fromPicker) { // the reason is far below the picker on a phone, so say so where the tap was
-        $('ip-planname').textContent = `The door can’t go on the ${w} wall as it is, so it stays on the ${S.dwall} wall: “The room, the door and north” below says why.`;
-        wallNote = true; $('ip-planname').scrollIntoView({ block: 'nearest' });
+        wallNote = { w, kept: S.dwall }; $('ip-planname').textContent = wallNoteText(wallNote);
+        $('ip-planname').scrollIntoView({ block: 'nearest' });
       }
       return;
     }
@@ -1954,7 +1979,7 @@ function usePlan(id) {
 }
 function syncPicker() {
   const P = curPlan(), kind = P ? P.kind : 'rect';
-  wallNote = false;
+  wallNote = null;
   document.querySelectorAll('input[name=ip-kind]').forEach((r) => { r.checked = r.value === kind; });
   document.querySelectorAll('input[name=ip-wall]').forEach((r) => { r.checked = r.value === S.dwall; });
   const face = DIRS[mod(Math.round(doorFacing() / 45), 8)];
@@ -1964,7 +1989,7 @@ function syncPicker() {
   $('ip-another').disabled = list.length < 2;
   $('ip-mirror').disabled = !P; $('ip-mirror').checked = !!(P && S.mirror);
   $('ip-names').hidden = !P || !S.showSketch;
-  $('ip-planname').textContent = P ? `Plan ${list.indexOf(P) + 1} of ${list.length}: ${P.name}${S.mirror ? ', mirrored' : ''}.` : 'A plain rectangle: set its size and its door under “The room, the door and north” below.';
+  $('ip-planname').textContent = P ? `Plan ${list.indexOf(P) + 1} of ${list.length}: ${P.name}${S.mirror ? ', mirrored' : ''}.` : `A plain rectangle: set its size and its door under “${roomSetupName()}” below.`;
 }
 document.querySelectorAll('input[name=ip-kind]').forEach((r) => r.addEventListener('change', () => {
   if (!r.checked) return;
@@ -1983,7 +2008,7 @@ document.querySelectorAll('.ip-areas .btn').forEach((b) => b.addEventListener('c
 
 /* ---------- what goes where ---------- */
 $('ip-item').innerHTML = '<option value="">Choose…</option>' + ITEMS.map((it, i) => `<option value="${i}">${esc(it.n)}</option>`).join('');
-const placeWords = (k) => (S.method === 'door' ? `In the front-door method it is ${DOORPOS[k]}` + (k === 'C' ? '' : ', standing in the doorway looking in') : (k === 'C' ? 'In the compass method it is the centre of the space' : `In the compass method it is the ${dirLower(k)} part of the space`) + (S.method === 'compass' ? '' : ''));
+const placeWords = (k) => (S.method === 'door' ? `In the Black Hat school it is ${DOORPOS[k]}` + (k === 'C' ? '' : ', standing in the doorway looking in') : (k === 'C' ? 'In the compass school it is the centre of the space' : `In the compass school it is the ${dirLower(k)} part of the space`));
 function refreshAdvice() {
   const out = $('ip-advice');
   if (S.intent && AREAS[S.intent]) {
@@ -2116,7 +2141,7 @@ $('ip-plant').addEventListener('click', () => {
 
 /* ---------- example (fictional) ---------- */
 $('btn-example').addEventListener('click', () => {
-  S = Object.assign(JSON.parse(JSON.stringify(DEF)), { unit: 'm', dwall: 'bottom', plan: 'one-a', mirror: false, method: 'door', north: 35, birth: '1987-02-03', el: 'wood' });
+  S = Object.assign(JSON.parse(JSON.stringify(DEF)), { unit: 'm', dwall: 'bottom', plan: 'one-a', mirror: false, method: S.method, layout: S.layout, north: 35, birth: '1987-02-03', el: 'wood' }); // the chosen school stays
   setPlanDims(); syncAll();
   probe(2.0, 1.6);
   $('ip-where').textContent = 'Example (made up): a one-bedroom apartment, with the front door at the bottom right and north 35° clockwise from the top. ' + $('ip-where').textContent;

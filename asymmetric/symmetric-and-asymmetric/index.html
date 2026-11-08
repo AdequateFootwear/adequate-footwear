@@ -535,7 +535,7 @@ result    J  L  M  T  Q</div>
           <tr><td>Square a number mod <var>p × q</var></td><td>Find its square roots</td><td><a href="../modular-arithmetic/#roots">Square roots on a clock</a></td></tr>
         </tbody>
       </table></div>
-      <p>A <b>trapdoor</b> is a secret that makes the hard direction easy. Knowing the two primes lets you take square roots and undo RSA's powers; knowing the secret exponent lets you finish a key exchange. The private key <i>is</i> the trapdoor.</p>
+      <p>A <b>trapdoor</b> is a secret that makes the hard direction easy. Knowing the two primes lets you take square roots and undo RSA's powers, so in systems built on factoring the private key <i>is</i> the trapdoor. Systems built on discrete logs mod a prime don't use a trapdoor. Instead, each person keeps the exponent they chose and finishes the job with more easy-direction powers, which is how a key exchange ends with both sides holding the same number.</p>
       <p>At real-world sizes the hard direction would take longer than the age of the universe. Puzzle-sized numbers are chosen so a computer can do it in seconds, which is exactly the part the worksheets do for you.</p>
       <h3>Related problems, and how safe they are</h3>
       <p>Factoring and the discrete logarithm are different problems, but close relatives: both ask you to undo a calculation in a group of remainders, and in 1994 Peter Shor found a single algorithm for a quantum computer that solves both quickly. So in that sense they share the same weakness.</p>
@@ -550,7 +550,8 @@ result    J  L  M  T  Q</div>
       <p>Public-key ideas do a few different jobs, and a puzzle may use one or chain several together:</p>
       <ul class="facts">
         <li><b>Public-key encryption.</b> Anyone locks a message with the public key, and only the private key unlocks it. What you see: a public key and a ciphertext.</li>
-        <li><b>Key exchange.</b> Two people end up sharing a secret number, or pass a message back and forth, without ever sending a key. What you see: a conversation, with numbers going both ways. The result is usually not the message itself; it's a <b>key</b>.</li>
+        <li><b>Key exchange.</b> Two people end up sharing a secret number without ever sending it. What you see: a conversation, with numbers going both ways. The result is usually not the message itself; it's a <b>key</b>.</li>
+        <li><b>Three-pass delivery.</b> The message itself goes back and forth, locked and unlocked in turn with each person's own secret, so no key is ever shared. What you see: three numbers sent in turn. The result is usually the message itself, not a key.</li>
         <li><b>Hybrid systems.</b> Key exchange first, then a fast symmetric cipher using the agreed number as its key. That's how secure websites work today. In a puzzle, the second stage may be a classical cipher such as Vigenère or Gronsfeld, and the puzzle should say which.</li>
       </ul>
       <p>So when a decryption gives you a number that doesn't read as anything, ask whether it's the message or a key for the next stage.</p>
@@ -598,8 +599,20 @@ result    J  L  M  T  Q</div>
   'use strict';
   const $ = (s) => document.querySelector(s);
   const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;' }[c]));
+  /* Number boxes: read the box's whole value (so 1e2 is 100), and accept it only if it's a whole number within the box's own min and max. */
+  const fmtInt = (v) => v.toLocaleString('en-US').replace('-', '−');
+  function wholes(out, boxes){  // boxes: [[id, name], …]; returns their values, or null after saying in out what's wrong
+    const vals = [], errs = [];
+    for (const [id, name] of boxes) {
+      const el = $(id), v = el.valueAsNumber + 0, lo = +el.min, hi = +el.max, ok = Number.isInteger(v) && v >= lo && v <= hi;
+      el.setAttribute('aria-invalid', String(!ok)); vals.push(v);
+      if (!ok) errs.push(`${name} has to be a whole number from ${fmtInt(lo)} to ${fmtInt(hi)}.`);
+    }
+    if (!errs.length) return vals;
+    const box = $(out); box.innerHTML = box.tagName === 'P' ? errs.join(' ') : errs.map((e) => `<p>${e}</p>`).join(''); return null;
+  }
   function caesar(){
-    const t = $('#cz-t').value.toUpperCase(); let k = parseInt($('#cz-k').value, 10); if (!Number.isFinite(k)) k = 0;
+    const t = $('#cz-t').value.toUpperCase(), got = wholes('#cz-out', [['#cz-k', 'The shift']]); if (!got) return; const [k] = got;
     const out = [...t].map((ch) => { const c = ch.charCodeAt(0); return c >= 65 && c <= 90 ? String.fromCharCode(65 + (((c - 65 + k) % 26) + 26) % 26) : ch; }).join('');
     const first = [...t].find((ch) => /[A-Z]/.test(ch));
     const ex = first ? (() => { const a = first.charCodeAt(0) - 65, b = (((a + k) % 26) + 26) % 26; return ` For example ${first} (${a}) + ${k} = ${a + k}, and ${a + k} mod 26 = ${b}, which is ${String.fromCharCode(65 + b)}.`; })() : '';

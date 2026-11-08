@@ -437,6 +437,10 @@ mark.num.w{border-bottom-style:dashed}
 .wait-msg{color:var(--muted);font-style:italic}
 table.nums td{vertical-align:top}
 table.nums td:last-child{overflow-wrap:anywhere;white-space:normal}
+
+/* ---------- From Letters to Numbers only ---------- */
+/* A switched-off box (the skip box in hex mode) looks switched off */
+.calc input:disabled{background:var(--surface-2);color:var(--muted);border-style:dashed;cursor:not-allowed}
 </style>
 </head>
 <body>
@@ -502,7 +506,7 @@ table.nums td:last-child{overflow-wrap:anywhere;white-space:normal}
       </table></div>
       <p>Codes above 127 come from <b>Unicode</b>, which extends ASCII to every writing system. A message in another alphabet usually uses 4-digit blocks.</p>
       <h3>Hexadecimal bytes</h3>
-      <p>Real software stores each character as a byte, two hexadecimal (base-16) digits, and reads the whole string as one base-16 number. HI is the bytes 48 49 in hex, the number 0x4849, which is <var>18505</var> in decimal. To read it back, write the number in hex and split it into pairs.</p>
+      <p>Real software stores text as bytes, each written as two hexadecimal (base-16) digits, and reads the whole string as one base-16 number. HI is the bytes 48 49 in hex, the number 0x4849, which is <var>18505</var> in decimal. To read it back, write the number in hex and split it into pairs, one per byte. Plain ASCII characters take one byte each, but in UTF-8, the usual way to store Unicode, other characters take two to four (é is c3 a9), so decode the bytes as UTF-8 rather than reading each pair as a character.</p>
       <h3>Digits as they are</h3>
       <p>Coordinates are often written straight in as digits. N 45° 12.345 W 093° 54.321 becomes <var>451234509354321</var>: 2 digits of degrees and 5 of minutes for the latitude, then 3 + 5 for the longitude, 15 digits in all. Some puzzles write the longitude's degrees with 2 digits (93 instead of 093), giving 14. The hemispheres (N or S, E or W) are left for you to fill in from where the cache is.</p>
     </div>
@@ -578,6 +582,18 @@ table.nums td:last-child{overflow-wrap:anywhere;white-space:normal}
   'use strict';
   const $ = (s) => document.querySelector(s);
   const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;' }[c]));
+  /* Number boxes: read the box's whole value (so 1e2 is 100), and accept it only if it's a whole number within the box's own min and max. */
+  const fmtInt = (v) => v.toLocaleString('en-US').replace('-', '−');
+  function wholes(out, boxes){  // boxes: [[id, name], …]; returns their values, or null after saying in out what's wrong
+    const vals = [], errs = [];
+    for (const [id, name] of boxes) {
+      const el = $(id), v = el.valueAsNumber + 0, lo = +el.min, hi = +el.max, ok = Number.isInteger(v) && v >= lo && v <= hi;
+      el.setAttribute('aria-invalid', String(!ok)); vals.push(v);
+      if (!ok) errs.push(`${name} has to be a whole number from ${fmtInt(lo)} to ${fmtInt(hi)}.`);
+    }
+    if (!errs.length) return vals;
+    const box = $(out); box.innerHTML = box.tagName === 'P' ? errs.join(' ') : errs.map((e) => `<p>${e}</p>`).join(''); return null;
+  }
   const plural = (k, w) => k + ' ' + w + (k === 1 ? '' : 's');
   const printable = (v, size) => size === 3 ? (v >= 32 && v <= 126) || (v >= 160 && v <= 255) : v >= 32 && v <= 0x10FFFF && !(v >= 127 && v < 160) && !(v >= 0xD800 && v <= 0xDFFF);
   function encode(){
@@ -609,14 +625,17 @@ table.nums td:last-child{overflow-wrap:anywhere;white-space:normal}
   }
   function decode(){
     const raw = $('#de-n').value.replace(/[\s,_]/g, ''), m = $('#de-m').value;
-    let skip = parseInt($('#de-s').value, 10); if (!Number.isFinite(skip) || skip < 0) skip = 0;
+    const hex = m === 'hex', sEl = $('#de-s'); let skip = 0;
+    sEl.disabled = hex;  // hex writes the whole number in base 16, so there are no decimal digits to skip
+    if (hex) sEl.setAttribute('aria-invalid', 'false');
+    else { const got = wholes('#de-out', [['#de-s', 'The number of digits to skip']]); if (!got) return; [skip] = got; }
     if (!/^\d*$/.test(raw)) { $('#de-out').innerHTML = '<p>Type digits only.</p>'; return; }
     if (!raw) { $('#de-out').innerHTML = ''; return; }
-    if (m === 'hex') {
+    if (hex) {
       let h = BigInt(raw).toString(16); if (h.length % 2) h = '0' + h;
       const bytes = h.match(/../g).map((x) => parseInt(x, 16));
-      let text; try { text = new TextDecoder('utf-8', { fatal: true }).decode(new Uint8Array(bytes)); } catch (e) { text = bytes.map((b) => (b >= 32 && b < 127 ? String.fromCharCode(b) : '·')).join(''); }
-      $('#de-out').innerHTML = `<p>In hex: <span class="num">${h.match(/../g).join(' ')}</span></p><div class="reading">${esc(text)}</div>`;
+      let text; try { text = new TextDecoder('utf-8', { fatal: true, ignoreBOM: true }).decode(new Uint8Array(bytes)); } catch (e) { text = bytes.map((b) => (b >= 32 && b < 127 ? String.fromCharCode(b) : '·')).join(''); }
+      $('#de-out').innerHTML = `<p>In hex: <span class="num">${h.match(/../g).join(' ')}</span></p><div class="reading">${esc(text)}</div><p class="help">Hex writes the whole number in base 16, so “Skip the first … digits” is switched off.</p>`;
       return;
     }
     const size = m === 'c3' ? 3 : m === 'c4' ? 4 : 2;

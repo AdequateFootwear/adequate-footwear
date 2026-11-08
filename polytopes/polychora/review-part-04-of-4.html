@@ -1,0 +1,635 @@
+<!-- Review copy: lines 699-1332 of polytopes/polychora/index.html, split so Copilot can review it. Not served. -->
+const $ = (id) => document.getElementById(id);
+const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+const reduceMotion = () => !!(window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches);
+
+/* ---------- names ---------- */
+const FAMS = { convex: 'Regular convex polychoron', star: 'Regular star polychoron (Schläfli–Hess polychoron)', other: 'Uniform polychoron: convex, but not regular' };
+const FAMORDER = { convex: 0, star: 1, other: 2 };
+const plural = (w, c) => (c === 1 ? w : /hedron$/.test(w) ? w.replace(/hedron$/, 'hedra') : /(x|s)$/.test(w) ? w + 'es' : w + 's');
+const article = (w) => (/^[aeiou]/i.test(w) ? 'an ' : 'a ') + w;
+const symOf = (s) => s.sym || s.notation || '';
+
+/* ---------- the catalogue ---------- */
+const SHAPES = RAW.map((s, i) => Object.assign(s, { ord: i, fv: null, adj: null, cedges: null }));
+SHAPES.sort((a, b) => (FAMORDER[a.family] ?? 9) - (FAMORDER[b.family] ?? 9) || (a.family === 'convex' ? a.C - b.C : 0) || a.ord - b.ord);
+const byId = new Map(SHAPES.map((s) => [s.id, s]));
+const norm = (x) => String(x || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[’'`]/g, '').replace(/[^a-z0-9/]+/g, ' ').trim();
+const symKey = (t) => String(t || '').replace(/[{}\s]/g, '').replace(/[⁺+]/g, '+');
+SHAPES.forEach((s) => {
+  s.hay = ' ' + norm([s.name, ...(s.alt || []), s.acr, s.id].join(' | ')) + ' ';
+  s.skey = symKey(symOf(s));
+});
+function coords(s) {
+  if (!s.fv) {
+    const v = s.v, n = v.length / 4; s.fv = new Float32Array(v.length);
+    let r = 0;
+    for (let i = 0; i < n; i++) {
+      let q = 0;
+      for (let k = 0; k < 4; k++) { const x = v[4 * i + k] / 1e4; s.fv[4 * i + k] = x; q += x * x; }
+      r = Math.max(r, q);
+    }
+    s.rmax = Math.sqrt(r) || 1;
+  }
+  return s.fv;
+}
+function adjacency(s) {
+  if (!s.adj) {
+    s.adj = Array.from({ length: s.V }, () => []);
+    for (let i = 0; i < s.e.length; i += 2) { s.adj[s.e[i]].push(i / 2); s.adj[s.e[i + 1]].push(i / 2); }
+  }
+  return s.adj;
+}
+/* the edges of cell ci: every edge with both ends among the cell's vertices (all edges of a polychoron here have the same length, and within one cell that length belongs only to the cell's own edges) */
+function cellEdges(s, ci) {
+  if (!s.cedges) s.cedges = [];
+  if (!s.cedges[ci]) {
+    const adj = adjacency(s), inCell = new Set(s.cellv[ci]), out = new Set();
+    s.cellv[ci].forEach((v) => adj[v].forEach((e) => { const o = s.e[2 * e] === v ? s.e[2 * e + 1] : s.e[2 * e]; if (inCell.has(o)) out.add(e); }));
+    s.cedges[ci] = [...out];
+  }
+  return s.cedges[ci];
+}
+
+/* ---------- list and filters ---------- */
+let fam = '';
+let current = null;
+const ALLCELLS = [...new Set(SHAPES.flatMap((s) => (s.cells || []).map((c) => c.type)))].sort();
+$('f-cell').insertAdjacentHTML('beforeend', ALLCELLS.map((t) => `<option value="${esc(t)}">${esc(plural(t, 2))}</option>`).join(''));
+const ALLDENS = [...new Set(SHAPES.map((s) => s.density).filter((d) => d !== undefined && d !== null))].sort((a, b) => a - b);
+$('f-dens').insertAdjacentHTML('beforeend', ALLDENS.map((d) => `<option value="${d}">${d}${d === 1 ? ' (convex)' : ''}</option>`).join(''));
+function matches(s) {
+  if (fam && s.family !== fam) return false;
+  const raw = $('q').value.trim();
+  if (raw && /[{},/]/.test(raw) && /^[{}\d/,\s⁺+s]+$/.test(raw)) {
+    const k = symKey(raw);
+    if (!(raw.includes('}') ? s.skey === k : s.skey.startsWith(k))) return false;
+  } else if (raw) {
+    for (const w of norm(raw).split(' ')) if (!(/^\d+$/.test(w) ? s.hay.includes(' ' + w + ' ') : s.hay.includes(w))) return false;
+  }
+  for (const [id, key] of [['f-v', 'V'], ['f-e', 'E'], ['f-f', 'F'], ['f-c', 'C']]) { const v = $(id).value.trim(); if (v && +v !== s[key]) return false; }
+  const ct = $('f-cell').value; if (ct && !(s.cells || []).some((c) => c.type === ct)) return false;
+  const dn = $('f-dens').value; if (dn && +dn !== s.density) return false;
+  return true;
+}
+function listMeta(s) { return (symOf(s) ? symOf(s) + ' · ' : '') + `V ${s.V} · E ${s.E} · F ${s.F} · C ${s.C}`; }
+function renderList() {
+  const hits = SHAPES.filter(matches);
+  const filtered = !!(fam || $('q').value.trim() || [...document.querySelectorAll('#filters input, #filters select')].some((e) => e.value));
+  $('count').textContent = hits.length ? (filtered ? `${hits.length} ${hits.length === 1 ? 'polychoron fits' : 'polychora fit'}.` : `${hits.length} polychora.`) : 'Nothing fits. Try fewer filters, or check the numbers.';
+  $('plist').innerHTML = hits.map((s) => `<li><button type="button" data-id="${esc(s.id)}"${current && current.id === s.id ? ' aria-current="true"' : ''}><span class="pn">${esc(s.name)}</span><span class="pm">${esc(listMeta(s))}</span></button></li>`).join('');
+}
+$('plist').addEventListener('click', (e) => { const b = e.target.closest('button[data-id]'); if (b) select(byId.get(b.dataset.id), true); });
+$('q').addEventListener('input', renderList);
+document.querySelectorAll('#filters input, #filters select').forEach((el) => el.addEventListener(el.tagName === 'SELECT' ? 'change' : 'input', renderList));
+function setFam(f) {
+  fam = f;
+  document.querySelectorAll('.fchip').forEach((x) => { x.classList.toggle('on', x.dataset.fam === f); x.setAttribute('aria-pressed', String(x.dataset.fam === f)); });
+}
+document.querySelectorAll('.fchip').forEach((b) => b.addEventListener('click', () => { setFam(b.dataset.fam); renderList(); }));
+$('f-clear').addEventListener('click', () => {
+  document.querySelectorAll('#filters input').forEach((i) => { i.value = ''; });
+  document.querySelectorAll('#filters select').forEach((x) => { x.value = ''; });
+  renderList();
+});
+
+/* ---------- number formatting ---------- */
+const prec = () => +$('prec').value;
+function fmt(x) {
+  if (Math.abs(x - Math.round(x)) < 1e-9) return String(Math.round(x));
+  return x.toFixed(prec()).replace(/0+$/, '').replace(/\.$/, '');
+}
+const deg = (x) => fmt(x) + '°';
+
+/* ---------- facts ---------- */
+const sub4 = (a, b) => [a[0] - b[0], a[1] - b[1], a[2] - b[2], a[3] - b[3]];
+const det3 = (a, b, c) => a[0] * (b[1] * c[2] - b[2] * c[1]) - a[1] * (b[0] * c[2] - b[2] * c[0]) + a[2] * (b[0] * c[1] - b[1] * c[0]);
+function normal4(u, v, w) {
+  const pick = (x, i, j, k) => [x[i], x[j], x[k]];
+  return [det3(pick(u, 1, 2, 3), pick(v, 1, 2, 3), pick(w, 1, 2, 3)), -det3(pick(u, 0, 2, 3), pick(v, 0, 2, 3), pick(w, 0, 2, 3)),
+    det3(pick(u, 0, 1, 3), pick(v, 0, 1, 3), pick(w, 0, 1, 3)), -det3(pick(u, 0, 1, 2), pick(v, 0, 1, 2), pick(w, 0, 1, 2))];
+}
+/* rough distance from the centre to one cell's hyperplane, from the rounded coordinates: only used to tell which listed inradius belongs to which cell type */
+function cellDist(s, ci) {
+  const V = coords(s), P = s.cellv[ci].map((i) => [V[4 * i], V[4 * i + 1], V[4 * i + 2], V[4 * i + 3]]);
+  for (let a = 1; a < P.length; a++) for (let b = a + 1; b < P.length; b++) for (let c = b + 1; c < P.length; c++) {
+    const n = normal4(sub4(P[a], P[0]), sub4(P[b], P[0]), sub4(P[c], P[0])); const l = Math.hypot(...n);
+    if (l > 1e-3) return Math.abs(n[0] * P[0][0] + n[1] * P[0][1] + n[2] * P[0][2] + n[3] * P[0][3]) / l;
+  }
+  return NaN;
+}
+function inradii(s) {
+  if (Array.isArray(s.inrBy) && s.inrBy.length > 1) return s.inrBy.map((r) => ({ label: `Centre to the hyperplane of each ${r.type}`, v: r.d }));
+  const types = s.cells || [];
+  const vals = Array.isArray(s.inr) ? s.inr : (s.inr === null || s.inr === undefined ? [] : [s.inr]);
+  if (!vals.length) return [];
+  if (types.length > 1 && vals.length === types.length && s.cellv && s.celltype) {
+    const left = [...vals], out = [];
+    types.forEach((t, ti) => {
+      const ci = s.celltype.indexOf(ti); if (ci < 0) return;
+      const d = cellDist(s, ci); let best = 0;
+      left.forEach((x, j) => { if (Math.abs(x - d) < Math.abs(left[best] - d)) best = j; });
+      out.push({ label: `Centre to the hyperplane of each ${t}`, v: left.splice(best, 1)[0] });
+    });
+    if (out.length === types.length) return out;
+  }
+  if (vals.length === 1) return [{ label: 'Inradius (centre to the hyperplane of each cell)', v: vals[0] }];
+  return [{ label: 'Distances from the centre to the cells’ hyperplanes', v: vals, many: true }];
+}
+function perVertex(s) {
+  if (!s.cellv || !s.celltype || !s.cells) return [];
+  return s.cells.map((t, ti) => {
+    const ci = s.celltype.indexOf(ti); if (ci < 0) return null;
+    const n = t.count * s.cellv[ci].length / s.V;
+    return Math.abs(n - Math.round(n)) < 1e-9 ? { t, n: Math.round(n) } : null;
+  }).filter(Boolean);
+}
+const isConvex = (s) => s.family === 'convex' || (s.density === 1 && typeof s.hvol === 'number');
+function factRows(s) {
+  const rows = [];
+  const R = (k, v, note, help) => rows.push({ k, v, note: note === undefined ? String(v) : note, help });
+  rows.push({ head: 'Counting' });
+  R('Vertices (corners)', s.V);
+  R('Edges', s.E);
+  R('Faces (2D polygons)', s.F);
+  (s.faces || []).forEach((f) => R(`Faces: ${plural(f.type, 2)} ${f.sym || ''}`.trim(), f.count));
+  R('Cells (3D solids)', s.C);
+  (s.cells || []).forEach((c) => R(`Cells: ${plural(c.type, 2)} ${c.sym || ''}`.trim(), c.count));
+  const ev = 2 * s.E / s.V;
+  if (Number.isInteger(ev)) R('Edges at each vertex', ev);
+  const pv = perVertex(s);
+  if (pv.length === 1) R('Cells at each vertex', pv[0].n);
+  else pv.forEach(({ t, n }) => R(`Cells at each vertex: ${plural(t.type, n)}`, n));
+  R('Euler characteristic (V − E + F − C)', String(s.chi).replace('-', '−'), String(s.chi).replace('-', '−'), s.chi === 0 ? 'It is 0 for every convex polychoron.' : 'It is 0 for every convex polychoron, but some star ones break that rule.');
+  rows.push({ head: 'Shape' });
+  R('Family', FAMS[s.family] || 'Other');
+  R('Convex', isConvex(s) ? 'yes' : 'no');
+  if (s.sym) R('Schläfli symbol', s.sym, s.sym, s.family === 'star' ? '{p,q,r}: cells {p,q}, with r of them round each edge. A fraction such as 5/2 means a star polygon: a pentagram.' : '{p,q,r}: cells {p,q}, with r of them round each edge.');
+  else if (s.notation) R('Notation', s.notation);
+  if (s.vfig) R('Vertex figure', s.vfig, s.vfig, 'The solid you get by slicing off one corner: its corners are the corner’s neighbours.');
+  if (s.efig) {
+    if (s.family === 'other') R('Around each edge', s.efig, s.efig, 'Its edges aren’t all alike, so there is more than one edge figure.');
+    else R('Edge figure', s.efig, s.efig, 'The polygon you get by slicing across one edge: one corner for each cell around the edge.');
+  }
+  if (s.density !== undefined && s.density !== null) R('Density', s.density, String(s.density), 'How many times the cells wrap round the centre.');
+  if (s.group || s.order) R('Symmetry group', `${s.group || ''}${s.order ? ` (order ${s.order})` : ''}`.trim(), s.group ? s.group + (s.order ? ' ' + s.order : '') : String(s.order));
+  if (s.dualId && s.dualId === s.id) R('Dual', 'itself (self-dual)');
+  else if (s.dual) R('Dual', s.dual);
+  if (s.petrie) R('Petrie polygon', `${s.petrie} sides`, String(s.petrie), 'A zigzag of edges in which every three in a row, but never four, lie in one cell. Its number of sides is the Coxeter number of the symmetry group.');
+  rows.push({ head: 'Sizes (edges of length 1)' });
+  if (typeof s.R === 'number') R('Circumradius (centre to each vertex)', fmt(s.R));
+  if (typeof s.mid === 'number') R('Midradius (centre to the middle of each edge)', fmt(s.mid));
+  inradii(s).forEach((r) => R(r.label, r.many ? r.v.map(fmt).join(', ') : fmt(r.v)));
+  if (typeof s.hvol === 'number') R('Hypervolume (4D content)', fmt(s.hvol));
+  if (typeof s.svol === 'number') R('Surface volume (all the cells together)', fmt(s.svol));
+  (s.dih || []).forEach((d, i, all) => R(all.length > 1 ? `Dihedral angle (${d.pair})` : 'Dihedral angle (between neighbouring cells)', deg(d.deg), fmt(d.deg)));
+  if (!isConvex(s)) rows.push({ sub: 'Hypervolume, surface volume and dihedral angles are given only for the convex ones: a star polychoron’s cells pass through each other.' });
+  rows.push({ head: 'Names' });
+  R('Name', s.name);
+  if (s.alt && s.alt.length) R('Also called', s.alt.join('; '));
+  if (s.acr) R('Short name (Bowers)', s.acr);
+  return rows;
+}
+function renderFacts() {
+  const s = current;
+  if (!s) { $('factbox').innerHTML = '<p class="muted">Pick a polychoron to see its facts.</p>'; return; }
+  const rows = factRows(s);
+  let html = `<p class="fname">${esc(s.name)}</p>`;
+  if (s.dualId && byId.get(s.dualId) && s.dualId !== s.id) html += `<p><button type="button" class="btn quiet" data-open="${esc(s.dualId)}">Open its dual: ${esc(byId.get(s.dualId).name)}</button></p>`;
+  html += '<dl class="flist">';
+  rows.forEach((r, i) => {
+    if (r.head) { html += `</dl><h3>${esc(r.head)}</h3><dl class="flist">`; return; }
+    if (r.sub) { html += `</dl><p class="help">${esc(r.sub)}</p><dl class="flist">`; return; }
+    html += `<div class="frow"><dt>${esc(r.k)}${r.help ? `<span class="fh">${esc(r.help)}</span>` : ''}</dt><dd><span class="fv">${esc(r.v)}</span><button type="button" class="nplus" data-i="${i}" aria-label="Add to notepad: ${esc(r.k)}">+</button></dd></div>`;
+  });
+  html += '</dl>';
+  $('factbox').innerHTML = html.replace(/<dl class="flist"><\/dl>/g, '');
+  $('factbox').onclick = (e) => {
+    const o = e.target.closest('[data-open]'); if (o) { select(byId.get(o.dataset.open), true); return; }
+    const b = e.target.closest('.nplus'); if (!b) return;
+    const r = rows[+b.dataset.i];
+    addNote(`${s.name} · ${r.k}`, r.note);
+    b.textContent = '✓'; setTimeout(() => { b.textContent = '+'; }, 900);
+  };
+}
+$('prec').addEventListener('change', renderFacts);
+
+/* ---------- 4D view ----------
+   Each vertex is turned in 4D (R4), then projected to 3D: in perspective from a 4D eye on the W axis, or flat by dropping W.
+   The perspective is scaled so the shadow never reaches further than 1 from the centre (the largest of sqrt(1 − w²)/(d4 − w) is 1/sqrt(d4² − 1)).
+   The 3D point is turned (M) and drawn in perspective (P). Every edge is a screen-space quad, so it can be drawn bold. */
+const cv = $('cv');
+let gl = null, progL = null, progP = null, ebuf = null, hbuf = null, pbuf = null, ibAll = null, ibBold = null, ibFaint = null, ibH = null, nAll = 0, nBold = 0, nFaint = 0, nH = 0, idxExt = null;
+let quat = [0, 0, 0, 1], zoom = 1, spin = false, ortho = false;
+let base4 = ident4();
+const ang = { xw: 0, yw: 0, zw: 0 };
+const DEFANG = { xw: 18, yw: 12, zw: 0 };
+let hl = { mode: '', i: 0 };
+function ident4() { return [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1]; }
+function mul4(A, B) { const C = new Array(16).fill(0); for (let r = 0; r < 4; r++) for (let c = 0; c < 4; c++) { let t = 0; for (let k = 0; k < 4; k++) t += A[4 * r + k] * B[4 * k + c]; C[4 * r + c] = t; } return C; }
+function plane4(i, j, t) { const A = ident4(), c = Math.cos(t), s = Math.sin(t); A[5 * i] = c; A[5 * j] = c; A[4 * i + j] = -s; A[4 * j + i] = s; return A; }
+function orthonormalize(A) { // Gram–Schmidt on the rows, so a long spin doesn't drift
+  const rows = [0, 1, 2, 3].map((r) => A.slice(4 * r, 4 * r + 4));
+  for (let r = 0; r < 4; r++) {
+    for (let q = 0; q < r; q++) { const d = rows[r].reduce((t, x, k) => t + x * rows[q][k], 0); rows[r] = rows[r].map((x, k) => x - d * rows[q][k]); }
+    const l = Math.hypot(...rows[r]) || 1; rows[r] = rows[r].map((x) => x / l);
+  }
+  return rows.flat();
+}
+function rot4() {
+  const r = Math.PI / 180;
+  return mul4(plane4(2, 3, ang.zw * r), mul4(plane4(1, 3, ang.yw * r), mul4(plane4(0, 3, ang.xw * r), base4)));
+}
+const colMajor = (A) => { const o = new Float32Array(16); for (let r = 0; r < 4; r++) for (let c = 0; c < 4; c++) o[4 * c + r] = A[4 * r + c]; return o; };
+function cssColor(name) {
+  const v = getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+  const m = v.match(/^#([0-9a-f]{6})$/i);
+  if (!m) return [0.5, 0.5, 0.5];
+  const n = parseInt(m[1], 16); return [(n >> 16 & 255) / 255, (n >> 8 & 255) / 255, (n & 255) / 255];
+}
+let COL = {};
+function readColors() { COL = { far: cssColor('--w-far'), near: cssColor('--w-near'), hl: cssColor('--accent'), ink: cssColor('--ink') }; }
+function qmul(a, b) {
+  return [a[3] * b[0] + a[0] * b[3] + a[1] * b[2] - a[2] * b[1], a[3] * b[1] - a[0] * b[2] + a[1] * b[3] + a[2] * b[0], a[3] * b[2] + a[0] * b[1] - a[1] * b[0] + a[2] * b[3], a[3] * b[3] - a[0] * b[0] - a[1] * b[1] - a[2] * b[2]];
+}
+function qaxis(ax, a) { const s = Math.sin(a / 2); const l = Math.hypot(...ax) || 1; return [ax[0] / l * s, ax[1] / l * s, ax[2] / l * s, Math.cos(a / 2)]; }
+function qmat(q) {
+  const [x, y, z, w] = q;
+  return [1 - 2 * (y * y + z * z), 2 * (x * y + z * w), 2 * (x * z - y * w), 0, 2 * (x * y - z * w), 1 - 2 * (x * x + z * z), 2 * (y * z + x * w), 0, 2 * (x * z + y * w), 2 * (y * z - x * w), 1 - 2 * (x * x + y * y), 0, 0, 0, 0, 1];
+}
+const SHARED = `uniform mat4 R4;uniform mat4 M;uniform mat4 P;uniform float d4;uniform float orth;uniform float sc;
+vec4 toClip(vec4 q,out float wv){vec4 r=R4*(q*sc);wv=r.w;float k=orth>0.5?1.0:sqrt(d4*d4-1.0)/(d4-r.w);return P*(M*vec4(r.xyz*k,1.0));}`;
+const VS_LINE = `attribute vec4 pa;attribute vec4 pb;attribute float sd;${SHARED}
+uniform vec2 vp;uniform float lw;uniform vec3 cfar;uniform vec3 cnear;uniform vec3 chl;uniform float md;uniform float al;uniform float cd;
+varying vec3 vc;varying float va;
+void main(){float wa;float wb;vec4 ca=toClip(pa,wa);vec4 cb=toClip(pb,wb);
+vec2 sa=ca.xy/ca.w*vp;vec2 sb=cb.xy/cb.w*vp;vec2 dv=sb-sa;float l=length(dv);dv=l>0.0001?dv/l:vec2(1.0,0.0);
+vec2 nv=vec2(-dv.y,dv.x);gl_Position=ca+vec4(nv*sd*lw/vp*ca.w,0.0,0.0);
+float t=clamp(wa*0.5+0.5,0.0,1.0);vc=md>1.5?chl:mix(cfar,cnear,t);
+float dz=clamp((ca.w-(cd-1.0))*0.5,0.0,1.0);va=al*(md>1.5&&md<2.5?1.0:mix(1.0,0.45,dz));}`;
+const FS_LINE = 'precision mediump float;varying vec3 vc;varying float va;void main(){gl_FragColor=vec4(vc*va,va);}';
+const VS_PT = `attribute vec4 pa;${SHARED}uniform float ps;void main(){float wv;gl_Position=toClip(pa,wv);gl_PointSize=ps;}`;
+const FS_PT = 'precision mediump float;uniform vec3 chl;uniform vec3 cring;void main(){vec2 d=gl_PointCoord-vec2(0.5);float r=length(d);if(r>0.5)discard;vec3 c=r>0.32?cring:chl;gl_FragColor=vec4(c,1.0);}';
+function makeProg(vs, fs) {
+  const sh = (t, src) => { const s = gl.createShader(t); gl.shaderSource(s, src); gl.compileShader(s); return s; };
+  const p = gl.createProgram();
+  gl.attachShader(p, sh(gl.VERTEX_SHADER, vs)); gl.attachShader(p, sh(gl.FRAGMENT_SHADER, fs));
+  gl.linkProgram(p);
+  return gl.getProgramParameter(p, gl.LINK_STATUS) ? p : null;
+}
+function setupGL() { // programs, buffers and state: run at start and again after the browser restores a lost context
+  progL = makeProg(VS_LINE, FS_LINE); progP = makeProg(VS_PT, FS_PT);
+  if (!progL || !progP) return false;
+  idxExt = gl.getExtension('OES_element_index_uint');
+  ebuf = gl.createBuffer(); hbuf = gl.createBuffer(); pbuf = gl.createBuffer(); ibAll = gl.createBuffer(); ibBold = gl.createBuffer(); ibFaint = gl.createBuffer(); ibH = gl.createBuffer();
+  gl.disable(gl.DEPTH_TEST);
+  gl.enable(gl.BLEND); gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
+  readColors();
+  return true;
+}
+function initGL() {
+  try { gl = cv.getContext('webgl', { antialias: true, alpha: true, premultipliedAlpha: true }) || cv.getContext('experimental-webgl'); } catch (e) { gl = null; }
+  if (!gl || !setupGL()) { gl = null; $('nogl').hidden = false; cv.hidden = true; document.querySelectorAll('#look .vctl, #look .wkey').forEach((x) => { x.hidden = true; }); return; }
+  // Phones can drop the graphics context (a backgrounded tab, a GPU reset). Ask for it back, and rebuild when it returns.
+  cv.addEventListener('webglcontextlost', (e) => { e.preventDefault(); setSpin(false); });
+  cv.addEventListener('webglcontextrestored', () => { if (setupGL()) { buildMesh(); if (!reduceMotion()) setSpin(true); } });
+}
+/* each edge is 4 vertices (pa = this end, pb = the other end, sd = which side), drawn as two triangles */
+const bigIdx = (nQuads) => nQuads * 4 > 65535 && !!idxExt;
+const quadIdx = (list, big) => { const I = big ? new Uint32Array(list.length * 6) : new Uint16Array(list.length * 6); list.forEach((e, k) => { const b = 4 * e; I.set([b, b + 1, b + 2, b + 1, b + 3, b + 2], 6 * k); }); return I; };
+function quadVerts(P, nE) { // P(k) gives edge k's two 4D ends as [a, b], each an array of 4 numbers
+  const A = new Float32Array(nE * 4 * 9);
+  for (let k = 0; k < nE; k++) {
+    const [a, b] = P(k);
+    const put = (slot, p, q, sd) => { const o = (4 * k + slot) * 9; for (let j = 0; j < 4; j++) { A[o + j] = p[j]; A[o + 4 + j] = q[j]; } A[o + 8] = sd; };
+    put(0, a, b, 1); put(1, a, b, -1); put(2, b, a, -1); put(3, b, a, 1);
+  }
+  return A;
+}
+const vtx = (V, i) => [V[4 * i], V[4 * i + 1], V[4 * i + 2], V[4 * i + 3]];
+function buildMesh() {
+  if (!gl || !current) return;
+  const s = current, V = coords(s), nE = s.e.length / 2;
+  gl.bindBuffer(gl.ARRAY_BUFFER, ebuf); gl.bufferData(gl.ARRAY_BUFFER, quadVerts((k) => [vtx(V, s.e[2 * k]), vtx(V, s.e[2 * k + 1])], nE), gl.STATIC_DRAW);
+  const I = quadIdx([...Array(nE).keys()], bigIdx(nE)); nAll = I.length;
+  gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, ibAll); gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, I, gl.STATIC_DRAW);
+  buildHighlight();
+}
+function boldEdges() {
+  const s = current;
+  if (!s || !hl.mode) return null;
+  if (hl.mode === 'cell') return cellEdges(s, hl.i);
+  if (hl.mode === 'vert') return adjacency(s)[hl.i];
+  return null;
+}
+/* every cell of one type, each shrunk towards its own centre so that neighbouring cells stand apart */
+const SHRINK = 0.6;
+function typeEdges() {
+  const s = current, V = coords(s), out = [];
+  s.celltype.forEach((t, ci) => {
+    if (t !== hl.i) return;
+    const c = [0, 0, 0, 0]; s.cellv[ci].forEach((i) => { for (let j = 0; j < 4; j++) c[j] += V[4 * i + j] / s.cellv[ci].length; });
+    const sh = (i) => vtx(V, i).map((x, j) => c[j] + SHRINK * (x - c[j]));
+    cellEdges(s, ci).forEach((e) => out.push([sh(s.e[2 * e]), sh(s.e[2 * e + 1])]));
+  });
+  return out;
+}
+function buildHighlight() {
+  if (!current) return;
+  const bold = boldEdges();
+  let nType = 0;
+  if (hl.mode === 'type') {
+    const T = typeEdges(); nType = T.length;
+    if (gl) {
+      gl.bindBuffer(gl.ARRAY_BUFFER, hbuf); gl.bufferData(gl.ARRAY_BUFFER, quadVerts((k) => T[k], T.length), gl.DYNAMIC_DRAW);
+      const I = quadIdx([...Array(T.length).keys()], bigIdx(T.length)); nH = I.length;
+      gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, ibH); gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, I, gl.DYNAMIC_DRAW);
+    }
+  } else nH = 0;
+  if (gl) {
+    if (bold) {
+      const set = new Set(bold), faint = [];
+      for (let k = 0; k < current.E; k++) if (!set.has(k)) faint.push(k);
+      const big = bigIdx(current.E);
+      const B = quadIdx(bold, big), F = quadIdx(faint, big); nBold = B.length; nFaint = F.length;
+      gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, ibBold); gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, B, gl.DYNAMIC_DRAW);
+      gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, ibFaint); gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, F, gl.DYNAMIC_DRAW);
+    } else { nBold = 0; nFaint = 0; }
+    if (hl.mode === 'vert') { const V = coords(current); gl.bindBuffer(gl.ARRAY_BUFFER, pbuf); gl.bufferData(gl.ARRAY_BUFFER, V.slice(4 * hl.i, 4 * hl.i + 4), gl.DYNAMIC_DRAW); }
+  }
+  renderHighlightUI(bold, nType);
+  draw();
+}
+function resize() {
+  if (!gl) return;
+  const r = cv.getBoundingClientRect(); const dpr = Math.min(window.devicePixelRatio || 1, 2);
+  const w = Math.max(1, Math.round(r.width * dpr)), h = Math.max(1, Math.round(r.height * dpr));
+  if (cv.width !== w || cv.height !== h) { cv.width = w; cv.height = h; }
+  draw();
+}
+function setCommon(p, dist) {
+  const U = (n) => gl.getUniformLocation(p, n);
+  const asp = cv.width / cv.height, f = 1 / Math.tan(Math.PI / 12), nr = 0.1, fr = 20;
+  const P = [f / asp, 0, 0, 0, 0, f, 0, 0, 0, 0, (fr + nr) / (nr - fr), -1, 0, 0, 2 * fr * nr / (nr - fr), 0];
+  const M = qmat(quat); M[14] = -dist;
+  gl.uniformMatrix4fv(U('P'), false, new Float32Array(P));
+  gl.uniformMatrix4fv(U('M'), false, new Float32Array(M));
+  gl.uniformMatrix4fv(U('R4'), false, colMajor(rot4()));
+  gl.uniform1f(U('d4'), 3); gl.uniform1f(U('orth'), ortho ? 1 : 0); gl.uniform1f(U('sc'), 1 / current.rmax);
+  return U;
+}
+function draw() {
+  if (!gl || !current) return;
+  gl.viewport(0, 0, cv.width, cv.height);
+  gl.clearColor(0, 0, 0, 0); gl.clear(gl.COLOR_BUFFER_BIT);
+  const dpr = Math.min(window.devicePixelRatio || 1, 2), dist = 4.3 / zoom;
+  gl.useProgram(progL);
+  const U = setCommon(progL, dist);
+  gl.uniform2f(U('vp'), cv.width / 2, cv.height / 2);
+  gl.uniform3fv(U('cfar'), COL.far); gl.uniform3fv(U('cnear'), COL.near); gl.uniform3fv(U('chl'), COL.hl); gl.uniform1f(U('cd'), dist);
+  const L = (n, size, off) => { const loc = gl.getAttribLocation(progL, n); gl.enableVertexAttribArray(loc); gl.vertexAttribPointer(loc, size, gl.FLOAT, false, 36, off); };
+  const ink = current.E / current.rmax; // total edge length in units of the radius: how crowded the picture is
+  const dense = ink > 900 ? 0.55 : ink > 250 ? 0.8 : 1, nal = ink > 900 ? 0.55 : ink > 250 ? 0.8 : 0.95;
+  const pass = (vb, ib, n, md, lw, al, big) => {
+    if (!n) return;
+    gl.bindBuffer(gl.ARRAY_BUFFER, vb); L('pa', 4, 0); L('pb', 4, 16); L('sd', 1, 32);
+    gl.uniform1f(U('md'), md); gl.uniform1f(U('lw'), lw * dpr); gl.uniform1f(U('al'), al);
+    gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, ib); gl.drawElements(gl.TRIANGLES, n, big ? gl.UNSIGNED_INT : gl.UNSIGNED_SHORT, 0);
+  };
+  const bigE = bigIdx(current.E);
+  if (hl.mode === 'type') { pass(ebuf, ibAll, nAll, 1, 0.55 * dense, 0.28 * nal, bigE); pass(hbuf, ibH, nH, 3, nH / 6 > 900 ? 0.5 : nH / 6 > 300 ? 0.75 : 1.1, nH / 6 > 900 ? 0.85 : 1, bigIdx(nH / 6)); }
+  else if (hl.mode) { pass(ebuf, ibFaint, nFaint, 1, 0.55 * dense, 0.28 * nal, bigE); pass(ebuf, ibBold, nBold, 2, 1.7, 1, bigE); }
+  else pass(ebuf, ibAll, nAll, 0, 0.85 * dense, nal, bigE);
+  gl.disableVertexAttribArray(gl.getAttribLocation(progL, 'pb')); gl.disableVertexAttribArray(gl.getAttribLocation(progL, 'sd'));
+  if (hl.mode === 'vert') {
+    gl.useProgram(progP);
+    const UP = setCommon(progP, dist);
+    gl.uniform1f(UP('ps'), 11 * dpr); gl.uniform3fv(UP('chl'), COL.hl); gl.uniform3fv(UP('cring'), COL.ink);
+    gl.bindBuffer(gl.ARRAY_BUFFER, pbuf);
+    const loc = gl.getAttribLocation(progP, 'pa'); gl.enableVertexAttribArray(loc); gl.vertexAttribPointer(loc, 4, gl.FLOAT, false, 0, 0);
+    gl.drawArrays(gl.POINTS, 0, 1);
+  }
+}
+
+/* ---------- highlights ---------- */
+function renderHighlightUI(bold, nType) {
+  const s = current;
+  $('v-cell').setAttribute('aria-pressed', String(hl.mode === 'cell'));
+  $('v-vert').setAttribute('aria-pressed', String(hl.mode === 'vert'));
+  $('v-next').hidden = !(hl.mode === 'cell' || hl.mode === 'vert');
+  $('v-next').textContent = hl.mode === 'vert' ? 'Next vertex' : 'Next cell';
+  $('legend').querySelectorAll('.lg').forEach((b) => b.setAttribute('aria-pressed', String(hl.mode === 'type' && +b.dataset.t === hl.i)));
+  let say = '';
+  if (hl.mode === 'cell') { const t = s.cells[s.celltype[hl.i]].type; say = `Cell ${hl.i + 1} of ${s.C}: ${article(t)}, with ${bold.length} edges, drawn bold.`; }
+  else if (hl.mode === 'vert') say = `Vertex ${hl.i + 1} of ${s.V}: ${bold.length} edges meet here, drawn bold.`;
+  else if (hl.mode === 'type') { const t = s.cells[hl.i]; say = `All ${t.count} ${plural(t.type, t.count)}, each drawn bold and shrunk a little towards its own centre so they stand apart.`; }
+  $('v-say').textContent = say;
+}
+function renderLegend() {
+  const s = current;
+  const many = s && s.cells && s.cells.length > 1 && s.celltype;
+  $('legend').hidden = !many;
+  $('legend').innerHTML = many ? s.cells.map((c, i) => `<button type="button" class="lg" data-t="${i}" aria-pressed="false">Every ${esc(c.type)} (${c.count})</button>`).join('') : '';
+}
+function setHL(mode, i) { hl = { mode, i: i || 0 }; buildHighlight(); }
+$('v-cell').addEventListener('click', () => { if (hl.mode === 'cell') setHL(''); else if (current.cellv && current.cellv.length) setHL('cell', 0); });
+$('v-vert').addEventListener('click', () => setHL(hl.mode === 'vert' ? '' : 'vert', 0));
+$('v-next').addEventListener('click', () => {
+  if (hl.mode === 'cell') setHL('cell', (hl.i + 1) % current.cellv.length);
+  else if (hl.mode === 'vert') setHL('vert', (hl.i + 1) % current.V);
+});
+$('legend').addEventListener('click', (e) => {
+  const b = e.target.closest('.lg'); if (!b) return;
+  const t = +b.dataset.t;
+  setHL(hl.mode === 'type' && hl.i === t ? '' : 'type', t);
+});
+
+/* ---------- turning ---------- */
+const SL = { xw: 'v-xw', yw: 'v-yw', zw: 'v-zw' };
+function showAngles() { Object.entries(SL).forEach(([k, id]) => { $(id).value = ang[k]; $('o-' + k).textContent = ang[k] + '°'; }); }
+Object.entries(SL).forEach(([k, id]) => $(id).addEventListener('input', () => { ang[k] = +$(id).value; $('o-' + k).textContent = ang[k] + '°'; draw(); }));
+const wrap = (a) => ((a + 540) % 360) - 180;
+let drag = null;
+cv.addEventListener('pointerdown', (e) => { drag = { x: e.clientX, y: e.clientY }; cv.setPointerCapture(e.pointerId); });
+cv.addEventListener('pointermove', (e) => {
+  if (!drag) return;
+  const dx = e.clientX - drag.x, dy = e.clientY - drag.y; drag = { x: e.clientX, y: e.clientY };
+  const a = Math.hypot(dx, dy); if (!a) return;
+  quat = qmul(qaxis([dy, dx, 0], a * 0.012), quat); if (!spin) draw();
+});
+['pointerup', 'pointercancel'].forEach((t) => cv.addEventListener(t, () => { drag = null; }));
+cv.addEventListener('keydown', (e) => {
+  const m = { ArrowLeft: [0, -1], ArrowRight: [0, 1], ArrowUp: [-1, 0], ArrowDown: [1, 0] }[e.key];
+  if (!m) return;
+  e.preventDefault();
+  if (e.shiftKey) {
+    if (m[1]) ang.xw = wrap(ang.xw + 5 * m[1]); else ang.yw = wrap(ang.yw - 5 * m[0]);
+    showAngles();
+  } else quat = qmul(qaxis([m[0], m[1], 0], Math.PI / 18), quat);
+  if (!spin) draw();
+});
+let raf = 0, frames = 0;
+function tick() {
+  if (!spin) return;
+  base4 = mul4(plane4(0, 3, 0.006), mul4(plane4(1, 2, 0.006), base4));
+  if (++frames % 120 === 0) base4 = orthonormalize(base4);
+  draw(); raf = requestAnimationFrame(tick);
+}
+function setSpin(on) { spin = on && !!gl; $('v-spin').setAttribute('aria-pressed', String(spin)); cancelAnimationFrame(raf); if (spin) raf = requestAnimationFrame(tick); }
+$('v-spin').addEventListener('click', () => setSpin(!spin));
+function resetView() {
+  quat = qmul(qaxis([1, 0, 0], 0.35), qaxis([0, 1, 0], 0.45)); base4 = ident4();
+  Object.assign(ang, DEFANG); showAngles();
+  zoom = 1; $('v-zoom').value = 1; draw();
+}
+$('v-reset').addEventListener('click', resetView);
+$('v-ortho').addEventListener('click', () => { ortho = !ortho; $('v-ortho').setAttribute('aria-pressed', String(ortho)); draw(); });
+$('v-zoom').addEventListener('input', () => { zoom = +$('v-zoom').value; draw(); });
+if (window.ResizeObserver) new ResizeObserver(resize).observe(cv); else window.addEventListener('resize', resize);
+const recolor = () => { if (gl) { readColors(); draw(); } };
+if (window.matchMedia) matchMedia('(prefers-color-scheme: dark)').addEventListener?.('change', recolor);
+if (window.MutationObserver) new MutationObserver(recolor).observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
+
+function select(s, scroll) {
+  if (!s) return;
+  current = s; hl = { mode: '', i: 0 };
+  coords(s);
+  $('sname').textContent = s.name;
+  cv.setAttribute('aria-label', `4D view of the ${s.name}: its shadow in 3D, drawn as its ${s.E} edges. Drag, or use the arrow keys, to turn it; Shift and the arrow keys turn it through the fourth dimension.`);
+  $('v-cell').hidden = !(s.cellv && s.cellv.length);
+  renderLegend(); buildMesh(); renderHighlightUI(null, 0); renderFacts(); renderList();
+  try { localStorage.setItem('aft.polychora.last', s.id); } catch (e) { /* storage unavailable */ }
+  if (scroll) $('look').scrollIntoView({ behavior: reduceMotion() ? 'auto' : 'smooth', block: 'start' });
+}
+
+/* ---------- notepad (shared by the Polytopes tools) ---------- */
+const NKEY = 'aft.polytopes.notes';
+let notes = [];
+try { notes = JSON.parse(localStorage.getItem(NKEY) || '[]'); if (!Array.isArray(notes)) notes = []; } catch (e) { notes = []; }
+const saveNotes = () => { try { localStorage.setItem(NKEY, JSON.stringify(notes)); } catch (e) { /* storage unavailable */ } };
+function flash(msg) { $('n-msg').textContent = msg; clearTimeout(flash.t); flash.t = setTimeout(() => { $('n-msg').textContent = ''; }, 2500); }
+function addNote(label, value) { notes.push({ label: String(label).slice(0, 200), value: String(value).slice(0, 10000) }); saveNotes(); renderNotes(); flash('Added to the notepad.'); }
+function renderNotes() {
+  $('nempty').hidden = notes.length > 0;
+  $('nlist').innerHTML = notes.map((n, i) => `<li><span class="nl">${esc(n.label)}</span><button type="button" class="nv" data-i="${i}" title="Put this in the last box you used">${esc(n.value)}</button><button type="button" class="ndel" data-i="${i}" aria-label="Delete note: ${esc(n.label)}">×</button></li>`).join('');
+}
+let lastBox = null;
+document.querySelectorAll('.hin').forEach((el) => el.addEventListener('focus', () => { lastBox = el; }));
+$('nlist').addEventListener('click', (e) => {
+  const v = e.target.closest('.nv'), d = e.target.closest('.ndel');
+  if (d) {
+    const i = +d.dataset.i; notes.splice(i, 1); saveNotes(); renderNotes(); flash('Note deleted.');
+    const next = $('nlist').querySelector(`.ndel[data-i="${Math.min(i, notes.length - 1)}"]`); (next || $('n-label')).focus();
+    return;
+  }
+  if (v) {
+    const val = notes[+v.dataset.i].value;
+    if (!lastBox) { copy(val, 'Copied.'); return; }
+    if (lastBox.id === 'h-dig') lastBox.value += val.replace(/\D/g, '');
+    else if (lastBox.id === 'h-conv') lastBox.value = val;
+    else {
+      const nums = val.replace(/−/g, '-').match(/-?\d+(?:\.\d+)?/g) || [];
+      if (nums.length !== 1) { flash(nums.length ? 'That note holds more than one number. Type the one you want.' : 'That note has no number in it.'); return; }
+      lastBox.value = nums[0];
+    }
+    lastBox.dispatchEvent(new Event('input')); lastBox.focus();
+  }
+});
+$('n-add').addEventListener('click', () => {
+  const l = $('n-label').value.trim(), v = $('n-val').value.trim();
+  if (!l && !v) return;
+  addNote(l || 'Note', v); $('n-label').value = ''; $('n-val').value = '';
+});
+$('n-clear').addEventListener('click', () => { if (!notes.length || !confirm('Clear every note?')) return; notes = []; saveNotes(); renderNotes(); });
+function copy(text, msg) {
+  const done = () => { $('n-msg').textContent = msg; setTimeout(() => { $('n-msg').textContent = ''; }, 1600); };
+  if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(text).then(done, () => { $('n-msg').textContent = 'Copying is blocked here; select the text instead.'; });
+}
+$('n-copy').addEventListener('click', () => copy(notes.map((n) => `${n.label}: ${n.value}`).join('\n'), 'Copied all notes.'));
+
+/* ---------- coordinate helpers ---------- */
+const num = (t) => { const v = String(t).trim().replace('−', '-').replace(',', '.'); return v === '' || isNaN(+v) ? null : +v; };
+function arith() {
+  const a = num($('h-a').value), b = num($('h-b').value), op = $('h-op').value;
+  let r = null;
+  if (a !== null && b !== null) r = op === '+' ? a + b : op === '−' ? a - b : op === '×' ? a * b : (b === 0 ? null : a / b);
+  $('h-r').textContent = r === null ? '' : String(+r.toFixed(10));
+}
+['h-a', 'h-b'].forEach((id) => $(id).addEventListener('input', arith));
+$('h-op').addEventListener('change', arith);
+$('h-keep').addEventListener('click', () => { if ($('h-r').textContent) addNote(`${$('h-a').value} ${$('h-op').value} ${$('h-b').value}`, $('h-r').textContent); });
+const pad = (x, w) => String(x).padStart(w, '0');
+function dmm(deg, pos, neg, w) {
+  const h = deg < 0 ? neg : pos; let a = Math.abs(deg); let d = Math.floor(a); let m = (a - d) * 60;
+  m = Math.round(m * 1000) / 1000; if (m >= 60) { d += 1; m -= 60; }
+  return `${h} ${pad(d, w)}° ${pad(m.toFixed(3), 6)}`;
+}
+function digitsOut() {
+  const t = $('h-dig').value.replace(/\D/g, ''), ns = $('h-ns').value, ew = $('h-ew').value;
+  const half = (s, h, w) => `${h} ${s.slice(0, w)}° ${s.slice(w, w + 2)}.${s.slice(w + 2)}`;
+  let out = '', bad = '';
+  if (!t) out = '';
+  else if (t.length === 15) out = half(t.slice(0, 7), ns, 2) + ' ' + half(t.slice(7), ew, 3);
+  else if (t.length === 14) out = half(t.slice(0, 7), ns, 2) + ' ' + half('0' + t.slice(7), ew, 3);
+  else if (t.length === 7) out = half(t, ns, 2);
+  else if (t.length === 8) out = half(t, ew, 3);
+  else bad = `${t.length} digits. A full coordinate needs 14 or 15.`;
+  if (out) {
+    const parts = [...out.matchAll(/([NSEW]) (\d+)° (\d\d)\.(\d{3})/g)];
+    if (parts.some((m) => +m[3] >= 60)) bad = 'Minutes of 60 or more can’t be right.';
+    else if (parts.some((m) => { const lim = 'NS'.includes(m[1]) ? 90 : 180; const dg = +m[2]; return dg > lim || (dg === lim && +(m[3] + m[4]) > 0); })) bad = 'That is off the globe: latitude goes up to 90° and longitude up to 180°.';
+  }
+  $('h-digout').innerHTML = bad ? `<span class="why">${esc(bad)}</span>` : out ? `${esc(out)} <button type="button" class="btn quiet sm" id="h-digkeep">Note it</button>` : '';
+  const k = $('h-digkeep'); if (k) k.onclick = () => addNote('Coordinates', out);
+}
+['h-dig', 'h-ns', 'h-ew'].forEach((id) => $(id).addEventListener(id === 'h-dig' ? 'input' : 'change', digitsOut));
+function convOut() {
+  const t = $('h-conv').value.trim();
+  const hs = (t.toUpperCase().match(/[NSEW]/g) || []);
+  const nums = (t.replace(/(\d),(\d)/g, '$1.$2').match(/-?\d+(?:\.\d+)?/g) || []).map(Number);
+  let lat = null, lon = null;
+  if (nums.length === 2) [lat, lon] = nums;
+  const sg = (x) => (x < 0 || Object.is(x, -0) ? -1 : 1);
+  if (nums.length === 4) { lat = sg(nums[0]) * (Math.abs(nums[0]) + nums[1] / 60); lon = sg(nums[2]) * (Math.abs(nums[2]) + nums[3] / 60); }
+  else if (nums.length === 6) { lat = sg(nums[0]) * (Math.abs(nums[0]) + nums[1] / 60 + nums[2] / 3600); lon = sg(nums[3]) * (Math.abs(nums[3]) + nums[4] / 60 + nums[5] / 3600); }
+  let out = '', bad = '';
+  if (!t) out = '';
+  else if (lat === null) bad = 'Give two numbers (decimal degrees), four (degrees and minutes) or six (degrees, minutes, seconds).';
+  else {
+    if (hs[0] === 'S') lat = -Math.abs(lat); if (hs[1] === 'W' || hs[0] === 'W') lon = -Math.abs(lon);
+    if (Math.abs(lat) > 90 || Math.abs(lon) > 180) bad = 'That is off the globe: latitude goes up to 90 and longitude up to 180.';
+    else out = dmm(lat, 'N', 'S', 2) + ' ' + dmm(lon, 'E', 'W', 3);
+  }
+  $('h-convout').innerHTML = bad ? `<span class="why">${esc(bad)}</span>` : out ? `${esc(out)} <button type="button" class="btn quiet sm" id="h-convkeep">Note it</button>` : '';
+  const k = $('h-convkeep'); if (k) k.onclick = () => addNote('Coordinates', out);
+}
+$('h-conv').addEventListener('input', convOut);
+
+/* ---------- example ---------- */
+$('btn-example').addEventListener('click', () => {
+  $('f-clear').click();
+  setFam('');
+  $('q').value = '';
+  $('filters').open = true;
+  $('f-c').value = 24;
+  if (ALLCELLS.includes('octahedron')) $('f-cell').value = 'octahedron';
+  renderList();
+  $('count').textContent += ' Example clue (made up): “the regular 4D shape whose 24 cells are octahedra”. Pick it, then tap + beside Vertices to note how many corners it has.';
+  $('find').scrollIntoView({ behavior: reduceMotion() ? 'auto' : 'smooth', block: 'start' });
+});
+
+/* ---------- start ---------- */
+initGL();
+Object.assign(ang, DEFANG); showAngles();
+quat = qmul(qaxis([1, 0, 0], 0.35), qaxis([0, 1, 0], 0.45));
+let start = byId.has('tes') ? 'tes' : (SHAPES[0] && SHAPES[0].id);
+try { const l = localStorage.getItem('aft.polychora.last'); if (l && byId.has(l)) start = l; } catch (e) { /* storage unavailable */ }
+renderNotes();
+if (start) select(byId.get(start), false); else renderFacts();
+resize();
+if (!reduceMotion()) setSpin(true);
+})();
+</script>
+</body>
+</html>
+

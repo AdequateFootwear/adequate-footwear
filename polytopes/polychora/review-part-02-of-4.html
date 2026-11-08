@@ -1,0 +1,34 @@
+<!-- Review copy: lines 665-697 of polytopes/polychora/index.html, split so Copilot can review it. Not served. -->
+        <select id="h-ns" aria-label="North or south"><option>N</option><option>S</option></select>
+        <select id="h-ew" aria-label="West or east"><option>W</option><option>E</option></select>
+      </div>
+      <output id="h-digout" class="hres block"></output>
+      <p class="help">Digits go in order: degrees, then minutes with three decimals. 14 or 15 digits make a full coordinate; 7 or 8 make one half.</p>
+    </div>
+    <div class="helper">
+      <span class="hlbl">Convert to degrees and minutes</span>
+      <div class="calc"><input type="text" id="h-conv" class="hin wide" placeholder="e.g. 45.20575, -93.90535" aria-label="Coordinates to convert" autocomplete="off"></div>
+      <output id="h-convout" class="hres block"></output>
+      <p class="help">Takes decimal degrees, or degrees minutes seconds (N 45 12 20.7 W 93 54 19.3), and writes them the geocaching way.</p>
+    </div>
+  </section>
+
+  <section class="panel" id="about" aria-labelledby="h-about">
+    <div class="panel-head"><span class="step">5</span><h2 id="h-about">Where the facts come from</h2></div>
+    <div class="explain">
+      <p>The sixteen regular polychora here, convex and star, were built from scratch by the 4D kaleidoscope construction: Wythoff's construction with Coxeter's reflection groups A<sub>4</sub>, B<sub>4</sub>, F<sub>4</sub> and H<sub>4</sub>. The counts, sizes and angles were worked out from the result, and the counts of vertices, edges, faces and cells were checked against group theory: each count times the symmetry of one of its pieces has to give the order of the whole group. The densities of the star ones were worked out two independent ways (counting how often random rays from the centre cross the cells, and adding up the 4D angle each cell takes up), and both give the published values.</p>
+      <p>The snub 24-cell and the grand antiprism aren't regular, but both can be cut from the 600-cell: removing the 24 vertices of a 24-cell inside it leaves the snub 24-cell, and removing two rings of 10 vertices at right angles leaves the grand antiprism. Their cells were found by a convex-hull search over those vertices.</p>
+      <p>Names come from standard references: H. S. M. Coxeter's <i>Regular Polytopes</i> for the Schläfli symbols and the regular figures; John Conway's names for the ten star polychora, from <i>The Symmetries of Things</i> (Conway, Burgiel and Goodman-Strauss); and Jonathan Bowers' short names, such as “hi” for the 120-cell and “gax” for the grand 600-cell. Other names that are in common use are listed under “Also called”.</p>
+      <p>The picture is drawn in your browser from each polychoron's 4D coordinates, rounded to four decimal places. The facts don't depend on the picture: they were worked out at full precision.</p>
+    </div>
+  </section>
+
+  <footer>
+    <span>Polychora · <a href="../">all polytopes tools</a> · <a href="../../">all AdequateFootwear tools</a></span>
+    <span class="mono">V − E + F − C = χ</span>
+  </footer>
+</main>
+
+<script>
+(() => {
+'use strict';
